@@ -1,0 +1,10 @@
+data/
+notebooks/
+figures/
+manuscript/
+__pycache__/
+build/
+dist/
+*.egg-info/
+*.egg/
+.DS_Store
