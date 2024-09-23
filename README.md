@@ -1,10 +1,10 @@
 # rNEM
 
-To use this code you must cone and install it: 
+Install:
 
 ```console
-git clone
-cd rNEM
+git clone https://github.com/TomGeorge1234/relNEM.git
+cd relNEM
 pip install -e .
 ```
 
