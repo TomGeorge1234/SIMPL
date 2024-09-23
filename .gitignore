@@ -1,7 +1,3 @@
-data/
-notebooks/
-figures/
-manuscript/
 __pycache__/
 build/
 dist/
