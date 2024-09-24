@@ -52,49 +52,6 @@ def gaussian_norm_const(sigma : jnp.ndarray) -> jnp.ndarray:
     D = sigma.shape[0]
     return 1 / jnp.sqrt((2 * jnp.pi) ** D * jnp.linalg.det(sigma))
 
-def fit_gaussian(x, likelihood):
-    """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
-    
-    Parameters
-    ----------
-    x : jnp.ndarray, shape (N_bins,D)
-        The position bins in which the likelihood is calculated
-    likelihood : jnp.ndarray, shape (N_bins,)
-        The combined likelihood (not log-likelihood) of the neurons firing at each position bin
-        
-    Returns
-    -------
-    mu : jnp.ndarray, shape (D,)
-        The mean of the Gaussian
-    mode : jnp.ndarray, shape (D,)
-        The mode of the Gaussian
-    cov : jnp.ndarray, shape (D, D)
-        The covariance of the Gaussian    
-    """
-    assert x.ndim == 2
-    assert likelihood.ndim == 1
-    assert x.shape[0] == likelihood.shape[0]
-    
-    mu = (x.T @ likelihood) / likelihood.sum()
-    mode = x[jnp.argmax(likelihood)]
-    cov = ((x - mu) * likelihood[:, None]).T @ (x - mu) / likelihood.sum()
-    return mu, mode, cov
-
-def fit_gaussian_vmap(x, likelihood):
-    """
-    Parameters
-    ----------
-    x : jnp.ndarray, shape (N_bins,D,)
-        The position bins in which the likelihood is calculated
-    likelihood : jnp.ndarray, shape (N_t,N_bins,)
-        The combined likelihood (not log-likelihood) of the neurons firing at each position bin
-    """  
-    likelihood_sum = likelihood.sum(axis=-1)
-    mu = (likelihood @ x) / likelihood_sum[:,None]
-    mode = x[jnp.argmax(likelihood, axis=1)]
-    sigma = ((x - mu[:,None]) * likelihood[:,:,None]).transpose(0,2,1) @ (x - mu[:,None]) / likelihood_sum[:,None,None]
-    return mu, mode, sigma
-
 def gaussian_sample(key, mu, sigma):
     """Samples from a multivariate normal distribution with mean mu and covariance sigma.
 
