@@ -1,0 +1,3 @@
+[submodule "KalMax"]
+	path = KalMax
+	url = git@github.com:pierreglaser/KalMax
