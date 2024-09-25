@@ -61,6 +61,7 @@ class rNEM:
                 manifold_align_against : str = 'behaviour',
                 evaluate_each_epoch : bool = True,
                 save_likelihood_maps : bool = False,
+                mle_var_estimation_method : str = "bayesian_uniform_prior",
                 ):
         
         """Initializes the Kalman redecoder.
@@ -210,6 +211,7 @@ class rNEM:
             }
         self.results = xr.merge([self.results, self.dict_to_dataset({'Xb':self.Xb, 'Y':self.Y, 'spike_mask':self.spike_mask})]) # add spikes and behaviour to the results
         self.loglikelihoods = xr.Dataset(coords={'epoch':jnp.array([],dtype=int)}) # a smaller dict just to save likelihoods for online evaluation during training
+        self.mle_var_estimation_method = mle_var_estimation_method
 
     def train_N_epochs(self, 
                        N : int=5, 
@@ -253,8 +255,7 @@ class rNEM:
         
         # =========== E-STEP ===========
         if self.epoch == 0: self.E = {'X':self.Xb}
-        else: self.E = self._E_step(Y=self.Y, F=self.lastF, F_func=self.lastFFunc, method="frequentist")
-        # else: self.E = self._E_step(Y=self.Y, F=self.lastF, F_func=self.lastFFunc, method="bayesian_uniform_prior")
+        else: self.E = self._E_step(Y=self.Y, F=self.lastF, F_func=self.lastFFunc, method=self.mle_var_estimation_method)
         
         # =========== M-STEP ===========
         # TODO I'm pretty sure this sampling step is unnecessary.
