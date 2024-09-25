@@ -9,7 +9,7 @@ import xarray as xr
 import scipy
 import skimage
 import warnings
-from typing import Callable
+from typing import Callable, Literal, Optional
 from tqdm import tqdm
 import time 
 
@@ -20,7 +20,8 @@ from rnem.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
 from kalmax.kalman import KalmanFilter
-from kalmax.kde import kde
+from kalmax.kde import kde, poisson_log_likelihood_from_position
+from kalmax.kde import kde_func as _kde_func
 from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory
 from kalmax.utils import fit_gaussian
 from kalmax.kernels import gaussian_kernel
@@ -235,7 +236,8 @@ class rNEM:
         
         # =========== E-STEP ===========
         if self.epoch == 0: self.E = {'X':self.Xb}
-        else: self.E = self._E_step(Y=self.Y, F=self.lastF)
+        else: self.E = self._E_step(Y=self.Y, F=self.lastF, F_func=self.lastFFunc, method="frequentist")
+        # else: self.E = self._E_step(Y=self.Y, F=self.lastF, F_func=self.lastFFunc, method="bayesian_uniform_prior")
         
         # =========== M-STEP ===========
         # TODO I'm pretty sure this sampling step is unnecessary.
@@ -252,6 +254,7 @@ class rNEM:
         # =========== STORE THE RESULTS FOR THE NEXT EPOCH ===========
         self.lastF = self.M['F'] # save the place fields for the next epoch
         self.lastX = self.E['X'] # save the latent positions for the next epoch
+        self.lastFFunc = self.M['F_func'] # save the place fields functions for the next epoch
         
         return 
 
@@ -278,7 +281,7 @@ class rNEM:
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
         return 
 
-    def _E_step(self, Y: jnp.ndarray, F:jnp.array) -> xr.Dataset:
+    def _E_step(self, Y: jnp.ndarray, F:jnp.array, F_func: Optional[Callable], method: Literal["bayesian_uniform_prior", "frequentist"] = "bayesian_uniform_prior") -> xr.Dataset:
         """E-STEP of the EM algorithm. 
            1. LIKELIHOOD: The log-likelihood maps of the spikes, as a function of position, is calculated for each time step.
            2. FIT GAUSSIANS: Gaussians (mu, mode, sigma), are fitted to the log-likelihoods maps.
@@ -301,12 +304,26 @@ class rNEM:
         E : dict
             The results of the E-step"""
 
-    
         # Batch this 
         logPYXF_maps = poisson_log_likelihood(Y, F, mask=self.spike_mask) # Calc. log-likelihood maps
+
+        def log_likelihood_func(y, x, mask):
+            assert F_func is not None
+            return poisson_log_likelihood_from_position(y, F_func, x, mask)
+        
+
+        if method == "frequentist":
+            print("testing log likelihood func...")
+            _recovered_logPYF_maps = vmap(vmap(log_likelihood_func, in_axes=(None, 0, None)), in_axes=(0, None, 0))(Y, self.xF, self.spike_mask)
+            _recovered_logPYF_maps = _recovered_logPYF_maps - jnp.max(_recovered_logPYF_maps, axis=1)[:,None]
+            assert jnp.allclose(logPYXF_maps / Y.shape[1], _recovered_logPYF_maps, atol=1e-5), "log_likelihood_func is not working as expected"
+            print("...log likelihood func is working as expected")
+
         no_spikes = (jnp.sum(Y * self.spike_mask, axis=1) == 0)
+
         # Batch this 
-        mu_l, mode_l, sigma_l = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps)) # fit Gaussians
+        mu_l, sigma_l = vmap(lambda x, l, m, y: fit_gaussian(x, l, m, y, likelihood_func=log_likelihood_func, method=method), in_axes=(None, 0, 0, 0))(self.xF, jnp.exp(logPYXF_maps), self.spike_mask, Y) # fit Gaussians
+        mode_l = mu_l  # property of Gaussian distributions
         
         # Kalman observation noise is base observation noise + the covariance of the likelihoods (artificially inflated when there are no spikes)
         observation_noise = self.R_base + sigma_l
@@ -325,7 +342,11 @@ class rNEM:
         # Test: here we ask "does the trajectory decoded from the training spikes have a high likelihood under the testing spikes?"
         logPYXF_maps_test = poisson_log_likelihood(Y, F, mask=~self.spike_mask) # Calc. log-likelihood maps
         no_spikes = (jnp.sum(Y * ~self.spike_mask, axis=1) == 0)
-        mu_l_test, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test)) # fit Gaussians
+
+        # mu_l_test, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test)) # fit Gaussians
+        mu_l_test, sigma_l_test = vmap(lambda x, l, m, y: fit_gaussian(x, l, m, y, likelihood_func=log_likelihood_func, method=method), in_axes=(None, 0, 0, 0))(self.xF, jnp.exp(logPYXF_maps_test), ~self.spike_mask, Y) # fit Gaussians
+        mode_l_test = mu_l_test
+
         observation_noise_test = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
         logPYF_test = self.kalman_filter.loglikelihood(Y=mode_l_test,R=observation_noise_test,mu=mu_s,sigma=sigma_s).sum()
 
@@ -396,15 +417,35 @@ class rNEM:
         stacked_masks = jnp.array([self.spike_mask, self.odd_minute_mask, self.even_minute_mask])
         all_F = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
+
+
+        def F_func(x):
+            return _kde_func(
+                x,
+                trajectory = X,
+                spikes = Y,
+                kernel = self.kernel,
+                kernel_bandwidth = self.kernel_bandwidth,
+                mask=self.spike_mask
+            )
+
+        # make sure F_func works as expected
+        print("Testing F_func...")
+        _F_recovered  = vmap(F_func, out_axes=1)(self.xF)
+        assert jnp.allclose(F, _F_recovered), "F_func is not working as expected"
+        print("...F_func is working as expected")
+
+
+
         # Interpolates the rate maps just calculated onto the latent trajectory to establish a "smoothed" continuous estimate of the firing rates (note using KDE func directly would be too slow here)
         FX = self.interpolate_firing_rates(X, F)
         M = {'F':F,
              'F_odd_minutes':F_odd_minutes,
              'F_even_minutes':F_even_minutes,
              'FX':FX,
+             'F_func':F_func,
              }
       
-        
         
         return M
 
@@ -583,7 +624,7 @@ class rNEM:
 
             # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
             M = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft)}
-            E = self._E_step(self.Y, self.Ft)
+            E = self._E_step(self.Y, self.Ft, F_func=None, method="bayesian_uniform_prior")
             evals = self.get_metrics(
                     X = E['X'],
                     F = self.Ft,
@@ -602,7 +643,7 @@ class rNEM:
 
         # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
         M = self._M_step(self.Y, self.Xt)
-        E = self._E_step(self.Y, M['F']) 
+        E = self._E_step(self.Y, M['F'], F_func=None, method="bayesian_uniform_prior")
         evals = self.get_metrics(
                 X = E['X'],
                 F = M['F'],
@@ -1066,7 +1107,8 @@ class rNEM:
                 perimeter = (perimeter + perimeter_dilated) / 2
                 roundness = 4*np.pi*size / perimeter**2
                 combined_pf_mask += pf_mask 
-                mu, mode, cov = fit_gaussian(self.xF, pf.flatten())
+                mu, cov = fit_gaussian(self.xF, pf.flatten(), None, None, None, method='bayesian_uniform_prior')
+                mode = mu # property of Gaussian distributions
                 pf_size[n,n_pfs] = size
                 pf_position[n,n_pfs] = mu
                 pf_covariance[n,n_pfs] = cov
