@@ -182,6 +182,7 @@ class rNEM:
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim # as ordered in positon variables X = ['x', 'y', ...]
         self.variable_info_dict = self.init_variables_dict()
+        self.attr_info_dict = self.init_attrs_dict()
         self.N_PFmax = 20 # to keep a fixed shape each tuning curve has max possible number of place fields
         self.coordinates_dict = {
             'neuron' : self.neuron,
@@ -726,7 +727,9 @@ class rNEM:
         dataset = xr.Dataset()
         if coords is None: coords = self.coordinates_dict
         for variable_name in data.keys():
-            if variable_name in self.variable_info_dict:
+            if variable_name in self.attr_info_dict:
+                dataset.assign_attrs(**{variable_name:data[variable_name]})
+            elif variable_name in self.variable_info_dict:
                 variable_info = self.variable_info_dict[variable_name]
                 variable_coords = {k:coords[k] for k in variable_info['dims']}
                 intended_variable_shape = tuple([len(variable_coords[c]) for c in variable_info['dims']]) # shape implied by the dimensions
@@ -735,11 +738,21 @@ class rNEM:
                 else:
                     variable_data = data[variable_name]
                 dataarray = xr.DataArray(variable_data, dims=variable_info['dims'], coords=variable_coords, attrs=variable_info)
+                dataset[variable_name] = dataarray
             else: 
-                warnings.warn(f"Variable {variable_name} not recognised, it will be saved without coordinate or dimension info unless you add it to the variable_info_dict in the init_variables_dict method.")
+                warnings.warn(f"Variable {variable_name} not recognised, it will be saved (as a data variable) without coordinate or dimension info unless you add it to the variable_info_dict in the init_variables_dict method.")
                 dataarray = xr.DataArray(data[variable_name])
-            dataset[variable_name] = dataarray
+                dataset[variable_name] = dataarray
         return dataset
+
+    def init_attrs_dict(self):
+        return  {
+            "F_func": {
+                "name":"Neurons Intensity Function",
+                "description":"Nonparametric (kernel-based) estimate of the neurons' receptive fields",
+                "formula":r"$x \longmapsto \frac{\sum_{t \in \text{SpikeTimes}} K(x, x_t)}{\sum_{t \in \text{AllTimes}} K(x_t, x_t)}$",
+            }
+        }
     
     def init_variables_dict(self):
         """Initialises a dictionary of variables and their metadata. This dictionary summarises _all_ the variable that are used and returned by the KalmanRedecoder class. Each entry is attached as the `attrs` to the DataArray when these variables are saved and is itself a dictionary taking the following form:
