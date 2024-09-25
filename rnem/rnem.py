@@ -340,7 +340,11 @@ class rNEM:
 
         
         # Kalman observation noise is base observation noise + the covariance of the likelihoods (artificially inflated when there are no spikes)
-        observation_noise = self.R_base + sigma_l
+        if method == "bayesian_uniform_prior":
+            observation_noise = self.R_base + sigma_l
+        elif method == "frequentist":
+            observation_noise = sigma_l
+
         observation_noise = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, observation_noise)
 
         mu_f, sigma_f = self.kalman_filter.filter(
@@ -361,6 +365,12 @@ class rNEM:
         mode_l_test = mu_l_test
 
         observation_noise_test = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
+
+        if method == "bayesian_uniform_prior":
+            observation_noise_test = self.R_base + sigma_l_test
+        elif method == "frequentist":
+            observation_noise_test = sigma_l_test
+
         logPYF_test = self.kalman_filter.loglikelihood(Y=mode_l_test,R=observation_noise_test,mu=mu_s,sigma=sigma_s).sum()
 
         X = mu_s
