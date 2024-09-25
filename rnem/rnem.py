@@ -20,14 +20,31 @@ from rnem.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
 from kalmax.kalman import KalmanFilter
-from kalmax.kde import kde, poisson_log_likelihood_from_position
+from kalmax.kde import LogPSpikesGivenPosition, kde
 from kalmax.kde import kde_func as _kde_func
-from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory
+from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory, NeuronIntensity
 from kalmax.utils import fit_gaussian
 from kalmax.kernels import gaussian_kernel
 
-class rNEM:
+from jax.lax import scan
+from functools import partial
 
+
+@partial(jit, static_argnums=(5,))
+def scanned_fit_gaussian(xF, logP, spike_mask, Y, poisson_log_likelihoood_func, method):
+        def one_fit_gaussian(carry, input_):
+            print('jitting')
+            l, m, y = input_
+            ret = fit_gaussian(xF, l, m, y, likelihood_func=poisson_log_likelihoood_func, method=method)
+            return None, ret
+
+        from jax.lax import scan
+        carry, rets = scan(one_fit_gaussian, init=None, xs=(jnp.exp(logP), spike_mask, Y))
+        mu_l, sigma_l = rets
+        return mu_l, sigma_l
+
+
+class rNEM:
     def __init__(self,
                 # Data 
                 data : xr.Dataset,
@@ -281,7 +298,7 @@ class rNEM:
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
         return 
 
-    def _E_step(self, Y: jnp.ndarray, F:jnp.array, F_func: Optional[Callable], method: Literal["bayesian_uniform_prior", "frequentist"] = "bayesian_uniform_prior") -> xr.Dataset:
+    def _E_step(self, Y: jnp.ndarray, F:jnp.array, F_func: Optional[NeuronIntensity], method: Literal["bayesian_uniform_prior", "frequentist"] = "bayesian_uniform_prior") -> xr.Dataset:
         """E-STEP of the EM algorithm. 
            1. LIKELIHOOD: The log-likelihood maps of the spikes, as a function of position, is calculated for each time step.
            2. FIT GAUSSIANS: Gaussians (mu, mode, sigma), are fitted to the log-likelihoods maps.
@@ -306,24 +323,21 @@ class rNEM:
 
         # Batch this 
         logPYXF_maps = poisson_log_likelihood(Y, F, mask=self.spike_mask) # Calc. log-likelihood maps
-
-        def log_likelihood_func(y, x, mask):
-            assert F_func is not None
-            return poisson_log_likelihood_from_position(y, F_func, x, mask)
         
+        poisson_log_likelihoood_func = LogPSpikesGivenPosition(F_func)  # type: ignore
 
         if method == "frequentist":
             print("testing log likelihood func...")
-            _recovered_logPYF_maps = vmap(vmap(log_likelihood_func, in_axes=(None, 0, None)), in_axes=(0, None, 0))(Y, self.xF, self.spike_mask)
+            _recovered_logPYF_maps = vmap(vmap(poisson_log_likelihoood_func, in_axes=(None, 0, None)), in_axes=(0, None, 0))(Y, self.xF, self.spike_mask)
             _recovered_logPYF_maps = _recovered_logPYF_maps - jnp.max(_recovered_logPYF_maps, axis=1)[:,None]
             assert jnp.allclose(logPYXF_maps / Y.shape[1], _recovered_logPYF_maps, atol=1e-5), "log_likelihood_func is not working as expected"
             print("...log likelihood func is working as expected")
 
         no_spikes = (jnp.sum(Y * self.spike_mask, axis=1) == 0)
 
-        # Batch this 
-        mu_l, sigma_l = vmap(lambda x, l, m, y: fit_gaussian(x, l, m, y, likelihood_func=log_likelihood_func, method=method), in_axes=(None, 0, 0, 0))(self.xF, jnp.exp(logPYXF_maps), self.spike_mask, Y) # fit Gaussians
-        mode_l = mu_l  # property of Gaussian distributions
+        mu_l, sigma_l = scanned_fit_gaussian(self.xF, jnp.exp(logPYXF_maps), self.spike_mask, Y, poisson_log_likelihoood_func, method)
+        mode_l = mu_l
+
         
         # Kalman observation noise is base observation noise + the covariance of the likelihoods (artificially inflated when there are no spikes)
         observation_noise = self.R_base + sigma_l
@@ -343,8 +357,7 @@ class rNEM:
         logPYXF_maps_test = poisson_log_likelihood(Y, F, mask=~self.spike_mask) # Calc. log-likelihood maps
         no_spikes = (jnp.sum(Y * ~self.spike_mask, axis=1) == 0)
 
-        # mu_l_test, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test)) # fit Gaussians
-        mu_l_test, sigma_l_test = vmap(lambda x, l, m, y: fit_gaussian(x, l, m, y, likelihood_func=log_likelihood_func, method=method), in_axes=(None, 0, 0, 0))(self.xF, jnp.exp(logPYXF_maps_test), ~self.spike_mask, Y) # fit Gaussians
+        mu_l_test, sigma_l_test = scanned_fit_gaussian(self.xF, jnp.exp(logPYXF_maps_test), ~self.spike_mask, Y, poisson_log_likelihoood_func, method)
         mode_l_test = mu_l_test
 
         observation_noise_test = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
@@ -419,15 +432,13 @@ class rNEM:
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
 
 
-        def F_func(x):
-            return _kde_func(
-                x,
-                trajectory = X,
-                spikes = Y,
-                kernel = self.kernel,
-                kernel_bandwidth = self.kernel_bandwidth,
-                mask=self.spike_mask
-            )
+        F_func = NeuronIntensity(
+            trajectory = X,
+            spikes = Y,
+            kernel = self.kernel,
+            kernel_bandwidth = self.kernel_bandwidth,
+            mask=self.spike_mask,
+        )
 
         # make sure F_func works as expected
         print("Testing F_func...")
