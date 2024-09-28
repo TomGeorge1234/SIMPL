@@ -173,15 +173,6 @@ class rNEM:
             'place_field':jnp.arange(self.N_PFmax),
         }
 
-        # ESTABLISH GROUND TRUTH (IF AVAILABLE) 
-        self.ground_truth_available = ('Xt' in list(data.keys()))
-        self.Ft, self.Xt = None, None
-        if self.ground_truth_available:
-            self.Xt = jnp.array(self.data.Xt)
-        # MANIFOLD ALIGNMENT 
-        if manifold_align_against == 'behaviour': self.Xalign = self.Xb
-        elif manifold_align_against == 'ground_truth': self.Xalign = self.Xt
-        elif manifold_align_against == 'none': self.Xalign = None
 
         # INITIALISE THE RESULTS DATASET 
         self.results = xr.Dataset(coords={'epoch':jnp.array([],dtype=int)})
@@ -193,6 +184,24 @@ class rNEM:
         self.results = xr.merge([self.results, self.dict_to_dataset({'Xb':self.Xb, 'Y':self.Y, 'spike_mask':self.spike_mask})]) # add spikes and behaviour to the results
         self.loglikelihoods = xr.Dataset(coords={'epoch':jnp.array([],dtype=int)}) # a smaller dict just to save likelihoods for online evaluation during training
 
+        # ESTABLISH GROUND TRUTH (IF AVAILABLE) 
+        self.ground_truth_available = ('Xt' in list(data.keys()))
+        self.Ft, self.Xt = None, None
+        if 'Xt' in list(self.data.keys()):
+            self.Xt = jnp.array(self.data.Xt)
+            self.results = xr.merge([self.results, self.dict_to_dataset({'Xt':self.Xt})])
+        if 'Ft' in list(self.data.keys()): # interpolate the "true" receptive fields onto the coordinates of the environment
+            Ft = self.data.Ft.interp(**self.environment.coords_dict, method='linear', kwargs={"fill_value": "extrapolate"}) * self.dt
+            Ft = Ft.transpose('neuron', *self.environment.dim) # make coord order matches those of this class
+            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins) # flatten to shape (N_neurons, N_bins)
+            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft) #threshold Ft at 0 just in case they weren't already
+            self.results = xr.merge([self.results, self.dict_to_dataset({'Ft':self.Ft})])
+
+        # MANIFOLD ALIGNMENT 
+        if manifold_align_against == 'behaviour': self.Xalign = self.Xb
+        elif manifold_align_against == 'ground_truth': self.Xalign = self.Xt
+        elif manifold_align_against == 'none': self.Xalign = None
+    
     def train_N_epochs(self, 
                        N : int=5, 
                        verbose : bool = True):
@@ -571,16 +580,7 @@ class rNEM:
             warnings.warn("Ground truth data not available, so the baselines cannot be calculated.")
             return
         
-        if 'Ft' in list(self.data.keys()):
-            # Interpolate the place fields to the environment dimensions
-            Ft = self.data.Ft.interp(**self.environment.coords_dict, method='linear', kwargs={"fill_value": "extrapolate"}) * self.dt
-            Ft = Ft.transpose('neuron', *self.environment.dim) # make coord order matches those of this class
-            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins) # flatten to shape (N_neurons, N_bins)
-            #threshold Ft at 0
-            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)
-            # adds these place fields and Xt to the results
-            self.results = xr.merge([self.results, self.dict_to_dataset({'Xt':self.Xt, 'Ft':self.Ft})])
-
+        if self.Ft is not None:
             # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
             M = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft)}
             E = self._E_step(self.Y, self.Ft)
