@@ -4,6 +4,7 @@ from jax import jit, vmap
 import jax.random as random
 import jax.numpy as jnp
 import numpy as np 
+
 # Other libraries
 import xarray as xr
 import scipy
@@ -14,9 +15,9 @@ from tqdm import tqdm
 import time 
 
 # Internal libraries
-import rnem
-from rnem.utils import coefficient_of_determination, cca, create_speckled_mask, gaussian_sample
-from rnem.environment import Environment
+import simpl
+from simpl.utils import coefficient_of_determination, cca, create_speckled_mask, gaussian_sample
+from simpl.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
 from kalmax.kalman import KalmanFilter
@@ -25,7 +26,7 @@ from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory
 from kalmax.utils import fit_gaussian
 from kalmax.kernels import gaussian_kernel
 
-class rNEM:
+class SIMPL:
 
     def __init__(self,
                 # Data 
@@ -45,10 +46,10 @@ class rNEM:
                 save_likelihood_maps : bool = False,
                 ):
         
-        """Initializes the Kalman redecoder.
+        """Initializes the SIMPL class.
 
         Overview: 
-            KalmanRedecoder is a class which takes in a data set of spikes and latents and iteratively "redecodes" the latent by (i) fitting receptive fields by KDE to the spikes (the "M-step") and (ii) running a Kalman filter on the likelihoods of the spikes to redecode the latent positions (the "E-step"). This redecoding is reminiscent of the EM-algorithm for latent variable optimisation. 
+            SIMPL is a class which takes in a data set of spikes and initial latent estimates and iteratively "redecodes" the latent by (i) fitting receptive fields by KDE to the spikes (the "M-step") and (ii) running a Kalman filter on the MLE estimates from the spikes to redecode the latent positions (the "E-step"). This procedure is reminiscent (indeed -- theoretically equivalent to, see paper) of the EM-algorithm for latent variable optimisation. 
             
         Terminology:
             `Y` refers to spike counts, shape (T, N_neurons)
