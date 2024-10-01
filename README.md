@@ -1,6 +1,6 @@
 # SIMPL
 
-<img src="SIMPL.png" width=850>
+<img src="simpl.png" width=850>
 
 This repository contains code for the paper "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour". Specifically: 
 
