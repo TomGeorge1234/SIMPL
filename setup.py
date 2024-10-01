@@ -4,10 +4,10 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="rnem",  
+    name="simpl",  
     version="0.0.0", 
     author="",
-    description="rNEM: a python package for optimising neural representations using relaxed neural EM",
+    description="simpl: a python package for optimising neural representations from behavioural initialisation using an EM-style algorithm",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="", 
@@ -20,7 +20,7 @@ setuptools.setup(
     python_requires='>=3.6',
     include_package_data=True,
     package_data={
-        'rnem': ['data/*'],
+        'simpl': ['data/*'],
     },
     install_requires=[
         'jax',
@@ -34,7 +34,7 @@ setuptools.setup(
         'h5netcdf',
     ],
     extras_require={
-        'demo': [],
+        'demo': ['jupyter'],
     }
 )
 
