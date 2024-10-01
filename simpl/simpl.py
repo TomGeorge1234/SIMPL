@@ -680,7 +680,7 @@ class SIMPL:
         return dataset
     
     def init_variables_dict(self):
-        """Initialises a dictionary of variables and their metadata. This dictionary summarises _all_ the variable that are used and returned by the KalmanRedecoder class. Each entry is attached as the `attrs` to the DataArray when these variables are saved and is itself a dictionary taking the following form:
+        """Initialises a dictionary of variables and their metadata. This dictionary summarises _all_ the variable that are used and returned by the SIMPL class. Each entry is attached as the `attrs` to the DataArray when these variables are saved and is itself a dictionary taking the following form:
         key : dict
             name : str
                 The name of the variable
@@ -1108,7 +1108,7 @@ class SIMPL:
             except: pass
 
     def save_results(self, path:str):
-        """Saves the results of the KalmanRedecoder model to a netCDF file at the given path. The results are saved as an xarray Dataset. 
+        """Saves the results of the SIMPL model to a netCDF file at the given path. The results are saved as an xarray Dataset. 
         
         Parameters
         ----------

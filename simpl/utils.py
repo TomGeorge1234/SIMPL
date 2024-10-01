@@ -249,7 +249,7 @@ def create_speckled_mask(size, sparsity=0.1, block_size=10):
 def load_datafile(name='gridcelldata.npz'):
     # Use pkg_resources.files to get a pathlib.Path object
     import importlib.resources as pkg_resources
-    path = pkg_resources.files('rnem').joinpath('data/'+name)
+    path = pkg_resources.files('simpl').joinpath('data/'+name)
     data_npz = np.load(path)
     return data_npz
 
@@ -266,7 +266,7 @@ def prepare_data(
     ) -> xr.Dataset:
 
     """
-    Prepare data for rnem model fitting.
+    Prepare data for simpl  model fitting.
 
     Parameters
     ----------
@@ -290,7 +290,7 @@ def prepare_data(
     Returns
     -------
     xr.Dataset
-        Data for rnem model fitting.
+        Data for simpl model fitting.
     """
     
 
