@@ -1,11 +1,10 @@
-# rNEM
+# SIMPL
 
 Install:
 
 ```console
-git clone https://github.com/TomGeorge1234/relNEM.git
-cd relNEM
+cd <this_repo>
 pip install -e .
 ```
 
-Then check `demos/rnem_demo.ipynb`
+Then check `demos/simpl_demo.ipynb`

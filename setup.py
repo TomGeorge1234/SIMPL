@@ -6,11 +6,11 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="rnem",  
     version="0.0.0", 
-    author="Tom George",
+    author="",
     description="rNEM: a python package for optimising neural representations using relaxed neural EM",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/TomGeorge1234/rNEM", 
+    url="", 
     packages=setuptools.find_packages(), # finds all packages inside the parent directory containing a __init__.py file
     classifiers=[
         "Programming Language :: Python :: 3",
