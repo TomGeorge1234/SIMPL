@@ -5,3 +5,4 @@ dist/
 *.egg/
 .DS_Store
 venv/
+*.ipynb_checkpoints/
