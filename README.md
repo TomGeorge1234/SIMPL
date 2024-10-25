@@ -1,11 +1,11 @@
 # SIMPL
 
-<img src="simpl.png" width=850>
+<img src="simpl.gif" width=850>
 
-This repository contains code for the paper "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour". Specifically: 
+This repository contains code for the "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour". Specifically: 
 
-1. Source code in `simpl/` for the SIMPL algorithm.
-2. A working example in `demos/simpl_demo.ipynb`.
+* Source code in `simpl/` for the SIMPL algorithm.
+* A working example in `demos/simpl_demo.ipynb`.
 
 To run the example you will need to install `simpl` by 
 
