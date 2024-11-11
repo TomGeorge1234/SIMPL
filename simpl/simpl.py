@@ -36,7 +36,7 @@ class SIMPL:
                 # Model parameters
                 kernel : Callable = gaussian_kernel,
                 kernel_bandwidth : float = 0.02,
-                observation_noise_std : float = 0.04,
+                observation_noise_std : float = 0.00, #TODO probably remove this unused parameter
                 speed_prior = 0.1,
                 test_frac : float = 0.1,
                 speckle_block_size_seconds : float = 1,
@@ -96,7 +96,7 @@ class SIMPL:
         kernel_bandwidth : float, optional
             The bandwidth of the kernel, by default 0.02
         observation_noise_std : float, optional
-            The standard deviation of the base observation noise for the Kalman filter, by default 0.02 m.
+            A small fixed component added to the observation noise covariance of the Kalman filter. By default 0.00 m. Probably will be deprecated.
         speed_prior : float, optional
             The prior speed of the agent, by default 0.1 m/s.
         test_frac : float, optional
