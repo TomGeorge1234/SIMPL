@@ -67,6 +67,7 @@ class Environment():
         self.bin_size = bin_size
 
         # create dim names 
+        
         if self.D == 1:
             self.dim = ['x']
         elif self.D == 2:
@@ -74,7 +75,7 @@ class Environment():
         elif self.D == 3:
             self.dim = ['x', 'y', 'z']
         else:
-            self.dim = [f'x{i}' for i in range(D)]
+            self.dim = [f'x{i}' for i in range(self.D)]
     
         # Make the coordinate arrays 
         self.coords_dict = {}

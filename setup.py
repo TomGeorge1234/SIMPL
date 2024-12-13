@@ -26,7 +26,7 @@ setuptools.setup(
         'jax',
         'xarray',
         'kalmax',
-        'scikit-learn',
+        'scikit-learn>=1.3',
         'scikit-image',
         'matplotlib',
         'tqdm',
