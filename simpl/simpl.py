@@ -16,7 +16,7 @@ import time
 
 # Internal libraries
 import simpl
-from simpl.utils import coefficient_of_determination, cca, create_speckled_mask, gaussian_sample
+from simpl.utils import coefficient_of_determination, cca, create_speckled_mask, gaussian_sample, save_results_to_netcdf
 from simpl.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
@@ -1107,14 +1107,14 @@ class SIMPL:
             try: pbar.set_description(f"Epoch {max(0,self.epoch)}")
             except: pass
 
-    def save_results(self, path:str):
+    def save_results(self, path: str):
         """Saves the results of the SIMPL model to a netCDF file at the given path. The results are saved as an xarray Dataset. 
-        
+
         Parameters
         ----------
         path : str
             The path to save the results to.
         """
-        self.results.to_netcdf(path)
+        save_results_to_netcdf(self.results, path)
 if __name__ == "__main__":
     pass
