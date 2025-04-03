@@ -341,11 +341,7 @@ def save_results_to_netcdf(
     Save results to a file.
     To make the data netCDF safe, some variables need to be converted.
 
-    See below issues for detail.
-    https://github.com/TomGeorge1234/SIMPL/issues/5
-    https://github.com/TomGeorge1234/SIMPL/issues/8
     """
-    results = results.drop_vars(['overdispersion'])
     results['spike_mask'] = results['spike_mask'].astype('int32')
     for var in ['F', 'F_odd_minutes', 'F_even_minutes']:
         results[var].attrs['reshape'] = int(
