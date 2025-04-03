@@ -59,7 +59,7 @@ class SIMPL:
             `mu_s`, `mu_f`, `sigma_s` etc. are the Kalman filtered/smoothed means/covariances of the latent positions.
         
         Results format: 
-            Data is stored and returned in one _ginormous_ xarray Dataset, `self.results`. This dataset contains _every_ variable at every epoch include the raw data (`Y`, `X`,`Xt` etc. ), outputs of the E-step and M-step such as receptive fields, likelihood maps, kalman filtered/smoothed means and covariances etc. (`mu_s`, `F` etc.) and evaluation baselines such as R2, X_err, and F_err and metrics (trajectory stability, field stability, overdispersion, field sparsity, spatial information), spike masks (used to isolate test and train splits), and linear rescaling coefficients. xarrays are like numpy arrays which allow you to save data arrays along with their associated coordinates. xarray-datasets are like dictionaries of xarrays, where each xarray is a variable and the dictionary keys are the variable names where many variables can share the same coordinates.
+            Data is stored and returned in one _ginormous_ xarray Dataset, `self.results`. This dataset contains _every_ variable at every epoch include the raw data (`Y`, `X`,`Xt` etc. ), outputs of the E-step and M-step such as receptive fields, likelihood maps, kalman filtered/smoothed means and covariances etc. (`mu_s`, `F` etc.) and evaluation baselines such as R2, X_err, and F_err and metrics (trajectory stability, field stability, field sparsity, spatial information), spike masks (used to isolate test and train splits), and linear rescaling coefficients. xarrays are like numpy arrays which allow you to save data arrays along with their associated coordinates. xarray-datasets are like dictionaries of xarrays, where each xarray is a variable and the dictionary keys are the variable names where many variables can share the same coordinates.
             
             So you can then access (for example) "the smoothed latent position y-coordinate of at time t on the e'th epochs" by calling `self.results['mu_s'].sel(epoch=e, dim='y', time=t)`. Two epochs (-2 and -1) are reserved for special cases ("exact" and "best" models which are calculated using the ground truth data (see `calculate_baselines`).
         
@@ -466,7 +466,6 @@ class SIMPL:
         - field_size : the average size of the fields in the place fields
         - field_change : how much the fields have shifted from the last epoch (if available)
         - trajectory_change : the change in the latent positions from the last epoch (if available)
-        - overdispersion : the overdispersion is a metric of far the data is from being "poisson". 
 
         Only variables which _can_ be calculated are calculated (i.e. if the true latent positions are not available, the X_R2 metric will not be calculated nor returned in the dictionary).
         
@@ -549,22 +548,6 @@ class SIMPL:
         if X_prev is not None and X is not None:
             delta_X = jnp.linalg.norm(X - X_prev, axis=1)
             metrics['trajectory_change'] = delta_X
-        
-        # OVERDISPERSION
-        if Y is not None and FX is not None:
-            FX_, Y_ = FX.T, Y.T
-            average_max_F = jnp.mean(jnp.max(FX, axis=1))
-            coarsen_factor = max(1,int(10 / average_max_F))
-            new_T = jnp.floor(self.T / coarsen_factor).astype(int)
-            FX_, Y_ = FX_[:,:new_T*coarsen_factor], Y_[:,:new_T*coarsen_factor]
-            FX_ = FX_.reshape(self.N_neurons, new_T, coarsen_factor).sum(axis=2)
-            Y_ = Y_.reshape(self.N_neurons, new_T, coarsen_factor).sum(axis=2)
-            FX_ = FX_.flatten()
-            Y_ = Y_.flatten()
-            mask = FX_ > 5
-            FX_, Y_ = FX_[mask], Y_[mask]
-            ZY = (Y_ - FX_) / jnp.sqrt(FX_)
-            metrics['overdispersion'] = tuple(ZY.tolist())
 
         return metrics
     
@@ -966,13 +949,6 @@ class SIMPL:
                 'dims':['time'],
                 'axis title':'Latent change',
                 'formula':r'$\|x_{e}(t) - x_{e-1}(t)\|$',
-            },
-            'overdispersion': {
-                'name':'Overdispersion',
-                'description':'The overdispersion of the spikes, measuring how far from a possion rate model thaey are. First activity is masked to only periods where the predicted spike ratee of a neuron is large (such that the mean no. spikes in a bin is > 5 and the Poisson distribution is a well approximated by normal distribution). Then the number of spikes is converted to a Z-score. If the generative model  Then the overdispersion is calculated as the variance of the spikes divided by the mean.',
-                'dims':[],
-                'axis title':'Overdispersion',
-                'formula':r'$Z$',
             },
             # Baselines : calculated when ground truth data is available
             'X_R2': {
