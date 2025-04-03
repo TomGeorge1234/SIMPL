@@ -1,12 +1,13 @@
 import jax.numpy as jnp
 from jax import random
-import numpy as np 
+import numpy as np
 import sklearn.cross_decomposition
-import xarray as xr 
+import xarray as xr
 
-def gaussian_pdf(x : jnp.ndarray,
-                 mu : jnp.ndarray, 
-                 sigma : jnp.ndarray,) -> jnp.ndarray:
+
+def gaussian_pdf(x: jnp.ndarray,
+                 mu: jnp.ndarray,
+                 sigma: jnp.ndarray,) -> jnp.ndarray:
     """ Calculates the gaussian pdf of a multivariate normal distribution of mean mu and covariance sigma at x
 
     Parameters
@@ -18,7 +19,7 @@ def gaussian_pdf(x : jnp.ndarray,
         The mean of the distribution
     sigma: (D, D) array
         The covariance of the distribution
-    
+
     Returns
     -------
     pdf: float
@@ -35,7 +36,8 @@ def gaussian_pdf(x : jnp.ndarray,
     norm_const = gaussian_norm_const(sigma)
     return norm_const * jnp.exp(-0.5 * jnp.sum(x @ jnp.linalg.inv(sigma) * x, axis=-1))
 
-def gaussian_norm_const(sigma : jnp.ndarray) -> jnp.ndarray:
+
+def gaussian_norm_const(sigma: jnp.ndarray) -> jnp.ndarray:
     """Calculates the normalizing constant of a multivariate normal distribution with covariance sigma
 
     Parameters
@@ -52,16 +54,17 @@ def gaussian_norm_const(sigma : jnp.ndarray) -> jnp.ndarray:
     D = sigma.shape[0]
     return 1 / jnp.sqrt((2 * jnp.pi) ** D * jnp.linalg.det(sigma))
 
+
 def fit_gaussian(x, likelihood):
     """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
-    
+
     Parameters
     ----------
     x : jnp.ndarray, shape (N_bins,D)
         The position bins in which the likelihood is calculated
     likelihood : jnp.ndarray, shape (N_bins,)
         The combined likelihood (not log-likelihood) of the neurons firing at each position bin
-        
+
     Returns
     -------
     mu : jnp.ndarray, shape (D,)
@@ -74,11 +77,12 @@ def fit_gaussian(x, likelihood):
     assert x.ndim == 2
     assert likelihood.ndim == 1
     assert x.shape[0] == likelihood.shape[0]
-    
+
     mu = (x.T @ likelihood) / likelihood.sum()
     mode = x[jnp.argmax(likelihood)]
     cov = ((x - mu) * likelihood[:, None]).T @ (x - mu) / likelihood.sum()
     return mu, mode, cov
+
 
 def fit_gaussian_vmap(x, likelihood):
     """
@@ -88,12 +92,14 @@ def fit_gaussian_vmap(x, likelihood):
         The position bins in which the likelihood is calculated
     likelihood : jnp.ndarray, shape (N_t,N_bins,)
         The combined likelihood (not log-likelihood) of the neurons firing at each position bin
-    """  
+    """
     likelihood_sum = likelihood.sum(axis=-1)
-    mu = (likelihood @ x) / likelihood_sum[:,None]
+    mu = (likelihood @ x) / likelihood_sum[:, None]
     mode = x[jnp.argmax(likelihood, axis=1)]
-    sigma = ((x - mu[:,None]) * likelihood[:,:,None]).transpose(0,2,1) @ (x - mu[:,None]) / likelihood_sum[:,None,None]
+    sigma = ((x - mu[:, None]) * likelihood[:, :, None]).transpose(0,
+                                                                   2, 1) @ (x - mu[:, None]) / likelihood_sum[:, None, None]
     return mu, mode, sigma
+
 
 def gaussian_sample(key, mu, sigma):
     """Samples from a multivariate normal distribution with mean mu and covariance sigma.
@@ -118,12 +124,13 @@ def gaussian_sample(key, mu, sigma):
     sample = random.multivariate_normal(key, mu, sigma)
     return sample
 
+
 def coefficient_of_determination(
-        X : jnp.ndarray,
-        Y : jnp.ndarray,
+        X: jnp.ndarray,
+        Y: jnp.ndarray,
 ):
     """Calculates the coefficient of determination (R^2) between X and Y. This reflects the proportion of the variance in Y that is predictable from X.
-    
+
     Parameters
     ----------
     X : jnp.ndarray, shape (N, D)
@@ -137,16 +144,17 @@ def coefficient_of_determination(
     R2 = 1 - SSR / SST
     return R2
 
-def cca(X : jnp.ndarray, Y : jnp.ndarray):
+
+def cca(X: jnp.ndarray, Y: jnp.ndarray):
     """Uses canonical correlation between X and Y (the "target") to establish the best linear mapping from X to Y.
-    
+
     Parameters
     ----------
     X : jnp.ndarray, shape (N, D)
         The inputs
     Y : jnp.ndarray, shape (N, D)
         The targets
-        
+
     Returns: 
     -------
     coef : jnp.ndarray, shape (D, D)
@@ -156,14 +164,15 @@ def cca(X : jnp.ndarray, Y : jnp.ndarray):
     """
     assert X.shape == Y.shape, "The predicted and true latent positions must have the same shape."
     D = X.shape[1]
-    
+
     cca = sklearn.cross_decomposition.CCA(n_components=D)
-    cca.fit(X,Y)
-    coef = cca.coef_ # / cca._x_std # this randomly changed at some point 
+    cca.fit(X, Y)
+    coef = cca.coef_  # / cca._x_std # this randomly changed at some point
     intercept = cca.intercept_ - cca._x_mean @ coef.T
     return coef, intercept
 
-def correlation_at_lag(X1, X2, lag : int):
+
+def correlation_at_lag(X1, X2, lag: int):
     """Calculates to correlation between X1 and X2[lag:]. If X is D-dimensional, calculates the average correlation across dimensions
 
     Parameters
@@ -175,39 +184,41 @@ def correlation_at_lag(X1, X2, lag : int):
         The second time series
     lag : int
         The lag to calculate the correlation at
-    
+
     Returns
     -------
     float
         The average correlation across dimensions
     """
     T, D = X1.shape
-    if lag >= 0: 
-        X2 = X2[lag:,:]
+    if lag >= 0:
+        X2 = X2[lag:, :]
         X1 = X1[:T-lag]
     else:
         lag = -lag
-        X1 = X1[lag:,:]
+        X1 = X1[lag:, :]
         X2 = X2[:T-lag]
-    return jnp.mean(jnp.diag(jnp.corrcoef(X1.T,X2.T)[D:,:D]))
+    return jnp.mean(jnp.diag(jnp.corrcoef(X1.T, X2.T)[D:, :D]))
 
-def coarsen_dt(dataset : xr.Dataset, dt_multiplier : int):
+
+def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int):
     """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
-    
+
     Parameters
     ----------
     dataset : xr.Dataset
         The dataset to be coarsened
     dt_multiplier : int
         The factor by which to coarsen the data
-        
+
     Returns
     -------
     dataset : xr.Dataset
         The coarsened dataset"""
-    dataset = dataset.coarsen(dim={'time':dt_multiplier}).mean()
+    dataset = dataset.coarsen(dim={'time': dt_multiplier}).mean()
     dataset['X'] = dataset['X'] * dt_multiplier
     return dataset
+
 
 def create_speckled_mask(size, sparsity=0.1, block_size=10):
     """
@@ -216,7 +227,7 @@ def create_speckled_mask(size, sparsity=0.1, block_size=10):
     there are contiguous blocks of False of length `block_size`. Overall ~`sparsity` 
     of the mask is False. For example, if sparsity is 0.3, block size is 3 and size is 
     (4, 15), a valid mask would be:
-    
+
     [[T, T, T, T, T, T, T, T, F, F, F, T, F, F, F, T, T, T, T, T], 
     [T, T, F, F, F, T, T, T, T, T, T, T, T, T, T, T, F, F, F, T], 
     [T, T, T, T, T, T, T, T, T, F, F, F, T, T, F, F, F, T, T, T], 
@@ -246,6 +257,7 @@ def create_speckled_mask(size, sparsity=0.1, block_size=10):
             mask[start_idx:end_idx, row] = False
     return jnp.array(mask)
 
+
 def load_datafile(name='gridcelldata.npz'):
     # Use pkg_resources.files to get a pathlib.Path object
     import importlib.resources as pkg_resources
@@ -255,16 +267,15 @@ def load_datafile(name='gridcelldata.npz'):
 
 
 def prepare_data(
-        Y : np.ndarray,
-        Xb : np.ndarray,
-        time : np.ndarray,
-        dims : np.ndarray = None,
-        neurons : np.ndarray = None,
-        Xt : np.ndarray = None,
-        Ft : np.ndarray = None,
-        Ft_coords_dict : dict = None,
-    ) -> xr.Dataset:
-
+    Y: np.ndarray,
+    Xb: np.ndarray,
+    time: np.ndarray,
+    dims: np.ndarray = None,
+    neurons: np.ndarray = None,
+    Xt: np.ndarray = None,
+    Ft: np.ndarray = None,
+    Ft_coords_dict: dict = None,
+) -> xr.Dataset:
     """
     Prepare data for simpl  model fitting.
 
@@ -286,13 +297,12 @@ def prepare_data(
         Tuning curves, shape (N, *Ft_coords_dict.values()).
     Ft_coords_dict : dict, optional
         Dictionary of coordinates for the tuning curves. For example if D=2, Ft_coords_dict = {'x': xbins, 'y': ybins} where xbins and ybins are the coordinates for the centres of the tuning curve bins.
-    
+
     Returns
     -------
     xr.Dataset
         Data for simpl model fitting.
     """
-    
 
     assert Y.shape[0] == Xb.shape[0]
     assert Y.shape[0] == len(time)
@@ -303,18 +313,72 @@ def prepare_data(
         neurons = np.arange(Y.shape[1])
     if dims is None:
         dims = np.arange(Xb.shape[1])
-    
-    Y = xr.DataArray(Y, dims=['time', 'neuron'], coords={'time': time, 'neuron': neurons})
-    Xb = xr.DataArray(Xb, dims=['time', 'dim'], coords={'time': time, 'dim': dims})
+
+    Y = xr.DataArray(Y, dims=['time', 'neuron'], coords={
+                     'time': time, 'neuron': neurons})
+    Xb = xr.DataArray(Xb, dims=['time', 'dim'], coords={
+                      'time': time, 'dim': dims})
     if Xt is not None:
-        Xt = xr.DataArray(Xt, dims=['time', 'dim'], coords={'time': time, 'dim': dims})
+        Xt = xr.DataArray(Xt, dims=['time', 'dim'], coords={
+                          'time': time, 'dim': dims})
     if Ft is not None:
-        Ft = xr.DataArray(Ft, dims=['neuron', *Ft_coords_dict.keys()], coords={'neuron': neurons, **Ft_coords_dict})
+        Ft = xr.DataArray(Ft, dims=[
+                          'neuron', *Ft_coords_dict.keys()], coords={'neuron': neurons, **Ft_coords_dict})
 
     data = xr.Dataset({'Y': Y, 'Xb': Xb})
     if Xt is not None:
         data['Xt'] = Xt
     if Ft is not None:
         data['Ft'] = Ft
-    
+
     return data
+
+
+def save_results_to_netcdf(
+        results: xr.Dataset,
+        path: str):
+    """
+    Save results to a file.
+    To make the data netCDF safe, some variables need to be converted.
+
+    See below issues for detail.
+    https://github.com/TomGeorge1234/SIMPL/issues/5
+    https://github.com/TomGeorge1234/SIMPL/issues/8
+    """
+    results = results.drop_vars(['overdispersion'])
+    results['spike_mask'] = results['spike_mask'].astype('int32')
+    for var in ['F', 'F_odd_minutes', 'F_even_minutes']:
+        results[var].attrs['reshape'] = int(
+            results[var].attrs['reshape'])  # Convert to int
+    results.to_netcdf(path)
+
+
+def load_results(
+        path: str
+) -> xr.Dataset:
+    """
+    Load results from a saved file.
+    Some variables need to be converted back to their original form.
+
+    See below issues for detail.
+    https://github.com/TomGeorge1234/SIMPL/issues/5
+    https://github.com/TomGeorge1234/SIMPL/issues/8
+
+    Parameters
+    ----------
+    path : str
+        Path to the saved file.
+
+    Returns
+    -------
+    xr.Dataset
+        Results.
+    """
+    results = xr.open_dataset(path)
+    for var in ['F', 'F_odd_minutes', 'F_even_minutes']:
+        results[var].attrs['reshape'] = bool(
+            results[var].attrs['reshape'])  # Convert to bool
+
+    results['spike_mask'] = results['spike_mask'].astype('bool')
+
+    return results
