@@ -45,6 +45,7 @@ class SIMPL:
                 manifold_align_against : str = 'behaviour',
                 evaluate_each_epoch : bool = True,
                 save_likelihood_maps : bool = False,
+                resample_spike_mask : bool = False,
                 ):
         
         """Initializes the SIMPL class.
@@ -147,9 +148,12 @@ class SIMPL:
         self.kernel_bandwidth = kernel_bandwidth
         
         # CREATE SPIKE MASKS 
+        self.resample_spike_mask = resample_spike_mask
+        self.test_frac = test_frac
+        self.block_size = int(speckle_block_size_seconds / self.dt)
         self.spike_mask = create_speckled_mask(size=(self.T, self.N_neurons), # train/test specle mask
                                                sparsity=test_frac, 
-                                               block_size=int(speckle_block_size_seconds / self.dt))
+                                               block_size=self.block_size)
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1) # mask for odd minutes
         self.even_minute_mask = ~self.odd_minute_mask # mask for even minutes
 
@@ -180,8 +184,6 @@ class SIMPL:
             R = None,
             )
         
-        # self.average_speed = jnp.sqrt(Q[0][0] / (self.dt**2)); print(f"Average speed: {self.average_speed : .2f} m/s")
-
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim # as ordered in positon variables X = ['x', 'y', ...]
         self.variable_info_dict = self.init_variables_dict()
@@ -263,13 +265,16 @@ class SIMPL:
         """
         # =========== INCREMENT EPOCH ===========
         self.epoch += 1
-        
+        if self.resample_spike_mask and self.epoch > 0:
+            self.spike_mask = create_speckled_mask(size=(self.T, self.N_neurons), # train/test specle mask
+                                                   sparsity=self.test_frac, 
+                                                   block_size=self.block_size)
+
         # =========== E-STEP ===========
         if self.epoch == 0: self.E = {'X':self.Xb}
         else: self.E = self._E_step(Y=self.Y, F=self.lastF)
         
         # =========== M-STEP ===========
-        # TODO I'm pretty sure this sampling step is unnecessary.
         X = self.E['X']
         self.M = self._M_step(Y=self.Y, X=X)
     
