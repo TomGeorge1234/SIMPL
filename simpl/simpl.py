@@ -38,6 +38,7 @@ class SIMPL:
                 kernel_bandwidth : float = 0.02,
                 observation_noise_std : float = 0.00, #TODO probably remove this unused parameter
                 speed_prior = 0.1,
+                behaviour_prior = None, 
                 test_frac : float = 0.1,
                 speckle_block_size_seconds : float = 1,
                 # Analysis parameters
@@ -99,6 +100,8 @@ class SIMPL:
             A small fixed component added to the observation noise covariance of the Kalman filter. By default 0.00 m. Probably will be deprecated.
         speed_prior : float, optional
             The prior speed of the agent, by default 0.1 m/s.
+        behaviour_prior : Optional, optional
+            Prior over how far the latent positions can deviate from the behaviour positions, by default None (no prior).
         test_frac : float, optional
             The fraction of the data to use for testing, by default 0.1. Testing data is generated using a speckled mask.
         speckle_block_size_seconds : float, optional
@@ -153,12 +156,30 @@ class SIMPL:
         # INITIALISE THE KALMAN FILTER
         mu0 = self.Xb.mean(axis=0) # initial state estimate (estimate from behaviour)
         sigma0 = (1 / self.T) * (((self.Xb - mu0).T) @ (self.Xb - mu0)) # initial state covariance (estimate from behaviour)
-        F = jnp.eye(self.D) # state transition matrix
-        Q = (speed_prior * self.dt)**2 * jnp.eye(self.D)
+        speed_sigma = speed_prior * self.dt
+        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6 # if no behaviour prior, set to a large value (effectively no prior)
+        lam = behaviour_sigma / (speed_sigma + behaviour_sigma)
+        sigma_eff = speed_sigma * behaviour_sigma / (speed_sigma + behaviour_sigma)
+
+        F = lam * jnp.eye(self.D) # state transition matrix
+        B = (1 - lam) * jnp.eye(self.D) # control input matrix
+        Q = (sigma_eff)**2 * jnp.eye(self.D) # process noise covariance
         H = jnp.eye(self.D) # observation matrix
+
         self.R_base = observation_noise_std**2 * jnp.eye(self.D) # base observation noise 
         self.kalman_filter = KalmanFilter(
-            dim_Z = self.D, dim_Y = self.D,mu0 = mu0, sigma0 = sigma0, F = F, Q = Q, H = H, R = None,)
+            dim_Z = self.D, 
+            dim_Y = self.D,
+            dim_U = self.D,
+            mu0 = mu0, 
+            sigma0 = sigma0, 
+            F = F, 
+            B = B, 
+            Q = Q,
+            H = H, 
+            R = None,
+            )
+        
         # self.average_speed = jnp.sqrt(Q[0][0] / (self.dt**2)); print(f"Average speed: {self.average_speed : .2f} m/s")
 
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
@@ -324,6 +345,7 @@ class SIMPL:
 
         mu_f, sigma_f = self.kalman_filter.filter(
             Y = mode_l, 
+            U = self.Xb,
             R = observation_noise)
         mu_s, sigma_s = self.kalman_filter.smooth(
             mus_f = mu_f, 
