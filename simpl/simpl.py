@@ -102,7 +102,7 @@ class SIMPL:
         speed_prior : float, optional
             The prior speed of the agent, by default 0.1 m/s.
         behaviour_prior : Optional, optional
-            Prior over how far the latent positions can deviate from the behaviour positions, by default None (no prior).
+            Prior over how far the latent positions can deviate from the behaviour positions, by default None (no prior). This should typically be off, or large, unless you have good reason to believe the behaviour prior should be enforced strongly. 
         test_frac : float, optional
             The fraction of the data to use for testing, by default 0.1. Testing data is generated using a speckled mask.
         speckle_block_size_seconds : float, optional
@@ -162,12 +162,12 @@ class SIMPL:
         sigma0 = (1 / self.T) * (((self.Xb - mu0).T) @ (self.Xb - mu0)) # initial state covariance (estimate from behaviour)
         speed_sigma = speed_prior * self.dt
         behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6 # if no behaviour prior, set to a large value (effectively no prior)
-        lam = behaviour_sigma / (speed_sigma + behaviour_sigma)
-        sigma_eff = speed_sigma * behaviour_sigma / (speed_sigma + behaviour_sigma)
+        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
 
         F = lam * jnp.eye(self.D) # state transition matrix
         B = (1 - lam) * jnp.eye(self.D) # control input matrix
-        Q = (sigma_eff)**2 * jnp.eye(self.D) # process noise covariance
+        Q = sigma_eff_square * jnp.eye(self.D) # process noise covariance
         H = jnp.eye(self.D) # observation matrix
 
         self.R_base = observation_noise_std**2 * jnp.eye(self.D) # base observation noise 
