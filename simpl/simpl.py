@@ -38,12 +38,14 @@ class SIMPL:
                 kernel_bandwidth : float = 0.02,
                 observation_noise_std : float = 0.00, #TODO probably remove this unused parameter
                 speed_prior = 0.1,
+                behaviour_prior = None, 
                 test_frac : float = 0.1,
                 speckle_block_size_seconds : float = 1,
                 # Analysis parameters
                 manifold_align_against : str = 'behaviour',
                 evaluate_each_epoch : bool = True,
                 save_likelihood_maps : bool = False,
+                resample_spike_mask : bool = False,
                 ):
         
         """Initializes the SIMPL class.
@@ -99,6 +101,8 @@ class SIMPL:
             A small fixed component added to the observation noise covariance of the Kalman filter. By default 0.00 m. Probably will be deprecated.
         speed_prior : float, optional
             The prior speed of the agent, by default 0.1 m/s.
+        behaviour_prior : Optional, optional
+            Prior over how far the latent positions can deviate from the behaviour positions, by default None (no prior). This should typically be off, or large, unless you have good reason to believe the behaviour prior should be enforced strongly. 
         test_frac : float, optional
             The fraction of the data to use for testing, by default 0.1. Testing data is generated using a speckled mask.
         speckle_block_size_seconds : float, optional
@@ -144,23 +148,42 @@ class SIMPL:
         self.kernel_bandwidth = kernel_bandwidth
         
         # CREATE SPIKE MASKS 
+        self.resample_spike_mask = resample_spike_mask
+        self.test_frac = test_frac
+        self.block_size = int(speckle_block_size_seconds / self.dt)
         self.spike_mask = create_speckled_mask(size=(self.T, self.N_neurons), # train/test specle mask
                                                sparsity=test_frac, 
-                                               block_size=int(speckle_block_size_seconds / self.dt))
+                                               block_size=self.block_size)
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1) # mask for odd minutes
         self.even_minute_mask = ~self.odd_minute_mask # mask for even minutes
 
         # INITIALISE THE KALMAN FILTER
         mu0 = self.Xb.mean(axis=0) # initial state estimate (estimate from behaviour)
         sigma0 = (1 / self.T) * (((self.Xb - mu0).T) @ (self.Xb - mu0)) # initial state covariance (estimate from behaviour)
-        F = jnp.eye(self.D) # state transition matrix
-        Q = (speed_prior * self.dt)**2 * jnp.eye(self.D)
+        speed_sigma = speed_prior * self.dt
+        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6 # if no behaviour prior, set to a large value (effectively no prior)
+        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+
+        F = lam * jnp.eye(self.D) # state transition matrix
+        B = (1 - lam) * jnp.eye(self.D) # control input matrix
+        Q = sigma_eff_square * jnp.eye(self.D) # process noise covariance
         H = jnp.eye(self.D) # observation matrix
+
         self.R_base = observation_noise_std**2 * jnp.eye(self.D) # base observation noise 
         self.kalman_filter = KalmanFilter(
-            dim_Z = self.D, dim_Y = self.D,mu0 = mu0, sigma0 = sigma0, F = F, Q = Q, H = H, R = None,)
-        # self.average_speed = jnp.sqrt(Q[0][0] / (self.dt**2)); print(f"Average speed: {self.average_speed : .2f} m/s")
-
+            dim_Z = self.D, 
+            dim_Y = self.D,
+            dim_U = self.D,
+            mu0 = mu0, 
+            sigma0 = sigma0, 
+            F = F, 
+            B = B, 
+            Q = Q,
+            H = H, 
+            R = None,
+            )
+        
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim # as ordered in positon variables X = ['x', 'y', ...]
         self.variable_info_dict = self.init_variables_dict()
@@ -242,13 +265,16 @@ class SIMPL:
         """
         # =========== INCREMENT EPOCH ===========
         self.epoch += 1
-        
+        if self.resample_spike_mask and self.epoch > 0:
+            self.spike_mask = create_speckled_mask(size=(self.T, self.N_neurons), # train/test specle mask
+                                                   sparsity=self.test_frac, 
+                                                   block_size=self.block_size)
+
         # =========== E-STEP ===========
         if self.epoch == 0: self.E = {'X':self.Xb}
         else: self.E = self._E_step(Y=self.Y, F=self.lastF)
         
         # =========== M-STEP ===========
-        # TODO I'm pretty sure this sampling step is unnecessary.
         X = self.E['X']
         self.M = self._M_step(Y=self.Y, X=X)
     
@@ -324,6 +350,7 @@ class SIMPL:
 
         mu_f, sigma_f = self.kalman_filter.filter(
             Y = mode_l, 
+            U = self.Xb,
             R = observation_noise)
         mu_s, sigma_s = self.kalman_filter.smooth(
             mus_f = mu_f, 
