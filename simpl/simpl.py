@@ -100,9 +100,9 @@ class SIMPL:
         observation_noise_std : float, optional
             A small fixed component added to the observation noise covariance of the Kalman filter. By default 0.00 m. Probably will be deprecated.
         speed_prior : float, optional
-            The prior speed of the agent, by default 0.1 m/s.
+            The prior speed of the agent in units of meters per second, by default 0.1 m/s.
         behaviour_prior : Optional, optional
-            Prior over how far the latent positions can deviate from the behaviour positions, by default None (no prior). This should typically be off, or large, unless you have good reason to believe the behaviour prior should be enforced strongly. 
+            Prior over how far the latent positions can deviate from the behaviour positions in units of meters, by default None (no prior). This should typically be off, or very large, unless you have good reason to believe the behaviour prior should be enforced strongly. 
         test_frac : float, optional
             The fraction of the data to use for testing, by default 0.1. Testing data is generated using a speckled mask.
         speckle_block_size_seconds : float, optional
