@@ -600,22 +600,14 @@ class SIMPL:
         # where $\lambda(x)$ is the place field of the cell, $\lambda$ is the mean firing rate of the cell,
         # and $p(x)$ is the spatial occupancy.
         # https://proceedings.neurips.cc/paper/1992/file/5dd9db5e033da9c6fb5ba83c7a7ebea9-Paper.pdf
-        print("Calculating spatial information...")
         if F is not None and pos is not None:
-            print(f"F.shape = {F.shape}")
             lambda_x = F / self.dt  # (neuron, position_bin)
-            print(f"lambda_x.shape = {lambda_x.shape}")
             p_x = pos  # (neuron, position_bin,)
-            print(f"p_x.shape = {p_x.shape}")
             p_x = p_x / jnp.sum(p_x, axis=1)[:, None]
-            print(f"p_x.shape after normalisation = {p_x.shape}")
             # lambda_ = lambda_x @ p_x  # Mean firing rate (neuron, ) unit : hz
             lambda_ = jnp.sum(lambda_x * p_x, axis=1)  # Mean firing rate (neuron, ) unit : hz
-            print(f"lambda_.shape = {lambda_.shape}")
             I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * p_x, axis=1)
-            print(f"I_F.shape = {I_F.shape}")
             I_F = I_F / lambda_  # bits/spike
-            print(f"I_F.shape after normalisation = {I_F.shape}")
 
             assert (
                 np.allclose(p_x.sum(axis=1), 1.0)
