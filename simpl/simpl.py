@@ -46,7 +46,6 @@ class SIMPL:
                 evaluate_each_epoch : bool = True,
                 save_likelihood_maps : bool = False,
                 resample_spike_mask : bool = False,
-                trial_boundaries : np.ndarray = None,
                 ):
         
         """Initializes the SIMPL class.
@@ -115,9 +114,6 @@ class SIMPL:
             If False, the results can only be saved at the end of the training when self.evaluate_epoch() is manually called. Epoch 0 is also always evaluated.
         save_likelihood_maps : bool, optional
             Whether to save the likelihood maps of the spikes at each time step (these a size env x time so cost a LOT of memory, only save if needed), by default False
-        trial_boundaries : np.ndarray, optional
-            Array of indices where trials start. If provided, each trial will be processed independently by the Kalman filter. Shape should be (N_trials,) with first element typically 0. For example, [0, 1000, 2000] means trials are [0:1000, 1000:2000, 2000:end]. If None, all data is treated as a single continuous trial, by default None
-
         
         """
         # PREPARE THE DATA INTO JAX ARRAYS
@@ -127,6 +123,12 @@ class SIMPL:
         self.time = jnp.array(data.time.values) # (T,)
         self.neuron = jnp.array(data.neuron.values) # (N_neurons,)
         self.dt = self.time[1] - self.time[0] # time step size
+        if 'trial_boundaries' in data.keys():
+            self.use_trial_boundaries = True
+            self.trial_boundaries = data.trial_boundaries.values
+        else:
+            self.use_trial_boundaries = False
+
         # INTEGER VARIABLES 
         self.D = data.Xb.shape[1] # number of dimensions of the latent space
         self.T = len(data.time) # number of time steps
@@ -160,16 +162,11 @@ class SIMPL:
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1) # mask for odd minutes
         self.even_minute_mask = ~self.odd_minute_mask # mask for even minutes
 
-        # SET UP TRIAL BOUNDARIES
+        # SET UP TRIAL BOUNDARIES (from prepare_data output)
+        trial_boundaries = data.attrs.get('trial_boundaries', None)
         if trial_boundaries is not None:
             self.use_trial_boundaries = True
-            trial_boundaries = np.array(trial_boundaries)
-            assert trial_boundaries[0] == 0, "First trial boundary must be 0"
-            assert trial_boundaries[-1] < self.T, "Last trial boundary must be <= T"
-            assert np.all(np.diff(trial_boundaries) > 0), "Trial boundaries must be strictly increasing"
-            # Create trial slices: [(start, end), ...]
-            self.trial_slices = [slice(trial_boundaries[i], trial_boundaries[i+1]) for i in range(len(trial_boundaries)-1)]
-            self.trial_slices.append(slice(trial_boundaries[-1], self.T))
+            self.trial_slices = data.trial_slices
         else:
             self.use_trial_boundaries = False
 
