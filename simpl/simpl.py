@@ -126,6 +126,7 @@ class SIMPL:
         if 'trial_boundaries' in data.keys():
             self.use_trial_boundaries = True
             self.trial_boundaries = data.trial_boundaries.values
+            self.trial_slices = data.trial_slices.values
         else:
             self.use_trial_boundaries = False
 
@@ -134,7 +135,6 @@ class SIMPL:
         self.T = len(data.time) # number of time steps
         self.N_neurons = data.Y.shape[1]
         self.N_PFmax = 20 # to keep a fixed shape each tuning curve has max possible number of place fields
-
 
         # SET UP THE ENVIRONMENT
         self.environment = environment; assert self.D == environment.D, "The environment and data dimensions must match"
@@ -161,14 +161,6 @@ class SIMPL:
                                                block_size=self.block_size)
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1) # mask for odd minutes
         self.even_minute_mask = ~self.odd_minute_mask # mask for even minutes
-
-        # SET UP TRIAL BOUNDARIES (from prepare_data output)
-        trial_boundaries = data.attrs.get('trial_boundaries', None)
-        if trial_boundaries is not None:
-            self.use_trial_boundaries = True
-            self.trial_slices = data.trial_slices
-        else:
-            self.use_trial_boundaries = False
 
         # INITIALISE THE KALMAN FILTER
         speed_sigma = speed_prior * self.dt
