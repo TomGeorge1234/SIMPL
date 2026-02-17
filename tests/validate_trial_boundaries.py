@@ -15,8 +15,13 @@ from simpl.simpl import SIMPL
 import kalmax
 
 
-def load_and_prepare_demo_data():
+def load_and_prepare_demo_data(trial_boundaries=None):
     """Load and prepare data from the demo.
+    
+    Parameters
+    ----------
+    trial_boundaries : np.ndarray, optional
+        Trial boundaries to pass to prepare_data. If None, no trial boundaries.
     
     Returns
     -------
@@ -45,7 +50,8 @@ def load_and_prepare_demo_data():
         neurons=neuron,
         Xt=Xt,
         Ft=Ft,
-        Ft_coords_dict={'x': xbins, 'y': ybins}
+        Ft_coords_dict={'x': xbins, 'y': ybins},
+        trial_boundaries=trial_boundaries,
     )
     
     return data
@@ -74,17 +80,17 @@ def create_environment(data):
     return env
 
 
-def create_simpl_model(data, env, trial_boundaries=None):
+def create_simpl_model(data, env):
     """Create and configure SIMPL model.
+    
+    Trial boundaries are read from data.attrs (set by prepare_data).
     
     Parameters
     ----------
     data : xr.Dataset
-        Prepared data
+        Prepared data (from prepare_data, with trial_boundaries in attrs if applicable)
     env : Environment
         Environment object
-    trial_boundaries : np.ndarray, optional
-        Trial boundaries array, by default None
         
     Returns
     -------
@@ -115,7 +121,6 @@ def create_simpl_model(data, env, trial_boundaries=None):
         evaluate_each_epoch=evaluate_each_epoch,
         save_likelihood_maps=save_likelihood_maps,
         resample_spike_mask=resample_spike_mask,
-        trial_boundaries=trial_boundaries,
     )
     
     return simpl_model
@@ -422,30 +427,34 @@ def main(num_trials=5, num_epochs=5, save_plots=True):
     
     # Load and prepare data
     print("\n1. Loading and preparing data...")
-    data = load_and_prepare_demo_data()
-    T = len(data.time)
+    data_raw = load_datafile('gridcelldata.npz')
+    T = len(data_raw['time'])
     print(f"   Data loaded: {T} time steps")
     
-    # Create environment
-    print("\n2. Creating environment...")
-    env = create_environment(data)
-    print("   Environment created")
-    
     # Create trial boundaries
-    print(f"\n3. Creating {num_trials} equal-sized trials...")
+    print(f"\n2. Creating {num_trials} equal-sized trials...")
     trial_boundaries = create_trial_boundaries(T, num_trials=num_trials)
     print(f"   Trial boundaries: {trial_boundaries}")
     
+    # Prepare data (without and with trial boundaries)
+    data_no_boundaries = load_and_prepare_demo_data()
+    data_with_boundaries = load_and_prepare_demo_data(trial_boundaries=trial_boundaries)
+    
+    # Create environment
+    print("\n3. Creating environment...")
+    env = create_environment(data_no_boundaries)
+    print("   Environment created")
+    
     # Run 1: Without trial boundaries
     print("\n4. Running SIMPL WITHOUT trial boundaries...")
-    simpl_model_no_boundaries = create_simpl_model(data, env, trial_boundaries=None)
+    simpl_model_no_boundaries = create_simpl_model(data_no_boundaries, env)
     run_simpl_training(simpl_model_no_boundaries, num_epochs=num_epochs)
     results_no_boundaries = simpl_model_no_boundaries.results
     print("   Training complete")
     
     # Run 2: With trial boundaries
     print("\n5. Running SIMPL WITH trial boundaries...")
-    simpl_model_with_boundaries = create_simpl_model(data, env, trial_boundaries=trial_boundaries)
+    simpl_model_with_boundaries = create_simpl_model(data_with_boundaries, env)
     run_simpl_training(simpl_model_with_boundaries, num_epochs=num_epochs)
     results_with_boundaries = simpl_model_with_boundaries.results
     print("   Training complete")
