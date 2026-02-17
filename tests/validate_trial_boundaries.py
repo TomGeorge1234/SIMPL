@@ -146,7 +146,7 @@ def create_trial_boundaries(T, num_trials=5):
     return trial_boundaries
 
 
-def run_simpl_training(simpl_model, num_epochs=5):
+def run_simpl_training(simpl_model: SIMPL, num_epochs: int = 5):
     """Run SIMPL training.
     
     Parameters
@@ -445,18 +445,18 @@ def main(num_trials=5, num_epochs=5, save_plots=True):
     env = create_environment(data_no_boundaries)
     print("   Environment created")
     
-    # Run 1: Without trial boundaries
-    print("\n4. Running SIMPL WITHOUT trial boundaries...")
-    simpl_model_no_boundaries = create_simpl_model(data_no_boundaries, env)
-    run_simpl_training(simpl_model_no_boundaries, num_epochs=num_epochs)
-    results_no_boundaries = simpl_model_no_boundaries.results
-    print("   Training complete")
-    
-    # Run 2: With trial boundaries
-    print("\n5. Running SIMPL WITH trial boundaries...")
+    # Run 1: With trial boundaries
+    print("\n4. Running SIMPL WITH trial boundaries...")
     simpl_model_with_boundaries = create_simpl_model(data_with_boundaries, env)
     run_simpl_training(simpl_model_with_boundaries, num_epochs=num_epochs)
     results_with_boundaries = simpl_model_with_boundaries.results
+    print("   Training complete")
+    
+    # Run 2: With trial boundaries
+    print("\n5. Running SIMPL WITHOUT trial boundaries...")
+    simpl_model_no_boundaries = create_simpl_model(data_no_boundaries, env)
+    run_simpl_training(simpl_model_no_boundaries, num_epochs=num_epochs)
+    results_no_boundaries = simpl_model_no_boundaries.results
     print("   Training complete")
     
     # Compare results
@@ -548,8 +548,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Validate SIMPL trial boundaries functionality')
     parser.add_argument('--num_trials', type=int, default=100,
                         help='Number of trials to create (default: 100)')
-    parser.add_argument('--num_epochs', type=int, default=10,
-                        help='Number of training epochs (default: 10)')
+    parser.add_argument('--num_epochs', type=int, default=5,
+                        help='Number of training epochs (default: 5)')
     parser.add_argument('--no_plots', action='store_true',
                         help='Skip saving plots')
     
