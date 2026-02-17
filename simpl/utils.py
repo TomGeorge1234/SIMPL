@@ -275,9 +275,10 @@ def prepare_data(
     Xt: np.ndarray = None,
     Ft: np.ndarray = None,
     Ft_coords_dict: dict = None,
+    trial_boundaries: np.ndarray = None,
 ) -> xr.Dataset:
     """
-    Prepare data for simpl  model fitting.
+    Prepare data for simpl model fitting.
 
     Parameters
     ----------
@@ -297,17 +298,21 @@ def prepare_data(
         Tuning curves, shape (N, *Ft_coords_dict.values()).
     Ft_coords_dict : dict, optional
         Dictionary of coordinates for the tuning curves. For example if D=2, Ft_coords_dict = {'x': xbins, 'y': ybins} where xbins and ybins are the coordinates for the centres of the tuning curve bins.
+    trial_boundaries : np.ndarray, optional
+        Array of indices where trials start. If provided, each trial will be processed independently by the Kalman filter. Shape should be (N_trials,) with first element typically 0. For example, [0, 1000, 2000] means trials are [0:1000, 1000:2000, 2000:end]. If None, all data is treated as a single continuous trial, by default None.
 
     Returns
     -------
     xr.Dataset
-        Data for simpl model fitting.
+        Data for simpl model fitting. If trial_boundaries was provided, stores validated boundaries in trial_boundaries and trial_slices for SIMPL to use.
     """
 
     assert Y.shape[0] == Xb.shape[0]
     assert Y.shape[0] == len(time)
     if Xt is not None:
         assert Y.shape[0] == Xt.shape[0]
+
+    T = Y.shape[0]
 
     if neurons is None:
         neurons = np.arange(Y.shape[1])
@@ -330,6 +335,18 @@ def prepare_data(
         data['Xt'] = Xt
     if Ft is not None:
         data['Ft'] = Ft
+
+    # Trial boundary handling: validate and store for SIMPL
+    if trial_boundaries is not None:
+        trial_boundaries = np.array(trial_boundaries)
+        assert trial_boundaries[0] == 0, "First trial boundary must be 0"
+        assert trial_boundaries[-1] < T, "Last trial boundary must be < T"
+        assert np.all(np.diff(trial_boundaries) > 0), "Trial boundaries must be strictly increasing"
+        data['trial_boundaries'] = trial_boundaries
+
+        trial_slices = [slice(trial_boundaries[i], trial_boundaries[i+1]) for i in range(len(trial_boundaries)-1)]
+        trial_slices.append(slice(trial_boundaries[-1], T))
+        data['trial_slices'] = trial_slices
 
     return data
 
