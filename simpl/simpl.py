@@ -320,7 +320,7 @@ class SIMPL:
             F_prev=self.lastF,
             Xt=self.Xt, 
             Ft=self.Ft,
-            pos=self.M['PX']
+            PX=self.M['PX']
             )
         results = self.dict_to_dataset({**self.M, **self.E, **evals}).expand_dims({'epoch':[self.epoch]})
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
@@ -446,7 +446,7 @@ class SIMPL:
         stacked_masks = jnp.array([self.spike_mask, self.odd_minute_mask, self.even_minute_mask])
         all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-        PX = all_PX[0] # (N_neurons, N_bins) Since each neuron has different mask, we need to store all of them.
+        PX = all_PX[0] # (N_bins,) Normalized position density.
         # Interpolates the rate maps just calculated onto the latent trajectory to establish a "smoothed" continuous estimate of the firing rates (note using KDE func directly would be too slow here)
         FX = self.interpolate_firing_rates(X, F)
         M = {'F':F,
@@ -523,8 +523,8 @@ class SIMPL:
             The spike counts of the neurons at each time step
         FX : jnp.ndarray, shape (T, N_neurons)
             The estimated firing rates of the neurons at each time step
-        PX : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated position density of the latent trajectory through each bin of the environment
+        PX : jnp.ndarray, shape (N_bins,)
+            The normalized position density of the latent trajectory through each bin of the environment
         F_odd_mins : jnp.ndarray, shape (N_neurons, N_bins)
             The estimated place fields from the odd minutes of the data
         F_even_mins : jnp.ndarray, shape (N_neurons, N_bins)
@@ -597,17 +597,10 @@ class SIMPL:
 
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            lambda_x = F / self.dt  # (neuron, position_bin)
-            p_x = PX  # (neuron, position_bin,)
-            p_x = p_x / jnp.sum(p_x, axis=1)[:, None]
-            # lambda_ = lambda_x @ p_x  # Mean firing rate (neuron, ) unit : hz
-            lambda_ = jnp.sum(lambda_x * p_x, axis=1)  # Mean firing rate (neuron, ) unit : hz
-            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * p_x, axis=1)
+            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
+            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
+            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
             I_F = I_F / lambda_  # bits/spike
-
-            assert (
-                np.allclose(p_x.sum(axis=1), 1.0)
-            ), f"p_x does not sum to 1, sum is {p_x.sum(axis=1)}"  # p_x is a probability distribution
             if lambda_.mean() < 0.01 or lambda_.mean() > 100:
                 print(
                     f"Warning: mean firing rate is {lambda_.mean():.4f} Hz, which is outside the expected range. Check if DT is correct."
@@ -800,7 +793,7 @@ class SIMPL:
             'PX': {
                 'name': 'Occupancy',
                 'description': 'The spatial occupancy at each position bin, estimated from the latent trajectory using a kernel density estimator. This is the denominator of the KDE used to fit receptive fields.',
-                'dims': ['neuron', *self.dim],
+                'dims': [*self.dim],
                 'axis_title': 'Occupancy',
                 'formula': r'$p(x)$',
                 'reshape': True,
