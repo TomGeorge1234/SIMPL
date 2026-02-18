@@ -261,7 +261,6 @@ class SIMPL:
 
     def _kalman_E_step(
         self, 
-        kalman_filter: KalmanFilter,
         mode_l: jnp.ndarray, 
         Xb: jnp.ndarray,
         R: jnp.ndarray,
@@ -273,8 +272,6 @@ class SIMPL:
         
         Parameters
         ----------
-        kalman_filter: KalmanFilter
-            The Kalman filter to use for the E-step.
         mode_l: jnp.ndarray
             The mode of the likelihoods.
         Xb: jnp.ndarray
@@ -300,23 +297,23 @@ class SIMPL:
             'sigma_s': The smoothed covariance.
         """
         # Run filter and smoother
-        mu_f, sigma_f = kalman_filter.filter(
+        mu_f, sigma_f = self.kalman_filter.filter(
             Y = mode_l,
             U = Xb,
             R = R)
-        mu_s, sigma_s = kalman_filter.smooth(
+        mu_s, sigma_s = self.kalman_filter.smooth(
             mus_f = mu_f,
             sigmas_f = sigma_f)
 
         # Calculate likelihoods
-        logPYF = kalman_filter.loglikelihood(Y=mode_l, R=R, mu=mu_s, sigma=sigma_s).sum()
+        logPYF = self.kalman_filter.loglikelihood(Y=mode_l, R=R, mu=mu_s, sigma=sigma_s).sum()
 
         # Test likelihood
         logPYXF_maps_test = poisson_log_likelihood(Y, F, mask=~spike_mask)
         no_spikes_test = (jnp.sum(Y * ~spike_mask, axis=1) == 0)
         _, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test))
         observation_noise_test = jnp.where(no_spikes_test[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
-        logPYF_test = kalman_filter.loglikelihood(Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s).sum()
+        logPYF_test = self.kalman_filter.loglikelihood(Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s).sum()
 
         # Return the results
         results = {
@@ -464,7 +461,6 @@ class SIMPL:
                 Y_trial = Y[trial_slice]
                 spike_mask_trial = self.spike_mask[trial_slice]
                 results = self._kalman_E_step(
-                    kalman_filter=self.kalman_filter,
                     mode_l=mode_l_trial,
                     Xb=Xb_trial,
                     R=R_trial,
@@ -489,7 +485,6 @@ class SIMPL:
 
         else:
             results = self._kalman_E_step(
-                kalman_filter=self.kalman_filter,
                 mode_l=mode_l,
                 Xb=self.Xb,
                 R=observation_noise,
