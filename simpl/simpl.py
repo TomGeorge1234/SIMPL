@@ -186,15 +186,15 @@ class SIMPL:
             'R': None,
         }
 
-        # Prepare Kalman Filters for data (or for each trial)
-        self.kalman_filter: Union[list[KalmanFilter], KalmanFilter] = None
-        if self.use_trial_boundaries:
-            self.kalman_filter = [
-                self._prepare_kalman_filter(self.Xb[trial_slice]) for trial_slice in self.trial_slices
-            ]
-        else:
-            self.kalman_filter = self._prepare_kalman_filter(self.Xb)
-
+        # Prepare Kalman Filter
+        T = len(self.Xb)
+        mu0 = self.Xb.mean(axis=0)
+        sigma0 = (1 / T) * (((self.Xb - mu0).T) @ (self.Xb - mu0)) 
+        self.kalman_filter = KalmanFilter(
+            mu0 = mu0, 
+            sigma0 = sigma0, 
+            **self.kalman_params,
+        )
         
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim # as ordered in positon variables X = ['x', 'y', ...]
@@ -456,7 +456,7 @@ class SIMPL:
             mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
             logPYF_list, logPYF_test_list = [], []
             
-            for trial_slice, kalman_filter in zip(self.trial_slices, self.kalman_filter):
+            for trial_slice in self.trial_slices:
                 # Extract trial data
                 mode_l_trial = mode_l[trial_slice]
                 Xb_trial = self.Xb[trial_slice]
@@ -464,7 +464,7 @@ class SIMPL:
                 Y_trial = Y[trial_slice]
                 spike_mask_trial = self.spike_mask[trial_slice]
                 results = self._kalman_E_step(
-                    kalman_filter=kalman_filter,
+                    kalman_filter=self.kalman_filter,
                     mode_l=mode_l_trial,
                     Xb=Xb_trial,
                     R=R_trial,
