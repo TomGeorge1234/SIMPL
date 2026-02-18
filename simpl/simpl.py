@@ -652,7 +652,7 @@ class SIMPL:
         if self.Ft is not None:
             # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
             M_exact = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft),
-                       'PX':M_best['PX'], # the position density is the same as the best model since this is a property of the data, not the model
+                       'PX':M_best['PX'], # the occupancy is the same as the best model.
                        }
             E_exact = self._E_step(self.Y, self.Ft)
             evals_exact = self.get_metrics(
@@ -666,7 +666,7 @@ class SIMPL:
                     F_prev = None,
                     Xt = self.Xt,
                     Ft = self.Ft,
-                    pos=None)
+                    PX=M_exact['PX'])
             results = self.dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({'epoch':[-2]})
             self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
             self.results = self.results.sortby('epoch') # sort the results by epoch so the exact comes before the best model
