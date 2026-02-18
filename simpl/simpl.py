@@ -320,7 +320,7 @@ class SIMPL:
             F_prev=self.lastF,
             Xt=self.Xt, 
             Ft=self.Ft,
-            pos=self.M['pos_density']
+            pos=self.M['PX']
             )
         results = self.dict_to_dataset({**self.M, **self.E, **evals}).expand_dims({'epoch':[self.epoch]})
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
@@ -444,16 +444,16 @@ class SIMPL:
         # vmap over the mask input (avoids a lot of redundant computation)
         # TODO It would be cleaner to the odd/even masks in get_metrics() but then I couldn't exploit the vmap. 
         stacked_masks = jnp.array([self.spike_mask, self.odd_minute_mask, self.even_minute_mask])
-        all_F, all_pos = vmap(kde_func)(stacked_masks)
+        all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-        pos = all_pos[0] # (N_neurons, N_bins) Since each neuron has different mask, we need to store all of them.
+        PX = all_PX[0] # (N_neurons, N_bins) Since each neuron has different mask, we need to store all of them.
         # Interpolates the rate maps just calculated onto the latent trajectory to establish a "smoothed" continuous estimate of the firing rates (note using KDE func directly would be too slow here)
         FX = self.interpolate_firing_rates(X, F)
         M = {'F':F,
              'F_odd_minutes':F_odd_minutes,
              'F_even_minutes':F_even_minutes,
              'FX':FX,
-             'pos_density': pos
+             'PX': PX
              }
       
         
@@ -496,7 +496,7 @@ class SIMPL:
                           F_prev:jnp.ndarray=None, 
                           Xt:jnp.ndarray=None, 
                           Ft:jnp.ndarray=None,
-                          pos:jnp.ndarray=None) -> dict:
+                          PX:jnp.ndarray=None) -> dict:
         """Calculates important metrics and baselines on the current epochs results. Warning: this is a relaxed function; pass in whatever data you have and it will return whatever metrics it is able to calculate. These are: 
         
         - X_R2 : the R2 between the true and estimated latent positions
@@ -509,7 +509,7 @@ class SIMPL:
         - field_size : the average size of the fields in the place fields
         - field_change : how much the fields have shifted from the last epoch (if available)
         - trajectory_change : the change in the latent positions from the last epoch (if available)
-        - pos_density : the density of the latent trajectory through each bin of the environment (i.e. how much data supports each bin of the place fields)
+        - PX : the density of the latent trajectory through each bin of the environment (i.e. how much data supports each bin of the place fields)
 
         Only variables which _can_ be calculated are calculated (i.e. if the true latent positions are not available, the X_R2 metric will not be calculated nor returned in the dictionary).
         
@@ -523,6 +523,8 @@ class SIMPL:
             The spike counts of the neurons at each time step
         FX : jnp.ndarray, shape (T, N_neurons)
             The estimated firing rates of the neurons at each time step
+        PX : jnp.ndarray, shape (N_neurons, N_bins)
+            The estimated position density of the latent trajectory through each bin of the environment
         F_odd_mins : jnp.ndarray, shape (N_neurons, N_bins)
             The estimated place fields from the odd minutes of the data
         F_even_mins : jnp.ndarray, shape (N_neurons, N_bins)
@@ -594,15 +596,9 @@ class SIMPL:
             metrics['trajectory_change'] = delta_X
 
         # SPATIAL INFORMATION
-        # Following An Information-Theoretic Approach to Deciphering the Hippocampal Code,
-        # the formula to compute the spatial information is as follows:
-        # $I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$
-        # where $\lambda(x)$ is the place field of the cell, $\lambda$ is the mean firing rate of the cell,
-        # and $p(x)$ is the spatial occupancy.
-        # https://proceedings.neurips.cc/paper/1992/file/5dd9db5e033da9c6fb5ba83c7a7ebea9-Paper.pdf
-        if F is not None and pos is not None:
+        if F is not None and PX is not None:
             lambda_x = F / self.dt  # (neuron, position_bin)
-            p_x = pos  # (neuron, position_bin,)
+            p_x = PX  # (neuron, position_bin,)
             p_x = p_x / jnp.sum(p_x, axis=1)[:, None]
             # lambda_ = lambda_x @ p_x  # Mean firing rate (neuron, ) unit : hz
             lambda_ = jnp.sum(lambda_x * p_x, axis=1)  # Mean firing rate (neuron, ) unit : hz
@@ -669,7 +665,7 @@ class SIMPL:
                 F_prev = None,
                 Xt = self.Xt,
                 Ft = self.Ft,
-                pos = M['pos_density']
+                PX = M['PX']
                 )
         results = self.dict_to_dataset({**M, **E, **evals}).expand_dims({'epoch':[-1]})
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
@@ -797,6 +793,14 @@ class SIMPL:
                 'dims':['time', 'neuron'],
                 'axis_title':r'Firing rate',
                 'formula':r'$f(t)$',
+            },
+            'PX': {
+                'name': 'Occupancy',
+                'description': 'The spatial occupancy at each position bin, estimated from the latent trajectory using a kernel density estimator. This is the denominator of the KDE used to fit receptive fields.',
+                'dims': ['neuron', *self.dim],
+                'axis_title': 'Occupancy',
+                'formula': r'$p(x)$',
+                'reshape': True,
             },
             # Ground truth data variables
             'Xb': {
@@ -973,6 +977,18 @@ class SIMPL:
                 'axis title':'Spike log-likelihood (test)',
                 'formula':r'$\log P(Y_{\textrm{test}}|X(t), \Theta)$',  
             },
+            'spatial_information': {
+                'axis title': "Spatial Information (bits/spike)",
+                'name': "Spatial information",
+                'description': "Following 'An Information-Theoretic Approach to Deciphering the Hippocampal Code',\
+                                the formula to compute the spatial information is as follows:\
+                                $I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$\
+                                where $\lambda(x)$ is the place field of the cell, $\lambda$ is the mean firing rate of the cell,\
+                                and $p(x)$ is the spatial occupancy.\
+                                https://proceedings.neurips.cc/paper/1992/file/5dd9db5e033da9c6fb5ba83c7a7ebea9-Paper.pdf",
+                'dims': ["neuron"],
+                'formula': r'$I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$',
+            },
             'negative_entropy': {
                 'name':'Negative entropy',
                 'description':'The negative entropy of each of the receptive fields, -sum(F * log(F)).',
@@ -1052,19 +1068,6 @@ class SIMPL:
                 'dims':['time', 'neuron'],
                 'axis_title':'Spike mask',
                 'formula':r'$\textrm{mask}(t, n)$',
-            },
-            'spatial_information': {
-                "axis title": "Spatial Information (bits/spike)",
-                "name": "Spatial information",
-                "description": "The spatial information of each of the receptive fields, -sum(F * log(F)).",
-                "dims": ["neuron"],
-            },
-            'pos_density': {
-                "axis title": "Position density",
-                "name": "Position density",
-                "description": "The density of the positions in the environment, estimated from the behaviour using a kernel density estimator.",
-                "dims": ['neuron', *self.dim],
-                'reshape':True,
             },
         }
         return variable_info_dict
