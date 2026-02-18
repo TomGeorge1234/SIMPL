@@ -299,7 +299,7 @@ def prepare_data(
     Ft_coords_dict : dict, optional
         Dictionary of coordinates for the tuning curves. For example if D=2, Ft_coords_dict = {'x': xbins, 'y': ybins} where xbins and ybins are the coordinates for the centres of the tuning curve bins.
     trial_boundaries : np.ndarray, optional
-        Array of indices where trials start. If provided, each trial will be processed independently by the Kalman filter. Shape should be (N_trials,) with first element typically 0. For example, [0, 1000, 2000] means trials are [0:1000, 1000:2000, 2000:end]. If None, all data is treated as a single continuous trial, by default None.
+        Array of indices where trials start. If provided, each trial will be processed independently by the Kalman filter. Shape should be (N_trials,) with first element typically 0. For example, [0, 1000, 2000] means trials are [0:1000, 1000:2000, 2000:end]. If None, all data is treated as a single continuous trial, so trial_boundaries will be set to [0]. 
 
     Returns
     -------
@@ -337,16 +337,18 @@ def prepare_data(
         data['Ft'] = Ft
 
     # Trial boundary handling: validate and store for SIMPL
-    if trial_boundaries is not None:
-        trial_boundaries = np.array(trial_boundaries)
-        assert trial_boundaries[0] == 0, "First trial boundary must be 0"
-        assert trial_boundaries[-1] < T, "Last trial boundary must be < T"
-        assert np.all(np.diff(trial_boundaries) > 0), "Trial boundaries must be strictly increasing"
-        data['trial_boundaries'] = trial_boundaries
+    if trial_boundaries is None:
+        trial_boundaries = [0] # This makes the whole data a single "trial"
 
-        trial_slices = [slice(trial_boundaries[i], trial_boundaries[i+1]) for i in range(len(trial_boundaries)-1)]
-        trial_slices.append(slice(trial_boundaries[-1], T))
-        data['trial_slices'] = trial_slices
+    trial_boundaries = np.array(trial_boundaries)
+    assert trial_boundaries[0] == 0, "First trial boundary must be 0"
+    assert trial_boundaries[-1] < T, "Last trial boundary must be < T"
+    assert np.all(np.diff(trial_boundaries) > 0), "Trial boundaries must be strictly increasing"
+    data['trial_boundaries'] = trial_boundaries
+
+    trial_slices = [slice(trial_boundaries[i], trial_boundaries[i+1]) for i in range(len(trial_boundaries)-1)]
+    trial_slices.append(slice(trial_boundaries[-1], T))
+    data['trial_slices'] = trial_slices
 
     return data
 
