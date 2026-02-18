@@ -21,7 +21,7 @@ from simpl.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
 from kalmax.kalman import KalmanFilter
-from kalmax.kde import kde, kde_circular1d
+from kalmax.kde import kde, kde_angular
 from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory
 from kalmax.utils import fit_gaussian
 from kalmax.kernels import gaussian_kernel
@@ -116,7 +116,7 @@ class SIMPL:
         save_likelihood_maps : bool, optional
             Whether to save the likelihood maps of the spikes at each time step (these a size env x time so cost a LOT of memory, only save if needed), by default False
         is_circular : bool, optional
-            Whether the latent space is circular (e.g. head direction data). If True, a kde_circular1d is used in the M-step, by default False. 
+            Whether the latent space is circular (e.g. head direction data). If True, a kde_angular is used in the M-step, by default False. 
             Currently it only supports 1D circular data, so if True, the environment should have D=1.
             It expects the coordinates of the environment to be in radians and to range from -pi to pi.
 
@@ -233,7 +233,7 @@ class SIMPL:
 
         self.is_circular = is_circular
         if is_circular:
-            self.kde = kde_circular1d
+            self.kde = kde_angular
         else:
             self.kde = kde
     
