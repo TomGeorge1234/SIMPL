@@ -629,16 +629,37 @@ class SIMPL:
         if self.ground_truth_available == False:
             warnings.warn("Ground truth data not available, so the baselines cannot be calculated.")
             return
-        
+
+        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
+        M_best = self._M_step(self.Y, self.Xt)
+        E_best = self._E_step(self.Y, M_best['F']) 
+        evals_best = self.get_metrics(
+                X = E_best['X'],
+                F = M_best['F'],
+                Y = self.Y,
+                FX = M_best['FX'],
+                F_odd_mins = M_best['F_odd_minutes'],
+                F_even_mins = M_best['F_even_minutes'],
+                X_prev = None,
+                F_prev = None,
+                Xt = self.Xt,
+                Ft = self.Ft,
+                PX = M_best['PX']
+                )
+        results = self.dict_to_dataset({**M_best, **E_best, **evals_best}).expand_dims({'epoch':[-1]})
+        self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
+
         if self.Ft is not None:
             # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
-            M = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft)}
-            E = self._E_step(self.Y, self.Ft)
-            evals = self.get_metrics(
-                    X = E['X'],
+            M_exact = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft),
+                       'PX':M_best['PX'], # the position density is the same as the best model since this is a property of the data, not the model
+                       }
+            E_exact = self._E_step(self.Y, self.Ft)
+            evals_exact = self.get_metrics(
+                    X = E_exact['X'],
                     F = self.Ft,
                     Y = self.Y,
-                    FX = M['FX'],
+                    FX = M_exact['FX'],
                     F_odd_mins = None,
                     F_even_mins = None,
                     X_prev = None,
@@ -646,29 +667,11 @@ class SIMPL:
                     Xt = self.Xt,
                     Ft = self.Ft,
                     pos=None)
-            results = self.dict_to_dataset({**M, **E, **evals}).expand_dims({'epoch':[-2]})
+            results = self.dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({'epoch':[-2]})
             self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
+            self.results = self.results.sortby('epoch') # sort the results by epoch so the exact comes before the best model
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")  
-
-        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
-        M = self._M_step(self.Y, self.Xt)
-        E = self._E_step(self.Y, M['F']) 
-        evals = self.get_metrics(
-                X = E['X'],
-                F = M['F'],
-                Y = self.Y,
-                FX = M['FX'],
-                F_odd_mins = M['F_odd_minutes'],
-                F_even_mins = M['F_even_minutes'],
-                X_prev = None,
-                F_prev = None,
-                Xt = self.Xt,
-                Ft = self.Ft,
-                PX = M['PX']
-                )
-        results = self.dict_to_dataset({**M, **E, **evals}).expand_dims({'epoch':[-1]})
-        self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
 
         return 
     
