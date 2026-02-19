@@ -208,7 +208,9 @@ class SIMPL:
         self.results.attrs = { #env meta data in case you need it later
             'env_extent':self.environment.extent, 
             'env_pad':self.environment.pad, 
-            'env_bin_size':self.environment.bin_size
+            'env_bin_size':self.environment.bin_size,
+            'trial_boundaries':self.trial_boundaries,
+            'trial_slices':self.trial_slices
             }
         self.results = xr.merge([self.results, self.dict_to_dataset({'Xb':self.Xb, 'Y':self.Y, 'spike_mask':self.spike_mask})]) # add spikes and behaviour to the results
         self.loglikelihoods = xr.Dataset(coords={'epoch':jnp.array([],dtype=int)}) # a smaller dict just to save likelihoods for online evaluation during training
