@@ -10,7 +10,7 @@ import xarray as xr
 import scipy
 import skimage
 import warnings
-from typing import Callable
+from typing import Callable, Union
 from tqdm import tqdm
 import time 
 
@@ -129,12 +129,20 @@ class SIMPL:
         self.time = jnp.array(data.time.values) # (T,)
         self.neuron = jnp.array(data.neuron.values) # (N_neurons,)
         self.dt = self.time[1] - self.time[0] # time step size
+
+      
         # INTEGER VARIABLES 
         self.D = data.Xb.shape[1] # number of dimensions of the latent space
         self.T = len(data.time) # number of time steps
         self.N_neurons = data.Y.shape[1]
         self.N_PFmax = 20 # to keep a fixed shape each tuning curve has max possible number of place fields
 
+        # SET TRIAL BOUNDARIES (IF GIVEN)
+        self.trial_boundaries = np.array([0,])
+        self.trial_slices = slice(0,self.T)
+        if 'trial_boundaries' in data.keys():
+            self.trial_boundaries = data.trial_boundaries.values
+            self.trial_slices = data.trial_slices.values
 
         # SET UP THE ENVIRONMENT
         self.environment = environment; assert self.D == environment.D, "The environment and data dimensions must match"
@@ -163,8 +171,6 @@ class SIMPL:
         self.even_minute_mask = ~self.odd_minute_mask # mask for even minutes
 
         # INITIALISE THE KALMAN FILTER
-        mu0 = self.Xb.mean(axis=0) # initial state estimate (estimate from behaviour)
-        sigma0 = (1 / self.T) * (((self.Xb - mu0).T) @ (self.Xb - mu0)) # initial state covariance (estimate from behaviour)
         speed_sigma = speed_prior * self.dt
         behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6 # if no behaviour prior, set to a large value (effectively no prior)
         lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
@@ -176,18 +182,18 @@ class SIMPL:
         H = jnp.eye(self.D) # observation matrix
 
         self.R_base = observation_noise_std**2 * jnp.eye(self.D) # base observation noise 
+
+        # Prepare Kalman Filter
         self.kalman_filter = KalmanFilter(
-            dim_Z = self.D, 
+            dim_Z = self.D,
             dim_Y = self.D,
             dim_U = self.D,
-            mu0 = mu0, 
-            sigma0 = sigma0, 
-            F = F, 
-            B = B, 
+            F = F,
+            B = B,
             Q = Q,
-            H = H, 
-            R = None,
-            )
+            H = H,
+            R = None,        
+        )
         
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim # as ordered in positon variables X = ['x', 'y', ...]
@@ -208,7 +214,9 @@ class SIMPL:
         self.results.attrs = { #env meta data in case you need it later
             'env_extent':self.environment.extent, 
             'env_pad':self.environment.pad, 
-            'env_bin_size':self.environment.bin_size
+            'env_bin_size':self.environment.bin_size,
+            'trial_boundaries':self.trial_boundaries,
+            'trial_slices':self.trial_slices
             }
         self.results = xr.merge([self.results, self.dict_to_dataset({'Xb':self.Xb, 'Y':self.Y, 'spike_mask':self.spike_mask})]) # add spikes and behaviour to the results
         self.loglikelihoods = xr.Dataset(coords={'epoch':jnp.array([],dtype=int)}) # a smaller dict just to save likelihoods for online evaluation during training
@@ -359,25 +367,61 @@ class SIMPL:
         observation_noise = self.R_base + sigma_l
         observation_noise = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, observation_noise)
 
-        mu_f, sigma_f = self.kalman_filter.filter(
-            Y = mode_l, 
-            U = self.Xb,
-            R = observation_noise)
-        mu_s, sigma_s = self.kalman_filter.smooth(
-            mus_f = mu_f, 
-            sigmas_f = sigma_f)
-        
-        # use this E-step to calculate the data likelihood 
-        logPYF = self.kalman_filter.loglikelihood(Y=mode_l,R=observation_noise,mu=mu_s,sigma=sigma_s).sum()
-        
-        # Test: here we ask "does the trajectory decoded from the training spikes have a high likelihood under the testing spikes?"
-        logPYXF_maps_test = poisson_log_likelihood(Y, F, mask=~self.spike_mask) # Calc. log-likelihood maps
-        no_spikes = (jnp.sum(Y * ~self.spike_mask, axis=1) == 0)
-        mu_l_test, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test)) # fit Gaussians
-        observation_noise_test = jnp.where(no_spikes[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
-        logPYF_test = self.kalman_filter.loglikelihood(Y=mode_l_test,R=observation_noise_test,mu=mu_s,sigma=sigma_s).sum()
+        # Process each trial (or full dataset if no trial boundaries are specified)
+        mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
+        logPYF_list, logPYF_test_list = [], []
+        for trial_slice in self.trial_slices:
+            # Extract data from this slice
+            _mode_l = mode_l[trial_slice]
+            _Xb = self.Xb[trial_slice]
+            _R = observation_noise[trial_slice]
+            _Y = Y[trial_slice]
+            spike_mask = self.spike_mask[trial_slice]
 
+            # Calculate initial state estimates for this trial
+            _mu0 = _Xb.mean(axis=0)
+            _sigma0 = (1 / len(_Xb)) * (((_Xb - _mu0).T) @ (_Xb - _mu0))
+
+            # Run filter and smoother
+            mu_f, sigma_f = self.kalman_filter.filter(
+                mu0 = _mu0,
+                sigma0 = _sigma0,
+                Y = _mode_l,
+                U = _Xb,
+                R = _R)
+            mu_s, sigma_s = self.kalman_filter.smooth(
+                mus_f = mu_f,
+                sigmas_f = sigma_f)
+
+            # Calculate likelihoods
+            logPYF = self.kalman_filter.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
+
+            # Test likelihood
+            logPYXF_maps_test = poisson_log_likelihood(_Y, F, mask=~spike_mask)
+            no_spikes_test = (jnp.sum(_Y * ~spike_mask, axis=1) == 0)
+            _, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0,))(self.xF, jnp.exp(logPYXF_maps_test))
+            observation_noise_test = jnp.where(no_spikes_test[:,None,None], jnp.eye(self.D)*1e6, sigma_l_test) + self.R_base
+            logPYF_test = self.kalman_filter.loglikelihood(Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s).sum()
+
+            # Store results
+            mu_f_list.append(mu_f)
+            sigma_f_list.append(sigma_f)
+            mu_s_list.append(mu_s)
+            sigma_s_list.append(sigma_s)
+            logPYF_list.append(logPYF)
+            logPYF_test_list.append(logPYF_test)
+        
+        # Concatenate results
+        mu_f = jnp.concatenate(mu_f_list, axis=0)
+        sigma_f = jnp.concatenate(sigma_f_list, axis=0)
+        mu_s = jnp.concatenate(mu_s_list, axis=0)
+        sigma_s = jnp.concatenate(sigma_s_list, axis=0)
+        logPYF = sum(logPYF_list)
+        logPYF_test = sum(logPYF_test_list)
+
+        # Get position from kalman filtering
         X = mu_s
+
         # By default X, the latent used for the next M-step is just mu_s. However we can optinally also align this latent (wlog) against the behaviour or ground truth using a linear transform.
         align_dict = {}
         if self.Xalign is not None:
