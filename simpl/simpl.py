@@ -366,7 +366,7 @@ class SIMPL:
             _Y = Y[trial_slice]
             spike_mask = self.spike_mask[trial_slice]
 
-            # Calculate initial state estimates for this slice
+            # Calculate initial state estimates for this trial
             _mu0 = _Xb.mean(axis=0)
             _sigma0 = (1 / len(_Xb)) * (((_Xb - _mu0).T) @ (_Xb - _mu0))
 
