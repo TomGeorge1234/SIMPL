@@ -123,18 +123,20 @@ class SIMPL:
         self.time = jnp.array(data.time.values) # (T,)
         self.neuron = jnp.array(data.neuron.values) # (N_neurons,)
         self.dt = self.time[1] - self.time[0] # time step size
-        if 'trial_boundaries' in data.keys():
-            self.use_trial_boundaries = True
-            self.trial_boundaries = data.trial_boundaries.values
-            self.trial_slices = data.trial_slices.values
-        else:
-            self.use_trial_boundaries = False
 
+      
         # INTEGER VARIABLES 
         self.D = data.Xb.shape[1] # number of dimensions of the latent space
         self.T = len(data.time) # number of time steps
         self.N_neurons = data.Y.shape[1]
         self.N_PFmax = 20 # to keep a fixed shape each tuning curve has max possible number of place fields
+
+        # SET TRIAL BOUNDARIES (IF GIVEN)
+        self.trial_boundaries = np.array([0,])
+        self.trial_slices = slice(0,self.T)
+        if 'trial_boundaries' in data.keys():
+            self.trial_boundaries = data.trial_boundaries.values
+            self.trial_slices = data.trial_slices.values
 
         # SET UP THE ENVIRONMENT
         self.environment = environment; assert self.D == environment.D, "The environment and data dimensions must match"
