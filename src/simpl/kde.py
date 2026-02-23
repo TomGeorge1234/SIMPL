@@ -1,7 +1,7 @@
 """Kernel density estimation of neural firing rate maps and Poisson log-likelihood computation."""
 
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -19,17 +19,17 @@ __all__ = [
 
 
 def gaussian_kernel(
-    x1: jnp.ndarray,
-    x2: jnp.ndarray,
+    x1: jax.Array,
+    x2: jax.Array,
     bandwidth: float,
-) -> jnp.ndarray:
+) -> jax.Array:
     """Calculates the gaussian kernel between two points x1 and x2 with covariance
 
     Parameters
     ----------
-    x1: (D,) jnp.ndarray
+    x1: (D,) jax.Array
         The first position
-    x2: (D,) jnp.ndarray
+    x2: (D,) jax.Array
         The second position
     bandwidth: float
         The bandwidth of the kernel
@@ -52,15 +52,15 @@ def gaussian_kernel(
 
 
 def kde(
-    bins: jnp.ndarray,
-    trajectory: jnp.ndarray,
-    spikes: jnp.ndarray,
+    bins: jax.Array,
+    trajectory: jax.Array,
+    spikes: jax.Array,
     kernel: Callable = gaussian_kernel,
     kernel_bandwidth: float = 0.01,
-    mask: jnp.ndarray = None,
+    mask: jax.Array | None = None,
     batch_size: int = 36000,
     return_position_density: bool = False,
-) -> Union[jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray]]:
+) -> jax.Array | tuple[jax.Array, jax.Array]:
     """
     Performs KDE to estimate the expected number of spikes each neuron will fire
     at each position in `bins` given past `trajectory` and `spikes` data. This
@@ -80,17 +80,17 @@ def kde(
 
     Parameters
     ----------
-    bins : jnp.ndarray, shape (N_bins, D,)
+    bins : jax.Array, shape (N_bins, D,)
         The position bins at which to estimate the firing rate
-    trajectory : jnp.ndarray, shape (T, D)
+    trajectory : jax.Array, shape (T, D)
         The position of the agent at each time step
-    spikes : jnp.ndarray, shape (T, N_neurons)
+    spikes : jax.Array, shape (T, N_neurons)
         The spike counts of the neuron at each time step (integer array, can be > 1)
     kernel : function
         The kernel function to use for density estimation. See `kernels.py` for signature and examples.
     kernel_bandwidth : float
         The bandwidth of the kernel
-    mask : jnp.ndarray, shape (T, N_neurons), optional
+    mask : jax.Array, shape (T, N_neurons), optional
         A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
     batch_size : int
         The time axis is split into batches of this size to avoid memory
@@ -102,8 +102,8 @@ def kde(
 
     Returns
     -------
-    kernel_density_estimate : jnp.ndarray, shape (N_neurons, N_bins)
-    position_density : jnp.ndarray, shape (N_bins,) (optional)
+    kernel_density_estimate : jax.Array, shape (N_neurons, N_bins)
+    position_density : jax.Array, shape (N_bins,) (optional)
         Normalised position density (sums to 1 over bins), independent of neuron masks.
     """
     assert bins.ndim == 2
@@ -165,11 +165,11 @@ def kde(
 
 
 def poisson_log_likelihood(
-    spikes: jnp.ndarray,
-    mean_rate: jnp.ndarray,
-    mask: jnp.ndarray = None,
-    renormalise=True,
-):
+    spikes: jax.Array,
+    mean_rate: jax.Array,
+    mask: jax.Array | None = None,
+    renormalise: bool = True,
+) -> jax.Array:
     """Takes an array of spike counts and an array of mean rates and returns
     the log-likelihood of the spikes given the mean rate of the neuron
     (it's receptive field).
@@ -188,13 +188,13 @@ def poisson_log_likelihood(
 
     Parameters
     ----------
-    spikes : jnp.ndarray, shape (T, N_neurons,)
+    spikes : jax.Array, shape (T, N_neurons,)
         How many spikes the neuron actually fired at each bin (int, can be > 1)
-    mean_rate : jnp.ndarray, shape (N_neurons, N_bins,)
+    mean_rate : jax.Array, shape (N_neurons, N_bins,)
         The mean rate of the neuron (it's receptive field) at each bin.
         This is how many spikes you would _expect_ in at this position
         in a time dt.
-    mask : jnp.ndarray, shape (T, N_neurons,), optional
+    mask : jax.Array, shape (T, N_neurons,), optional
         A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
     renormalise : bool, optional
         If True this renormalises so the maximum log-likelihood is always 0
@@ -203,7 +203,7 @@ def poisson_log_likelihood(
 
     Returns
     -------
-    log_likelihood : jnp.ndarray, shape (T, N_bins,)
+    log_likelihood : jax.Array, shape (T, N_bins,)
         The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron
     """
     # If not passed make a no-mask mask (all True)
@@ -230,10 +230,10 @@ def poisson_log_likelihood(
 
 
 def poisson_log_likelihood_trajectory(
-    spikes: jnp.ndarray,
-    mean_rate_along_trajectory: jnp.ndarray,
-    mask: jnp.ndarray = None,
-):
+    spikes: jax.Array,
+    mean_rate_along_trajectory: jax.Array,
+    mask: jax.Array | None = None,
+) -> jax.Array:
     """Takes an array of spike counts and an _equally shaped_ array of mean
     rates and returns the log-likelihood of the spikes given the mean rate of
     the neuron (it's receptive field). This is different from
@@ -243,18 +243,18 @@ def poisson_log_likelihood_trajectory(
 
     Parameters
     ----------
-    spikes : jnp.ndarray, shape (T, N_neurons,)
+    spikes : jax.Array, shape (T, N_neurons,)
         How many spikes the neuron actually fired at each bin (int, can be > 1)
-    mean_rate_along_trajectory : jnp.ndarray, shape (T, N_neurons,)
+    mean_rate_along_trajectory : jax.Array, shape (T, N_neurons,)
         The mean rate of the neurons as calculated at each time step along
         the trajectory. This is how many spikes you would _expect_ in at
         this position in a time dt.
-    mask : jnp.ndarray, shape (T, N_neurons,), optional
+    mask : jax.Array, shape (T, N_neurons,), optional
         A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
 
     Returns
     -------
-    log_likelihood : jnp.ndarray, shape (T,)
+    log_likelihood : jax.Array, shape (T,)
         The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron
     """
 
@@ -281,15 +281,15 @@ def poisson_log_likelihood_trajectory(
 
 @partial(jax.jit, static_argnames=("kernel", "return_position_density"))
 def kde_angular(
-    bins: jnp.ndarray,  # (N_bins,) bin centers in [-pi, pi)
-    trajectory: jnp.ndarray,  # (T,) angles in radians
-    spikes: jnp.ndarray,  # (T, N_neurons) spike counts
+    bins: jax.Array,  # (N_bins,) bin centers in [-pi, pi)
+    trajectory: jax.Array,  # (T,) angles in radians
+    spikes: jax.Array,  # (T, N_neurons) spike counts
     kernel=None,  # unused placeholder
     kernel_bandwidth: float = 0.3,  # std dev of smoothing kernel in radians
-    mask: jnp.ndarray = None,  # (T, N_neurons) boolean
+    mask: jax.Array | None = None,  # (T, N_neurons) boolean
     return_position_density: bool = False,
     eps: float = 1e-6,
-) -> Union[jnp.ndarray, Tuple[jnp.ndarray, jnp.ndarray]]:
+) -> jax.Array | tuple[jax.Array, jax.Array]:
     """
     Circular KDE for angular data. Estimates expected spike count per timebin
     at each angular bin (divide by dt for Hz). See `kde()` for the linear
@@ -314,18 +314,18 @@ def kde_angular(
 
     Parameters
     ----------
-    bins : jnp.ndarray, shape (N_bins,) or (N_bins, 1)
+    bins : jax.Array, shape (N_bins,) or (N_bins, 1)
         Angle bin centres in radians, uniformly spaced in [-pi, pi).
-    trajectory : jnp.ndarray, shape (T,) or (T, 1)
+    trajectory : jax.Array, shape (T,) or (T, 1)
         Angular position of the agent at each time step, in radians in [-pi, pi).
-    spikes : jnp.ndarray, shape (T, N_neurons)
+    spikes : jax.Array, shape (T, N_neurons)
         Spike counts at each time step (integer array, can be > 1).
     kernel : None
         Unused, kept for API consistency with `kde()`.
     kernel_bandwidth : float
         Std dev of smoothing kernel in radians. Larger = smoother.
         Converted to von Mises kappa = 1 / kernel_bandwidth^2.
-    mask : jnp.ndarray, shape (T, N_neurons), optional
+    mask : jax.Array, shape (T, N_neurons), optional
         Boolean mask for spikes. Default is None (no masking).
     return_position_density : bool
         If True, also returns normalised position density. Default is False.
@@ -334,8 +334,8 @@ def kde_angular(
 
     Returns
     -------
-    kernel_density_estimate : jnp.ndarray, shape (N_neurons, N_bins)
-    position_density : jnp.ndarray, shape (N_bins,) (optional)
+    kernel_density_estimate : jax.Array, shape (N_neurons, N_bins)
+    position_density : jax.Array, shape (N_bins,) (optional)
         Normalised position density (sums to 1), independent of neuron masks.
     """
     assert bins.ndim == 1 or (bins.ndim == 2 and bins.shape[1] == 1), "bins should be shape (N_bins,) or (N_bins, 1)."
@@ -372,7 +372,7 @@ def kde_angular(
     vm = jnp.roll(vm, -n_bins // 2)
 
     # 3) histogram per neuron using bincount (vmap over neurons)
-    def hist_for_neuron(weights_t: jnp.ndarray) -> jnp.ndarray:
+    def hist_for_neuron(weights_t: jax.Array) -> jax.Array:
         return jnp.bincount(idx, weights=weights_t, length=n_bins)
 
     # occupancy: mask only (per-neuron, used internally for KDE denominator)
