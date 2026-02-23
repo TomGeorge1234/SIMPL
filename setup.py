@@ -25,7 +25,7 @@ setuptools.setup(
     install_requires=[
         'jax',
         'xarray',
-        'kalmax',
+        'kalmax>=0.3.0',
         'scikit-learn>=1.3',
         'scikit-image',
         'matplotlib',
