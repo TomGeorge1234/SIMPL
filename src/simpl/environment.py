@@ -1,3 +1,4 @@
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -65,8 +66,13 @@ class Environment:
         Default is None."""
 
     def __init__(
-        self, X: np.ndarray, pad: float = 0.1, bin_size: float = 0.02, force_lims: tuple = None, verbose: bool = True
-    ):
+        self,
+        X: np.ndarray,
+        pad: float = 0.1,
+        bin_size: float = 0.02,
+        force_lims: tuple | None = None,
+        verbose: bool = True,
+    ) -> None:
 
         self.data_lims = None
         self.pad = pad
@@ -122,7 +128,7 @@ class Environment:
                 f"self.discretised_coords"
             )
 
-    def plot_environment(self, ax=None):
+    def plot_environment(self, ax: matplotlib.axes.Axes | None = None) -> matplotlib.axes.Axes:
         """Plots the environment axes.
 
         Parameters

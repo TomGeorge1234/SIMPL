@@ -17,10 +17,10 @@ _TAU = 2 * jnp.pi
 
 
 def gaussian_pdf(
-    x: jnp.ndarray,
-    mu: jnp.ndarray,
-    sigma: jnp.ndarray,
-) -> jnp.ndarray:
+    x: jax.Array,
+    mu: jax.Array,
+    sigma: jax.Array,
+) -> jax.Array:
     """Calculates the gaussian pdf of a multivariate normal distribution of mean mu and covariance sigma at x
 
     Parameters
@@ -51,10 +51,10 @@ def gaussian_pdf(
 
 
 def log_gaussian_pdf(
-    x: jnp.ndarray,
-    mu: jnp.ndarray,
-    sigma: jnp.ndarray,
-) -> jnp.ndarray:
+    x: jax.Array,
+    mu: jax.Array,
+    sigma: jax.Array,
+) -> jax.Array:
     """Calculates the log of the gaussian pdf of a multivariate normal distribution of mean mu and covariance sigma at x
 
     Parameters
@@ -83,7 +83,7 @@ def log_gaussian_pdf(
     return jnp.log(norm_const) - 0.5 * jnp.sum(x @ jnp.linalg.inv(sigma) * x)
 
 
-def gaussian_norm_const(sigma: jnp.ndarray) -> jnp.ndarray:
+def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
     """Calculates the normalizing constant of a multivariate normal distribution with covariance sigma
 
     Parameters
@@ -106,7 +106,7 @@ def gaussian_norm_const(sigma: jnp.ndarray) -> jnp.ndarray:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def fit_gaussian(x, likelihood):
+def fit_gaussian(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
 
     Parameters
@@ -135,7 +135,7 @@ def fit_gaussian(x, likelihood):
     return mu, mode, cov
 
 
-def fit_gaussian_vmap(x, likelihoods):
+def fit_gaussian_vmap(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to each row of a batch of likelihood arrays.
 
     This is the vmapped version of ``fit_gaussian``: it accepts likelihoods of
@@ -160,7 +160,7 @@ def fit_gaussian_vmap(x, likelihoods):
     return jax.vmap(fit_gaussian, in_axes=(None, 0))(x, likelihoods)
 
 
-def gaussian_sample(key, mu, sigma):
+def gaussian_sample(key: jax.Array, mu: jax.Array, sigma: jax.Array) -> jax.Array:
     """Samples from a multivariate normal distribution with mean mu and covariance sigma.
 
     Parameters
@@ -188,7 +188,7 @@ def gaussian_sample(key, mu, sigma):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _wrap_minuspi_pi(theta: jnp.ndarray) -> jnp.ndarray:
+def _wrap_minuspi_pi(theta: jax.Array) -> jax.Array:
     """Wrap angles to [-pi, pi).
 
     Parameters
@@ -204,7 +204,7 @@ def _wrap_minuspi_pi(theta: jnp.ndarray) -> jnp.ndarray:
     return jnp.mod(theta + jnp.pi, _TAU) - jnp.pi
 
 
-def _bin_indices_minuspi_pi(theta: jnp.ndarray, n_bins: int) -> jnp.ndarray:
+def _bin_indices_minuspi_pi(theta: jax.Array, n_bins: int) -> jax.Array:
     """Map theta in radians to integer bin indices [0, n_bins).
 
     Maps angles to bin indices where bin 0 corresponds to [-pi, -pi + delta).
@@ -228,7 +228,7 @@ def _bin_indices_minuspi_pi(theta: jnp.ndarray, n_bins: int) -> jnp.ndarray:
     return jnp.clip(idx, 0, n_bins - 1)
 
 
-def _circular_conv_fft_1d(x: jnp.ndarray, k: jnp.ndarray) -> jnp.ndarray:
+def _circular_conv_fft_1d(x: jax.Array, k: jax.Array) -> jax.Array:
     """Circular convolution via FFT for 1D arrays.
 
     Parameters
@@ -252,9 +252,9 @@ def _circular_conv_fft_1d(x: jnp.ndarray, k: jnp.ndarray) -> jnp.ndarray:
 
 
 def coefficient_of_determination(
-    X: jnp.ndarray,
-    Y: jnp.ndarray,
-):
+    X: jax.Array,
+    Y: jax.Array,
+) -> jax.Array:
     """Calculates the coefficient of determination (R^2) between X and Y.
 
     This reflects the proportion of the variance in Y that is predictable from X.
@@ -272,7 +272,7 @@ def coefficient_of_determination(
     return R2
 
 
-def cca(X: jnp.ndarray, Y: jnp.ndarray):
+def cca(X: jax.Array, Y: jax.Array) -> tuple[np.ndarray, np.ndarray]:
     """Uses canonical correlation between X and Y (the "target") to establish the best linear mapping from X to Y.
 
     Parameters
@@ -299,7 +299,7 @@ def cca(X: jnp.ndarray, Y: jnp.ndarray):
     return coef, intercept
 
 
-def correlation_at_lag(X1, X2, lag: int):
+def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
     """Calculates the correlation between X1 and X2[lag:].
 
     If X is D-dimensional, calculates the average correlation across dimensions.
@@ -335,7 +335,7 @@ def correlation_at_lag(X1, X2, lag: int):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int):
+def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
 
     Parameters
@@ -354,7 +354,7 @@ def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int):
     return dataset
 
 
-def create_speckled_mask(size, sparsity=0.1, block_size=10):
+def create_speckled_mask(size: tuple[int, int], sparsity: float = 0.1, block_size: int = 10) -> jax.Array:
     """
     TODO : Rewrite this in JAX
     Creates a boolean mask of size `size`. This mask is all True except along each column randomly
@@ -392,7 +392,7 @@ def create_speckled_mask(size, sparsity=0.1, block_size=10):
     return jnp.array(mask)
 
 
-def load_datafile(name="gridcelldata.npz"):
+def load_datafile(name: str = "gridcelldata.npz") -> np.lib.npyio.NpzFile:
     # Use pkg_resources.files to get a pathlib.Path object
     import importlib.resources as pkg_resources
 
@@ -405,12 +405,12 @@ def prepare_data(
     Y: np.ndarray,
     Xb: np.ndarray,
     time: np.ndarray,
-    dims: np.ndarray = None,
-    neurons: np.ndarray = None,
-    Xt: np.ndarray = None,
-    Ft: np.ndarray = None,
-    Ft_coords_dict: dict = None,
-    trial_boundaries: np.ndarray = None,
+    dims: np.ndarray | None = None,
+    neurons: np.ndarray | None = None,
+    Xt: np.ndarray | None = None,
+    Ft: np.ndarray | None = None,
+    Ft_coords_dict: dict | None = None,
+    trial_boundaries: np.ndarray | None = None,
 ) -> xr.Dataset:
     """
     Prepare data for simpl model fitting.
@@ -493,7 +493,7 @@ def prepare_data(
     return data
 
 
-def save_results_to_netcdf(results: xr.Dataset, path: str):
+def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     """
     Save results to a file.
     To make the data netCDF safe, some variables need to be converted.

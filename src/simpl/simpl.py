@@ -1,7 +1,8 @@
 # Jax, for the majority of the calculations
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import scipy
@@ -37,8 +38,8 @@ class SIMPL:
         kernel: Callable = gaussian_kernel,
         kernel_bandwidth: float = 0.02,
         observation_noise_std: float = 0.00,  # TODO probably remove this unused parameter
-        speed_prior=0.1,
-        behaviour_prior=None,
+        speed_prior: float = 0.1,
+        behaviour_prior: float | None = None,
         test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         # Analysis parameters
@@ -47,7 +48,7 @@ class SIMPL:
         save_likelihood_maps: bool = False,
         resample_spike_mask: bool = False,
         is_circular: bool = False,
-    ):
+    ) -> None:
         """Initializes the SIMPL class.
 
         Overview:
@@ -345,7 +346,7 @@ class SIMPL:
         else:
             self.kde = kde
 
-    def train_N_epochs(self, N: int = 5, verbose: bool = True):
+    def train_N_epochs(self, N: int = 5, verbose: bool = True) -> None:
         """Trains the model for N epochs, allowing for
         KeyboardInterrupt to stop training early. This function is
         really just a wrapper on self.train_epoch() which does the
@@ -375,7 +376,7 @@ class SIMPL:
 
     def train_epoch(
         self,
-    ):
+    ) -> None:
         """Runs an epoch of the EM algorithm.
         1. INCREMENT: The epoch counter is incremented.
         2. E-STEP: The E-step is performed by running
@@ -430,7 +431,7 @@ class SIMPL:
 
         return
 
-    def evaluate_epoch(self):
+    def evaluate_epoch(self) -> None:
         """Evaluates the current model (i.e. calculates all the
         "metrics") and saves the results in the self.results dataset.
         By default this is done at the end of each epoch but can be
@@ -460,7 +461,7 @@ class SIMPL:
         self.results = xr.concat([self.results, results], dim="epoch", data_vars="minimal")
         return
 
-    def _E_step(self, Y: jnp.ndarray, F: jnp.array) -> xr.Dataset:
+    def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
         """E-STEP of the EM algorithm.
            1. LIKELIHOOD: The log-likelihood maps of the
               spikes, as a function of position, is calculated
@@ -612,7 +613,7 @@ class SIMPL:
 
         return E
 
-    def _M_step(self, Y: jnp.ndarray, X: jnp.ndarray) -> xr.Dataset:
+    def _M_step(self, Y: jax.Array, X: jax.Array) -> dict:
         """Maximisation step of the EM algorithm. This step calculates
         the receptive fields of the neurons. F is the probability of
         the neurons firing at each position in one time step. We
@@ -677,7 +678,7 @@ class SIMPL:
 
         return M
 
-    def get_loglikelihoods(self, Y: jnp.ndarray, FX: jnp.ndarray) -> dict:
+    def get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
         """Calculates the log-likelihoods of the spikes given the
         firing rates. This is the sum of the log-likelihood of the
         spikes given the firing rates at each time step, normalised
@@ -712,17 +713,17 @@ class SIMPL:
 
     def get_metrics(
         self,
-        X: jnp.ndarray = None,
-        F: jnp.ndarray = None,
-        Y: jnp.ndarray = None,
-        FX: jnp.ndarray = None,
-        F_odd_mins: jnp.ndarray = None,
-        F_even_mins: jnp.ndarray = None,
-        X_prev: jnp.ndarray = None,
-        F_prev: jnp.ndarray = None,
-        Xt: jnp.ndarray = None,
-        Ft: jnp.ndarray = None,
-        PX: jnp.ndarray = None,
+        X: jax.Array | None = None,
+        F: jax.Array | None = None,
+        Y: jax.Array | None = None,
+        FX: jax.Array | None = None,
+        F_odd_mins: jax.Array | None = None,
+        F_even_mins: jax.Array | None = None,
+        X_prev: jax.Array | None = None,
+        F_prev: jax.Array | None = None,
+        Xt: jax.Array | None = None,
+        Ft: jax.Array | None = None,
+        PX: jax.Array | None = None,
     ) -> dict:
         """Calculates important metrics and baselines on the current
         epochs results. Warning: this is a relaxed function; pass in
@@ -859,7 +860,7 @@ class SIMPL:
 
         return metrics
 
-    def calculate_baselines(self):
+    def calculate_baselines(self) -> None:
         """There are two particular special models that can/should
         be used as baselines:
         - Ft ("exact") model : the exact receptive fields are
@@ -933,7 +934,7 @@ class SIMPL:
 
         return
 
-    def interpolate_firing_rates(self, X, F):
+    def interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """If you already have access to the discretised fields
         you can 'predict' the firing rate at new positions by
         interpolating the fields onto these positions (avoiding
@@ -968,7 +969,7 @@ class SIMPL:
         FX = data.F.sel(**coord_args, method="nearest").T
         return FX.data
 
-    def dict_to_dataset(self, data: dict, coords: dict = None):
+    def dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
         """Converts a dictionary to an xarray Dataset. Loops over
         any item in the dictionary and converts it to a DataArray
         then concatenates these in a xr.Dataset. If the data is a
@@ -1028,7 +1029,7 @@ class SIMPL:
             dataset[variable_name] = dataarray
         return dataset
 
-    def init_variables_dict(self):
+    def init_variables_dict(self) -> dict:
         """Initialises a dictionary of variables and their metadata.
         This dictionary summarises _all_ the variable that are used
         and returned by the SIMPL class. Each entry is attached as
@@ -1532,7 +1533,7 @@ class SIMPL:
         }
         return variable_info_dict
 
-    def analyse_place_fields(self, F: jnp.array):
+    def analyse_place_fields(self, F: jax.Array) -> dict:
         """Analyses the tuning curves and returns a dictionary of
         information about the number, size, position and shape of
         place fields (pfs) for each neuron. Terminology: field is
@@ -1620,7 +1621,7 @@ class SIMPL:
 
         return place_field_results
 
-    def _set_pbar_desc(self, pbar):
+    def _set_pbar_desc(self, pbar: tqdm | range) -> None:
         """Tries to set the description of the progress bar to the
         current log-likelihoods. If this fails, it just sets the
         epoch number.
@@ -1650,7 +1651,7 @@ class SIMPL:
             except Exception:
                 pass
 
-    def save_results(self, path: str):
+    def save_results(self, path: str) -> None:
         """Saves the results of the SIMPL model to a netCDF file at
         the given path. The results are saved as an xarray Dataset.
 

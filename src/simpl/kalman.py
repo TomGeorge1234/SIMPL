@@ -65,14 +65,14 @@ class KalmanFilter:
         dim_U: int = 0,
         batch_size: int = 100,
         # optional parameters
-        mu0: jnp.ndarray = None,
-        sigma0: jnp.ndarray = None,
-        F: jnp.ndarray = None,
-        B: jnp.ndarray = None,
-        Q: jnp.ndarray = None,
-        H: jnp.ndarray = None,
-        R: jnp.ndarray = None,
-    ):
+        mu0: jax.Array | None = None,
+        sigma0: jax.Array | None = None,
+        F: jax.Array | None = None,
+        B: jax.Array | None = None,
+        Q: jax.Array | None = None,
+        H: jax.Array | None = None,
+        R: jax.Array | None = None,
+    ) -> None:
         """Initializes the Kalman class.
 
         The state has size dim_Z, the observations have size dim_Y, and
@@ -99,19 +99,19 @@ class KalmanFilter:
 
         Optional parameters
         -------------------
-        mu0 : jnp.ndarray, shape (dim_Z,)
+        mu0 : jax.Array, shape (dim_Z,)
             The initial state mean
-        sigma0 : jnp.ndarray, shape (dim_Z, dim_Z)
+        sigma0 : jax.Array, shape (dim_Z, dim_Z)
             The initial state covariance
-        F : jnp.ndarray, shape (dim_Z, dim_Z)
+        F : jax.Array, shape (dim_Z, dim_Z)
             The state transition matrix
-        B : jnp.ndarray, shape (dim_Z, dim_U)
+        B : jax.Array, shape (dim_Z, dim_U)
             The control matrix
-        Q : jnp.ndarray, shape (dim_Z, dim_Z)
+        Q : jax.Array, shape (dim_Z, dim_Z)
             The state transition noise covariance
-        H : jnp.ndarray, shape (dim_X, dim_Z)
+        H : jax.Array, shape (dim_X, dim_Z)
             The observation matrix
-        R : jnp.ndarray, shape (dim_X, dim_X)
+        R : jax.Array, shape (dim_X, dim_X)
             The observation noise covariance
         """
 
@@ -146,16 +146,16 @@ class KalmanFilter:
 
     def filter(
         self,
-        Y,
-        U=None,
-        mu0=None,
-        sigma0=None,
-        F=None,
-        B=None,
-        Q=None,
-        H=None,
-        R=None,
-    ):
+        Y: jax.Array,
+        U: jax.Array | None = None,
+        mu0: jax.Array | None = None,
+        sigma0: jax.Array | None = None,
+        F: jax.Array | None = None,
+        B: jax.Array | None = None,
+        Q: jax.Array | None = None,
+        H: jax.Array | None = None,
+        R: jax.Array | None = None,
+    ) -> tuple[jax.Array, jax.Array]:
         """Takes sequences of observations, control inputs, and noise covariances and runs the Kalman filter.
 
         If parameters are not passed in, the class defaults are used.
@@ -165,31 +165,31 @@ class KalmanFilter:
 
         Parameters
         ----------
-        Y : jnp.ndarray, shape (T, dim_Y)
+        Y : jax.Array, shape (T, dim_Y)
             The observation means
-        U : jnp.ndarray, shape (T, dim_U), optional
+        U : jax.Array, shape (T, dim_U), optional
             The control inputs (defaults to zeros if not provided)
-        mu0 : jnp.ndarray, shape (dim_Z,)
+        mu0 : jax.Array, shape (dim_Z,)
             The initial state mean, optional (default is provided at initialisation)
-        sigma0 : jnp.ndarray, shape (dim_Z, dim_Z)
+        sigma0 : jax.Array, shape (dim_Z, dim_Z)
             The initial state covariance, optional (default is provided at initialisation)
-        F : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        F : jax.Array, shape (T, dim_Z, dim_Z)
             The state transition matrix, optional (default is provided at initialisation)
-        B : jnp.ndarray, shape (T, dim_Z, dim_U)
+        B : jax.Array, shape (T, dim_Z, dim_U)
             The control matrix, optional (default is provided at initialisation)
-        Q : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        Q : jax.Array, shape (T, dim_Z, dim_Z)
             The state transition noise covariance, optional (default is provided at initialisation)
-        H : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        H : jax.Array, shape (T, dim_Z, dim_Z)
             The observation matrix, optional (default is provided at initialisation)
-        R : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        R : jax.Array, shape (T, dim_Z, dim_Z)
             The observation noise covariances, optional (default is provided at initialisation)
 
 
         Returns
         -------
-        mus_f : jnp.ndarray, shape (T, dim_Z)
+        mus_f : jax.Array, shape (T, dim_Z)
             The filtered means
-        sigmas_f : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        sigmas_f : jax.Array, shape (T, dim_Z, dim_Z)
             The filtered covariances
         """
         assert Y.ndim == 2
@@ -252,35 +252,35 @@ class KalmanFilter:
 
     def smooth(
         self,
-        mus_f,
-        sigmas_f,
-        U=None,
-        F=None,
-        B=None,
-        Q=None,
-    ):
+        mus_f: jax.Array,
+        sigmas_f: jax.Array,
+        U: jax.Array | None = None,
+        F: jax.Array | None = None,
+        B: jax.Array | None = None,
+        Q: jax.Array | None = None,
+    ) -> tuple[jax.Array, jax.Array]:
         """Takes the filtered means, covariances, and control inputs and runs the Kalman smoother on the data.
 
         Parameters
         ----------
-        mus_f : jnp.ndarray, shape (T, dim_Z)
+        mus_f : jax.Array, shape (T, dim_Z)
             The filtered means
-        sigmas_f : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        sigmas_f : jax.Array, shape (T, dim_Z, dim_Z)
             The filtered covariances
-        U : jnp.ndarray, shape (T, dim_U), optional
+        U : jax.Array, shape (T, dim_U), optional
             The control inputs (defaults to zeros if not provided)
-        F : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        F : jax.Array, shape (T, dim_Z, dim_Z)
             The state transition matrix, optional
-        B : jnp.ndarray, shape (T, dim_Z, dim_U)
+        B : jax.Array, shape (T, dim_Z, dim_U)
             The control matrix, optional
-        Q : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        Q : jax.Array, shape (T, dim_Z, dim_Z)
             The state transition noise covariance, optional
 
         Returns
         -------
-        mus_s : jnp.ndarray, shape (T, dim_Z)
+        mus_s : jax.Array, shape (T, dim_Z)
             The smoothed means
-        sigmas_s : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        sigmas_s : jax.Array, shape (T, dim_Z, dim_Z)
             The smoothed covariances
         """
 
@@ -323,12 +323,12 @@ class KalmanFilter:
 
     def loglikelihood(
         self,
-        Y,
-        mu,
-        sigma,
-        H=None,
-        R=None,
-    ):
+        Y: jax.Array,
+        mu: jax.Array,
+        sigma: jax.Array,
+        H: jax.Array | None = None,
+        R: jax.Array | None = None,
+    ) -> jax.Array:
         """Calculates the log-likelihood of the observations, Y.
 
         Marginalises over the hidden state [mu, sigma] (filtered or
@@ -342,20 +342,20 @@ class KalmanFilter:
 
         Parameters
         ----------
-        Y : jnp.ndarray, shape (T, dim_Y)
+        Y : jax.Array, shape (T, dim_Y)
             The observation means
-        mu : jnp.ndarray, shape (T, dim_Z)
+        mu : jax.Array, shape (T, dim_Z)
             The posterior state means
-        sigma : jnp.ndarray, shape (T, dim_Z, dim_Z)
+        sigma : jax.Array, shape (T, dim_Z, dim_Z)
             The posterior state covariances
-        H: jnp.ndarray, shape (T, dim_Y, dim_Z)
+        H: jax.Array, shape (T, dim_Y, dim_Z)
             The observation matrix, optional
-        R : jnp.ndarray, shape (T, dim_Y, dim_Y)
+        R : jax.Array, shape (T, dim_Y, dim_Y)
             The observation noise covariances, optional
 
         Returns
         -------
-        logP : jnp.ndarray, shape (T,)
+        logP : jax.Array, shape (T,)
             The log-likelihood of the data given the model
         """
 
@@ -369,7 +369,9 @@ class KalmanFilter:
 
         return logP
 
-    def _verify_and_tile(self, param, default_param, T, intended_shape):
+    def _verify_and_tile(
+        self, param: jax.Array | None, default_param: jax.Array | None, T: int, intended_shape: tuple
+    ) -> jax.Array:
         """Verifies the shape of the parameter.
 
         If the parameter is not passed in, the default parameter
@@ -378,9 +380,9 @@ class KalmanFilter:
 
         Parameters
         ----------
-        param : jnp.ndarray or None
+        param : jax.Array or None
             The parameter to be verified
-        default_param : jnp.ndarray
+        default_param : jax.Array
             The default parameter
         T : int
             The number of times to tile the parameter
@@ -389,7 +391,7 @@ class KalmanFilter:
 
         Returns
         -------
-        param : jnp.ndarray
+        param : jax.Array
             The parameter, shape (T, *intended_shape)
         """
         if param is None:
@@ -403,36 +405,46 @@ class KalmanFilter:
 
 
 @jit
-def kalman_filter(Y, U, mu0, sigma0, F, B, Q, H, R):
+def kalman_filter(
+    Y: jax.Array,
+    U: jax.Array,
+    mu0: jax.Array,
+    sigma0: jax.Array,
+    F: jax.Array,
+    B: jax.Array,
+    Q: jax.Array,
+    H: jax.Array,
+    R: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Kalman filters a batch of observation data, Y.
 
     Parameters
     ----------
-    Y : jnp.ndarray, shape (T, dim_Y)
+    Y : jax.Array, shape (T, dim_Y)
         The observation means
-    U : jnp.ndarray, shape (T, dim_U)
+    U : jax.Array, shape (T, dim_U)
         The control inputs
-    mu0 : jnp.ndarray, shape (dim_Z,)
+    mu0 : jax.Array, shape (dim_Z,)
         The initial state mean
-    sigma0 : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma0 : jax.Array, shape (dim_Z, dim_Z)
         The initial state covariance
-    F : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    F : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition matrix
-    B : jnp.ndarray, shape (T, dim_Z, dim_U)
+    B : jax.Array, shape (T, dim_Z, dim_U)
         The control matrix
-    Q : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    Q : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition noise covariance
-    H : jnp.ndarray, shape (T, dim_Y, dim_Z)
+    H : jax.Array, shape (T, dim_Y, dim_Z)
         The observation matrix
-    R : jnp.ndarray, shape (T, dim_Y, dim_Y)
+    R : jax.Array, shape (T, dim_Y, dim_Y)
         The observation noise covariances
 
 
     Returns
     -------
-    mu : jnp.ndarray, shape (T, dim_Z)
+    mu : jax.Array, shape (T, dim_Z)
         The filtered posterior state means
-    sigma : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The filtered posterior state covariances
     """
 
@@ -456,7 +468,16 @@ def kalman_filter(Y, U, mu0, sigma0, F, B, Q, H, R):
 
 
 @jit
-def kalman_smoother(mu, sigma, U, muT, sigmaT, F, B, Q):
+def kalman_smoother(
+    mu: jax.Array,
+    sigma: jax.Array,
+    U: jax.Array,
+    muT: jax.Array,
+    sigmaT: jax.Array,
+    F: jax.Array,
+    B: jax.Array,
+    Q: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Runs the Kalman smoother on the data.
 
     mu and sigma are in forward order, ie.
@@ -466,28 +487,28 @@ def kalman_smoother(mu, sigma, U, muT, sigmaT, F, B, Q):
 
     Parameters
     ----------
-    mu : jnp.ndarray, shape (T, dim_Z)
+    mu : jax.Array, shape (T, dim_Z)
         The filtered posterior state means
-    sigma : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The filtered posterior state covariances
-    U : jnp.ndarray, shape (T, dim_U)
+    U : jax.Array, shape (T, dim_U)
         The control inputs
-    muT : jnp.ndarray, shape (dim_Z,)
+    muT : jax.Array, shape (dim_Z,)
         The final state mean - by definition this should have already been smoothed
-    sigmaT : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigmaT : jax.Array, shape (dim_Z, dim_Z)
         The final state covariance - by definition this should have already been smoothed
-    F : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    F : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition matrix
-    B : jnp.ndarray, shape (T, dim_Z, dim_U)
+    B : jax.Array, shape (T, dim_Z, dim_U)
         The control matrix
-    Q : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    Q : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition noise covariance
 
     Returns
     -------
-    mu_smooth : jnp.ndarray, shape (T, dim_Z)
+    mu_smooth : jax.Array, shape (T, dim_Z)
         The smoothed state means
-    sigma_smooth : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    sigma_smooth : jax.Array, shape (T, dim_Z, dim_Z)
         The smoothed state covariances
     """
 
@@ -510,7 +531,18 @@ def kalman_smoother(mu, sigma, U, muT, sigmaT, F, B, Q):
 
 
 @jit
-def kalman_likelihoods(Z, Y, mu, sigma, F, Q, H, R, B=None, U=None):
+def kalman_likelihoods(
+    Z: jax.Array,
+    Y: jax.Array,
+    mu: jax.Array,
+    sigma: jax.Array,
+    F: jax.Array,
+    Q: jax.Array,
+    H: jax.Array,
+    R: jax.Array,
+    B: jax.Array | None = None,
+    U: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Calculates the prior P(Z), likelihood P(Y | Z), and posterior P(Z | Y).
 
     Evaluates any state trajectory (Z) and observations (Y, R) under
@@ -521,34 +553,34 @@ def kalman_likelihoods(Z, Y, mu, sigma, F, Q, H, R, B=None, U=None):
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The trajectory of the agent (typical this might just be the same as mu)
-    Y : jnp.ndarray, shape (T, dim_Y)
+    Y : jax.Array, shape (T, dim_Y)
         The observations to be evalauted
-    mu : jnp.ndarray, shape (T, dim_Z)
+    mu : jax.Array, shape (T, dim_Z)
         The posterior state means
-    sigma : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The posterior state covariances
-    F : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    F : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition matrix
-    Q : jnp.ndarray, shape (T, dim_Z, dim_Z)
+    Q : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition noise covariance
-    H : jnp.ndarray, shape (T, dim_Y, dim_Z)
+    H : jax.Array, shape (T, dim_Y, dim_Z)
         The observation matrix
-    R : jnp.ndarray, shape (T, dim_Y, dim_Y)
+    R : jax.Array, shape (T, dim_Y, dim_Y)
         The observation noise covariances
-    B : jnp.ndarray, shape (T, dim_Z, dim_U), optional
+    B : jax.Array, shape (T, dim_Z, dim_U), optional
         The control matrix
-    U : jnp.ndarray, shape (T, dim_U), optional
+    U : jax.Array, shape (T, dim_U), optional
         The control inputs
 
     Returns
     -------
-    PZ : jnp.ndarray, shape (T,)
+    PZ : jax.Array, shape (T,)
         The likelihood of the state given the previous state
-    PZXF : jnp.ndarray, shape (T,)
+    PZXF : jax.Array, shape (T,)
         The likelihood of the state given the observation
-    PXZF : jnp.ndarray, shape (T,)
+    PXZF : jax.Array, shape (T,)
         The likelihood of the observation given the state
     """
 
@@ -577,29 +609,36 @@ def kalman_likelihoods(Z, Y, mu, sigma, F, Q, H, R, B=None, U=None):
     return PZ, PZXF, PXZF
 
 
-def kalman_predict(mu, sigma, F, Q, B, u):
+def kalman_predict(
+    mu: jax.Array,
+    sigma: jax.Array,
+    F: jax.Array,
+    Q: jax.Array,
+    B: jax.Array,
+    u: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Predicts the next state of the system given the current state and the state transition matrix.
 
     Parameters
     ----------
-    mu : jnp.ndarray, shape (dim_Z,)
+    mu : jax.Array, shape (dim_Z,)
         The current state mean
-    sigma : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma : jax.Array, shape (dim_Z, dim_Z)
         The current state covariance
-    F : jnp.ndarray, shape (dim_Z, dim_Z)
+    F : jax.Array, shape (dim_Z, dim_Z)
         The state transition matrix
-    Q : jnp.ndarray, shape (dim_Z, dim_Z)
+    Q : jax.Array, shape (dim_Z, dim_Z)
         The state transition noise covariance
-    B : jnp.ndarray, shape (dim_Z, dim_U)
+    B : jax.Array, shape (dim_Z, dim_U)
         The control matrix
-    u : jnp.ndarray, shape (dim_U,)
+    u : jax.Array, shape (dim_U,)
         The control input
 
     Returns
     -------
-    mu_next : jnp.ndarray, shape (dim_Z,)
+    mu_next : jax.Array, shape (dim_Z,)
         The predicted next state mean
-    sigma_next : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma_next : jax.Array, shape (dim_Z, dim_Z)
         The predicted next state covariance
     """
     mu_next = F @ mu + B @ u
@@ -607,27 +646,33 @@ def kalman_predict(mu, sigma, F, Q, B, u):
     return mu_next, sigma_next
 
 
-def kalman_update(mu, sigma, H, R, y):
+def kalman_update(
+    mu: jax.Array,
+    sigma: jax.Array,
+    H: jax.Array,
+    R: jax.Array,
+    y: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Updates the state estimate given an observation.
 
     Parameters
     ----------
-    mu : jnp.ndarray, shape (dim_Z,)
+    mu : jax.Array, shape (dim_Z,)
         The current state mean
-    sigma : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma : jax.Array, shape (dim_Z, dim_Z)
         The current state covariance
-    H : jnp.ndarray, shape (dim_Y, dim_Z)
+    H : jax.Array, shape (dim_Y, dim_Z)
         The observation matrix
-    R : jnp.ndarray, shape (dim_Y, dim_Y)
+    R : jax.Array, shape (dim_Y, dim_Y)
         The observation noise covariance
-    y : jnp.ndarray, shape (dim_Y,)
+    y : jax.Array, shape (dim_Y,)
         The state observation
 
     Returns
     -------
-    mu_post : jnp.ndarray, shape (dim_Z,)
+    mu_post : jax.Array, shape (dim_Z,)
         The posterior state mean
-    sigma_post : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma_post : jax.Array, shape (dim_Z, dim_Z)
         The posterior state covariance
     """
     S = calculate_S_matrix(sigma, H, R)
@@ -639,7 +684,7 @@ def kalman_update(mu, sigma, H, R, y):
     return mu_post, sigma_post
 
 
-def calculate_S_matrix(sigma, H, R):
+def calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Array:
     """Calculates the S matrix for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
@@ -647,22 +692,22 @@ def calculate_S_matrix(sigma, H, R):
 
     Parameters
     ----------
-    sigma : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma : jax.Array, shape (dim_Z, dim_Z)
         The state covariance
-    H : jnp.ndarray, shape (dim_Y, dim_Z)
+    H : jax.Array, shape (dim_Y, dim_Z)
         The observation matrix
-    R : jnp.ndarray, shape (dim_Y, dim_Y)
+    R : jax.Array, shape (dim_Y, dim_Y)
         The observation noise covariance
 
     Returns
     -------
-    S : jnp.ndarray, shape (dim_Y, dim_Y)
+    S : jax.Array, shape (dim_Y, dim_Y)
         The S matrix
     """
     return H @ sigma @ H.T + R
 
 
-def calculate_K_matrix(sigma, H, S):
+def calculate_K_matrix(sigma: jax.Array, H: jax.Array, S: jax.Array) -> jax.Array:
     """Calculates the K matrix for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
@@ -670,22 +715,25 @@ def calculate_K_matrix(sigma, H, S):
 
     Parameters
     ----------
-    sigma : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma : jax.Array, shape (dim_Z, dim_Z)
         The state covariance
-    H : jnp.ndarray, shape (dim_Y, dim_Z)
+    H : jax.Array, shape (dim_Y, dim_Z)
         The observation matrix
-    S : jnp.ndarray, shape (dim_Y, dim_Y)
+    S : jax.Array, shape (dim_Y, dim_Y)
         The S matrix
 
     Returns
     -------
-    K : jnp.ndarray, shape (dim_Z, dim_Y)
+    K : jax.Array, shape (dim_Z, dim_Y)
         The K matrix
     """
     return sigma @ H.T @ jnp.linalg.inv(S)
 
 
-def fit_parameters(Z, Y):
+def fit_parameters(
+    Z: jax.Array,
+    Y: jax.Array,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     """Fits the optimal stationary parameters of the Kalman filter.
 
     Assuming a training set exists where hidden states Z and
@@ -708,24 +756,24 @@ def fit_parameters(Z, Y):
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
-    Y : jnp.ndarray, shape (T, dim_Y)
+    Y : jax.Array, shape (T, dim_Y)
         The observations (training data)
 
     Returns
     -------
-    mu0 : jnp.ndarray, shape (dim_Z,)
+    mu0 : jax.Array, shape (dim_Z,)
         The initial state mean
-    sigma0 : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma0 : jax.Array, shape (dim_Z, dim_Z)
         The initial state covariance
-    F : jnp.ndarray, shape (dim_Z, dim_Z)
+    F : jax.Array, shape (dim_Z, dim_Z)
         The state transition matrix
-    Q : jnp.ndarray, shape (dim_Z, dim_Z)
+    Q : jax.Array, shape (dim_Z, dim_Z)
         The state transition noise covariance
-    H : jnp.ndarray, shape (dim_Y, dim_Z)
+    H : jax.Array, shape (dim_Y, dim_Z)
         The observation matrix
-    R : jnp.ndarray, shape (dim_Y, dim_Y)
+    R : jax.Array, shape (dim_Y, dim_Y)
         The observation noise covariance
 
     """
@@ -745,37 +793,37 @@ def fit_parameters(Z, Y):
     return mu0, sigma0, F, Q, H, R
 
 
-def fit_mu0(Z):
+def fit_mu0(Z: jax.Array) -> jax.Array:
     """Fits the initial state mean of the Kalman filter.
 
     Assumes stationary dynamics, see `fit_parameters` for more details.
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
 
     Returns
     -------
-    mu0 : jnp.ndarray, shape (dim_Z,)
+    mu0 : jax.Array, shape (dim_Z,)
         The initial state mean
     """
     return Z.mean(axis=0)
 
 
-def fit_sigma0(Z):
+def fit_sigma0(Z: jax.Array) -> jax.Array:
     """Fits the initial state covariance of the Kalman filter.
 
     Assumes stationary dynamics, see `fit_parameters` for more details.
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
 
     Returns
     -------
-    sigma0 : jnp.ndarray, shape (dim_Z, dim_Z)
+    sigma0 : jax.Array, shape (dim_Z, dim_Z)
         The initial state covariance
     """
     T = Z.shape[0]
@@ -783,7 +831,7 @@ def fit_sigma0(Z):
     return (1 / T) * ((Z - mu0).T @ (Z - mu0))
 
 
-def fit_F(Z):
+def fit_F(Z: jax.Array) -> jax.Array:
     """Fits the state transition matrix of the Kalman filter.
 
     Assumes stationary dynamics **and no control input**, see
@@ -791,18 +839,18 @@ def fit_F(Z):
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
 
     Returns
     -------
-    F : jnp.ndarray, shape (dim_Z, dim_Z)
+    F : jax.Array, shape (dim_Z, dim_Z)
         The state transition matrix
     """
     return (Z[1:].T @ Z[:-1]) @ jnp.linalg.inv(Z.T @ Z)
 
 
-def fit_Q(Z):
+def fit_Q(Z: jax.Array) -> jax.Array:
     """Fits the state transition noise covariance of the Kalman filter.
 
     Assumes stationary dynamics **and no control input**, see
@@ -810,12 +858,12 @@ def fit_Q(Z):
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
 
     Returns
     -------
-    Q : jnp.ndarray, shape (dim_Z, dim_Z)
+    Q : jax.Array, shape (dim_Z, dim_Z)
         The state transition noise covariance
     """
     T = Z.shape[0]
@@ -823,41 +871,41 @@ def fit_Q(Z):
     return (1 / (T - 1)) * (Z[1:] - Z[:-1] @ F.T).T @ (Z[1:] - Z[:-1] @ F.T)
 
 
-def fit_H(Z, Y):
+def fit_H(Z: jax.Array, Y: jax.Array) -> jax.Array:
     """Fits the observation matrix of the Kalman filter.
 
     Assumes stationary dynamics, see `fit_parameters` for more details.
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
-    Y : jnp.ndarray, shape (T, dim_Y)
+    Y : jax.Array, shape (T, dim_Y)
         The observations (training data)
 
     Returns
     -------
-    H : jnp.ndarray, shape (dim_Y, dim_Z)
+    H : jax.Array, shape (dim_Y, dim_Z)
         The observation matrix
     """
     return (Y.T @ Z) @ jnp.linalg.inv(Z.T @ Z)
 
 
-def fit_R(Z, Y):
+def fit_R(Z: jax.Array, Y: jax.Array) -> jax.Array:
     """Fits the observation noise covariance of the Kalman filter.
 
     Assumes stationary dynamics, see `fit_parameters` for more details.
 
     Parameters
     ----------
-    Z : jnp.ndarray, shape (T, dim_Z)
+    Z : jax.Array, shape (T, dim_Z)
         The hidden states (training data)
-    Y : jnp.ndarray, shape (T, dim_Y)
+    Y : jax.Array, shape (T, dim_Y)
         The observations (training data)
 
     Returns
     -------
-    R : jnp.ndarray, shape (dim_Y, dim_Y)
+    R : jax.Array, shape (dim_Y, dim_Y)
         The observation noise covariance
     """
     T = Z.shape[0]
