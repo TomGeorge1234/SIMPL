@@ -139,7 +139,7 @@ class SIMPL:
 
         # SET TRIAL BOUNDARIES (IF GIVEN)
         self.trial_boundaries = np.array([0,])
-        self.trial_slices = slice(0,self.T)
+        self.trial_slices = [slice(0,self.T),]
         if 'trial_boundaries' in data.keys():
             self.trial_boundaries = data.trial_boundaries.values
             self.trial_slices = data.trial_slices.values
