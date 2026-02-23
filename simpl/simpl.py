@@ -21,7 +21,7 @@ from simpl.environment import Environment
 
 # Kalmax package handles the Kalman filtering and KDE
 from kalmax.kalman import KalmanFilter
-from kalmax.kde import kde, kde_circular1d
+from kalmax.kde import kde, kde_angular
 from kalmax.kde import poisson_log_likelihood, poisson_log_likelihood_trajectory
 from kalmax.utils import fit_gaussian
 from kalmax.kernels import gaussian_kernel
@@ -116,7 +116,7 @@ class SIMPL:
         save_likelihood_maps : bool, optional
             Whether to save the likelihood maps of the spikes at each time step (these a size env x time so cost a LOT of memory, only save if needed), by default False
         is_circular : bool, optional
-            Whether the latent space is circular (e.g. head direction data). If True, a kde_circular1d is used in the M-step, by default False. 
+            Whether the latent space is circular (e.g. head direction data). If True, a kde_angular is used in the M-step, by default False. 
             Currently it only supports 1D circular data, so if True, the environment should have D=1.
             It expects the coordinates of the environment to be in radians and to range from -pi to pi.
 
@@ -241,7 +241,7 @@ class SIMPL:
 
         self.is_circular = is_circular
         if is_circular:
-            self.kde = kde_circular1d
+            self.kde = kde_angular
         else:
             self.kde = kde
     
@@ -328,6 +328,7 @@ class SIMPL:
             F_prev=self.lastF,
             Xt=self.Xt, 
             Ft=self.Ft,
+            PX=self.M['PX']
             )
         results = self.dict_to_dataset({**self.M, **self.E, **evals}).expand_dims({'epoch':[self.epoch]})
         self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
@@ -481,19 +482,22 @@ class SIMPL:
             spikes = Y,
             kernel = self.kernel,
             kernel_bandwidth = self.kernel_bandwidth,
-            mask=mask) # fit place fields
+            mask=mask,
+            return_position_density=True) # fit place fields
         
         # vmap over the mask input (avoids a lot of redundant computation)
         # TODO It would be cleaner to the odd/even masks in get_metrics() but then I couldn't exploit the vmap. 
         stacked_masks = jnp.array([self.spike_mask, self.odd_minute_mask, self.even_minute_mask])
-        all_F = vmap(kde_func)(stacked_masks)
+        all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
+        PX = all_PX[0] # (N_bins,) Normalized position density.
         # Interpolates the rate maps just calculated onto the latent trajectory to establish a "smoothed" continuous estimate of the firing rates (note using KDE func directly would be too slow here)
         FX = self.interpolate_firing_rates(X, F)
         M = {'F':F,
              'F_odd_minutes':F_odd_minutes,
              'F_even_minutes':F_even_minutes,
              'FX':FX,
+             'PX': PX
              }
       
         
@@ -535,7 +539,8 @@ class SIMPL:
                           X_prev:jnp.ndarray=None, 
                           F_prev:jnp.ndarray=None, 
                           Xt:jnp.ndarray=None, 
-                          Ft:jnp.ndarray=None) -> dict:
+                          Ft:jnp.ndarray=None,
+                          PX:jnp.ndarray=None) -> dict:
         """Calculates important metrics and baselines on the current epochs results. Warning: this is a relaxed function; pass in whatever data you have and it will return whatever metrics it is able to calculate. These are: 
         
         - X_R2 : the R2 between the true and estimated latent positions
@@ -548,6 +553,7 @@ class SIMPL:
         - field_size : the average size of the fields in the place fields
         - field_change : how much the fields have shifted from the last epoch (if available)
         - trajectory_change : the change in the latent positions from the last epoch (if available)
+        - PX : the density of the latent trajectory through each bin of the environment (i.e. how much data supports each bin of the place fields)
 
         Only variables which _can_ be calculated are calculated (i.e. if the true latent positions are not available, the X_R2 metric will not be calculated nor returned in the dictionary).
         
@@ -561,6 +567,8 @@ class SIMPL:
             The spike counts of the neurons at each time step
         FX : jnp.ndarray, shape (T, N_neurons)
             The estimated firing rates of the neurons at each time step
+        PX : jnp.ndarray, shape (N_bins,)
+            The normalized position density of the latent trajectory through each bin of the environment
         F_odd_mins : jnp.ndarray, shape (N_neurons, N_bins)
             The estimated place fields from the odd minutes of the data
         F_even_mins : jnp.ndarray, shape (N_neurons, N_bins)
@@ -598,11 +606,11 @@ class SIMPL:
         if F is not None and Ft is not None:
             metrics['F_err'] = jnp.mean(jnp.linalg.norm(F - Ft, axis=1))
 
-        # SPATIAL INFORMATION
+        # NEGATIVE ENTROPY
         if F is not None:
             F_pdf = (F+1e-6) / jnp.sum(F, axis=1)[:,None] # normalise the place fields
-            I_F = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1) # spatial information of the place fields
-            metrics['information'] = I_F
+            I_F = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1) # negative entropy of the place fields
+            metrics['negative_entropy'] = I_F
 
         # SPARSITY
         if F is not None:
@@ -631,6 +639,19 @@ class SIMPL:
             delta_X = jnp.linalg.norm(X - X_prev, axis=1)
             metrics['trajectory_change'] = delta_X
 
+        # SPATIAL INFORMATION
+        if F is not None and PX is not None:
+            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
+            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
+            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
+            I_F = I_F / lambda_  # bits/spike
+            if lambda_.mean() < 0.01 or lambda_.mean() > 100:
+                print(
+                    f"Warning: mean firing rate is {lambda_.mean():.4f} Hz, which is outside the expected range. Check if DT is correct."
+                )
+
+            metrics['spatial_information'] = I_F
+
         return metrics
     
     def calculate_baselines(self):
@@ -645,43 +666,49 @@ class SIMPL:
         if self.ground_truth_available == False:
             warnings.warn("Ground truth data not available, so the baselines cannot be calculated.")
             return
-        
+
+        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
+        M_best = self._M_step(self.Y, self.Xt)
+        E_best = self._E_step(self.Y, M_best['F']) 
+        evals_best = self.get_metrics(
+                X = E_best['X'],
+                F = M_best['F'],
+                Y = self.Y,
+                FX = M_best['FX'],
+                F_odd_mins = M_best['F_odd_minutes'],
+                F_even_mins = M_best['F_even_minutes'],
+                X_prev = None,
+                F_prev = None,
+                Xt = self.Xt,
+                Ft = self.Ft,
+                PX = M_best['PX']
+                )
+        results = self.dict_to_dataset({**M_best, **E_best, **evals_best}).expand_dims({'epoch':[-1]})
+        self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
+
         if self.Ft is not None:
             # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
-            M = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft)}
-            E = self._E_step(self.Y, self.Ft)
-            evals = self.get_metrics(
-                    X = E['X'],
+            M_exact = {'F':self.Ft, 'FX':self.interpolate_firing_rates(self.Xt, self.Ft),
+                       'PX':M_best['PX'], # the occupancy is the same as the best model.
+                       }
+            E_exact = self._E_step(self.Y, self.Ft)
+            evals_exact = self.get_metrics(
+                    X = E_exact['X'],
                     F = self.Ft,
                     Y = self.Y,
-                    FX = M['FX'],
+                    FX = M_exact['FX'],
                     F_odd_mins = None,
                     F_even_mins = None,
                     X_prev = None,
                     F_prev = None,
                     Xt = self.Xt,
-                    Ft = self.Ft)
-            results = self.dict_to_dataset({**M, **E, **evals}).expand_dims({'epoch':[-2]})
+                    Ft = self.Ft,
+                    PX=M_exact['PX'])
+            results = self.dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({'epoch':[-2]})
             self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
+            self.results = self.results.sortby('epoch') # sort the results by epoch so the exact comes before the best model
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")  
-
-        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
-        M = self._M_step(self.Y, self.Xt)
-        E = self._E_step(self.Y, M['F']) 
-        evals = self.get_metrics(
-                X = E['X'],
-                F = M['F'],
-                Y = self.Y,
-                FX = M['FX'],
-                F_odd_mins = M['F_odd_minutes'],
-                F_even_mins = M['F_even_minutes'],
-                X_prev = None,
-                F_prev = None,
-                Xt = self.Xt,
-                Ft = self.Ft)
-        results = self.dict_to_dataset({**M, **E, **evals}).expand_dims({'epoch':[-1]})
-        self.results = xr.concat([self.results, results], dim='epoch', data_vars="minimal")
 
         return 
     
@@ -806,6 +833,14 @@ class SIMPL:
                 'dims':['time', 'neuron'],
                 'axis_title':r'Firing rate',
                 'formula':r'$f(t)$',
+            },
+            'PX': {
+                'name': 'Occupancy',
+                'description': 'The spatial occupancy at each position bin, estimated from the latent trajectory using a kernel density estimator. This is the denominator of the KDE used to fit receptive fields.',
+                'dims': [*self.dim],
+                'axis_title': 'Occupancy',
+                'formula': r'$p(x)$',
+                'reshape': True,
             },
             # Ground truth data variables
             'Xb': {
@@ -982,12 +1017,24 @@ class SIMPL:
                 'axis title':'Spike log-likelihood (test)',
                 'formula':r'$\log P(Y_{\textrm{test}}|X(t), \Theta)$',  
             },
-            'information': {
-                'name':'Spatial information',
-                'description':'The spatial information of each of the receptive fields, -sum(F * log(F)).',
+            'spatial_information': {
+                'axis title': "Spatial Information (bits/spike)",
+                'name': "Spatial information",
+                'description': "Following 'An Information-Theoretic Approach to Deciphering the Hippocampal Code',\
+                                the formula to compute the spatial information is as follows:\
+                                $I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$\
+                                where $\lambda(x)$ is the place field of the cell, $\lambda$ is the mean firing rate of the cell,\
+                                and $p(x)$ is the spatial occupancy.\
+                                https://proceedings.neurips.cc/paper/1992/file/5dd9db5e033da9c6fb5ba83c7a7ebea9-Paper.pdf",
+                'dims': ["neuron"],
+                'formula': r'$I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$',
+            },
+            'negative_entropy': {
+                'name':'Negative entropy',
+                'description':'The negative entropy of each of the receptive fields, -sum(F * log(F)).',
                 'dims':['neuron'],
-                'axis title':'Spatial information',
-                'formula':r'$I(r(x))$',
+                'axis title':'Negative entropy',
+                'formula':r'$- \sum F \log F$',
             },
             'sparsity': {
                 'name':'Sparsity',
