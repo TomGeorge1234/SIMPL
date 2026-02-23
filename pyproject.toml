@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simpl"
+version = "0.1.0"
+description = "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    {name = "Tom George"},
+]
+dependencies = [
+    "jax",
+    "xarray",
+    "scikit-learn>=1.3",
+    "scikit-image",
+    "matplotlib",
+    "tqdm",
+    "netcdf4",
+]
+
+[project.optional-dependencies]
+demos = ["jupyter", "ratinabox"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+    "build",
+    "twine",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+simpl = ["data/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=simpl --cov-report=term-missing"
+filterwarnings = [
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+]
+
+[tool.coverage.run]
+source = ["simpl"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 50
