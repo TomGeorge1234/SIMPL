@@ -182,10 +182,10 @@ class SIMPL:
             The size of contiguous blocks of False in the
             speckled mask, by default 1.0 second.
         resample_spike_mask : bool, optional
-            Whether to resample the speckled mask each epoch, by default False. 
-            If True, this will generate a new random speckled mask each epoch, 
-            which can help to ensure the model is not overfitting to a 
-            particular train/test split. If False, the same speckled 
+            Whether to resample the speckled mask each epoch, by default False.
+            If True, this will generate a new random speckled mask each epoch,
+            which can help to ensure the model is not overfitting to a
+            particular train/test split. If False, the same speckled
             mask is used each epoch.
         random_seed : int, optional
             The random seed for reproducibility of the speckled
