@@ -41,14 +41,14 @@ class SIMPL:
         speed_prior: float = 0.1,
         behaviour_prior: float | None = None,
         test_frac: float = 0.1,
+        is_circular: bool = False,
         speckle_block_size_seconds: float = 1,
+        resample_spike_mask: bool = False,
+        random_seed: int = 0,
         # Analysis parameters
         manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
-        resample_spike_mask: bool = False,
-        is_circular: bool = False,
-        random_seed: int = 0,
     ) -> None:
         """Initializes the SIMPL class.
 
@@ -170,9 +170,27 @@ class SIMPL:
             The fraction of the data to use for testing, by
             default 0.1. Testing data is generated using a
             speckled mask.
+        is_circular : bool, optional
+            Whether the latent space is circular (e.g. head
+            direction data). If True, a kde_angular is used in
+            the M-step, by default False. Currently it only
+            supports 1D circular data, so if True, the
+            environment should have D=1. It expects the
+            coordinates of the environment to be in radians and
+            to range from -pi to pi.
         speckle_block_size_seconds : float, optional
             The size of contiguous blocks of False in the
             speckled mask, by default 1.0 second.
+        resample_spike_mask : bool, optional
+            Whether to resample the speckled mask each epoch, by default False. 
+            If True, this will generate a new random speckled mask each epoch, 
+            which can help to ensure the model is not overfitting to a 
+            particular train/test split. If False, the same speckled 
+            mask is used each epoch.
+        random_seed : int, optional
+            The random seed for reproducibility of the speckled
+            mask, by default 0. Only used if resample_spike_mask
+            is True.
         manifold_align_against : str, optional
             The variable to align the latent positions against,
             by default 'behaviour'. This can be 'behaviour' or
@@ -189,17 +207,7 @@ class SIMPL:
             Whether to save the likelihood maps of the spikes at
             each time step (these a size env x time so cost a
             LOT of memory, only save if needed), by default
-            False
-        is_circular : bool, optional
-            Whether the latent space is circular (e.g. head
-            direction data). If True, a kde_angular is used in
-            the M-step, by default False. Currently it only
-            supports 1D circular data, so if True, the
-            environment should have D=1. It expects the
-            coordinates of the environment to be in radians and
-            to range from -pi to pi.
-
-
+            False.
         """
         # PREPARE THE DATA INTO JAX ARRAYS
         self.data = data.copy()
