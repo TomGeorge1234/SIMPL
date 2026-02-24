@@ -39,12 +39,12 @@ class SIMPL:
         kernel_bandwidth: float = 0.02,
         speed_prior: float = 0.1,
         behaviour_prior: float | None = None,
-        test_frac: float = 0.1,
         is_circular: bool = False,
+        # Mask and analysis parameters
+        test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         resample_spike_mask: bool = False,
         random_seed: int = 0,
-        # Analysis parameters
         manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
