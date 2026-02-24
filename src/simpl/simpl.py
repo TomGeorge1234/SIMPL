@@ -37,7 +37,6 @@ class SIMPL:
         # Model parameters
         kernel: Callable = gaussian_kernel,
         kernel_bandwidth: float = 0.02,
-        observation_noise_std: float = 0.00,  # TODO probably remove this unused parameter
         speed_prior: float = 0.1,
         behaviour_prior: float | None = None,
         test_frac: float = 0.1,
@@ -152,10 +151,6 @@ class SIMPL:
             gaussian_kernel
         kernel_bandwidth : float, optional
             The bandwidth of the kernel, by default 0.02
-        observation_noise_std : float, optional
-            A small fixed component added to the observation
-            noise covariance of the Kalman filter.
-            By default 0.00 m. Probably will be deprecated.
         speed_prior : float, optional
             The prior speed of the agent in units of meters per
             second, by default 0.1 m/s.
@@ -281,8 +276,6 @@ class SIMPL:
         B = (1 - lam) * jnp.eye(self.D)  # control input matrix
         Q = sigma_eff_square * jnp.eye(self.D)  # process noise covariance
         H = jnp.eye(self.D)  # observation matrix
-
-        self.R_base = observation_noise_std**2 * jnp.eye(self.D)  # base observation noise
 
         # Prepare Kalman Filter
         self.kalman_filter = KalmanFilter(
@@ -528,14 +521,12 @@ class SIMPL:
             ),
         )(self.xF, jnp.exp(logPYXF_maps))
 
-        # Kalman observation noise is base observation noise +
-        # the covariance of the likelihoods (artificially inflated
-        # when there are no spikes)
-        observation_noise = self.R_base + sigma_l
+        # Kalman observation noise is the covariance of the likelihoods
+        # (artificially inflated when there are no spikes)
         observation_noise = jnp.where(
             no_spikes[:, None, None],
             jnp.eye(self.D) * 1e6,
-            observation_noise,
+            sigma_l,
         )
 
         # Process each trial (or full dataset if no trial boundaries are specified)
@@ -570,13 +561,10 @@ class SIMPL:
                     0,
                 ),
             )(self.xF, jnp.exp(logPYXF_maps_test))
-            observation_noise_test = (
-                jnp.where(
-                    no_spikes_test[:, None, None],
-                    jnp.eye(self.D) * 1e6,
-                    sigma_l_test,
-                )
-                + self.R_base
+            observation_noise_test = jnp.where(
+                no_spikes_test[:, None, None],
+                jnp.eye(self.D) * 1e6,
+                sigma_l_test,
             )
             logPYF_test = self.kalman_filter.loglikelihood(
                 Y=mode_l_test,
