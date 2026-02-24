@@ -354,7 +354,7 @@ def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     return dataset
 
 
-def create_speckled_mask(size: tuple[int, int], sparsity: float = 0.1, block_size: int = 10) -> jax.Array:
+def create_speckled_mask(size: tuple[int, int], sparsity: float = 0.1, block_size: int = 10, random_seed: int = 0) -> jax.Array:
     """
     TODO : Rewrite this in JAX
     Creates a boolean mask of size `size`. This mask is all True except along each column randomly
@@ -383,6 +383,7 @@ def create_speckled_mask(size: tuple[int, int], sparsity: float = 0.1, block_siz
     """
     mask = np.ones(size, dtype=bool)
     num_blocks_per_row = int(sparsity * size[0] / block_size)
+    np.random.seed(random_seed)
     for row in range(size[1]):
         for block in range(num_blocks_per_row):
             # Randomly choose starting positions within the bounds

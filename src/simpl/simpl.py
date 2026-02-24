@@ -48,6 +48,7 @@ class SIMPL:
         save_likelihood_maps: bool = False,
         resample_spike_mask: bool = False,
         is_circular: bool = False,
+        random_seed: int = 0,
     ) -> None:
         """Initializes the SIMPL class.
 
@@ -248,10 +249,12 @@ class SIMPL:
         self.resample_spike_mask = resample_spike_mask
         self.test_frac = test_frac
         self.block_size = int(speckle_block_size_seconds / self.dt)
+        self.random_seed = random_seed
         self.spike_mask = create_speckled_mask(
             size=(self.T, self.N_neurons),  # train/test specle mask
             sparsity=test_frac,
             block_size=self.block_size,
+            random_seed=self.random_seed,
         )
         # mask for odd minutes
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1)
