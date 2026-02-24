@@ -1,6 +1,5 @@
 # Jax, for the majority of the calculations
 import warnings
-from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
@@ -106,8 +105,8 @@ class SIMPL:
             - 'coords_dict' : a dictionary mapping dim to their coordinate values
             - 'discrete_env_shape' : the shape of the discretised environment e.g. (N_xbins, N_ybins) in 2D
         kernel_bandwidth : float, optional
-            The bandwidth of the kernel in meters for doing kde on the spikes (default a gaussian kernel unless using a 
-            1Dcircular environment in which case a von Mises kernel is used and the effective units are radians) 
+            The bandwidth of the kernel in meters for doing kde on the spikes (default a gaussian kernel unless using a
+            1Dcircular environment in which case a von Mises kernel is used and the effective units are radians)
             by default 0.02.
         speed_prior : float, optional
             The prior speed of the agent in units of meters per second, by default 0.1 m/s.
