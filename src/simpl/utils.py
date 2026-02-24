@@ -4,6 +4,8 @@ data preparation, I/O, and circular/angular helpers."""
 import jax
 import jax.numpy as jnp
 import numpy as np
+import scipy
+import skimage.measure
 import sklearn.cross_decomposition
 import xarray as xr
 from jax import random
@@ -558,3 +560,122 @@ def load_results(path: str) -> xr.Dataset:
         ]
 
     return results
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Place-field analysis
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def analyse_place_fields(
+    F: jax.Array,
+    N_neurons: int,
+    N_PFmax: int,
+    D: int,
+    xF_shape: tuple,
+    xF: jax.Array,
+    dt: float,
+    bin_size: float,
+    n_bins: int,
+) -> dict:
+    """Analyse tuning curves and return information about place fields.
+
+    Terminology: "field" is the *whole* tuning curve.  "place field" (pf) is the
+    portion of the whole tuning curve identified as a particular place field.
+
+    Parameters
+    ----------
+    F : jnp.ndarray, shape (N_neurons, N_bins)
+        The estimated place fields.
+    N_neurons : int
+        Number of neurons.
+    N_PFmax : int
+        Maximum number of place fields per neuron (for fixed-shape arrays).
+    D : int
+        Dimensionality of the latent space.
+    xF_shape : tuple
+        Shape of the discretised environment grid (e.g. ``(nx, ny)``).
+    xF : jnp.ndarray, shape (N_bins, D)
+        Flattened discretised environment coordinates.
+    dt : float
+        Time-step size (seconds).
+    bin_size : float
+        Spatial bin size of the environment.
+    n_bins : int
+        Total number of spatial bins.
+
+    Returns
+    -------
+    dict
+        Place-field results dictionary with keys such as
+        ``place_field_count``, ``place_field_size``, etc.
+    """
+
+    # Initialise arrays
+    pf_count = np.zeros((N_neurons))
+    pf_size = np.nan * np.ones((N_neurons, N_PFmax))
+    pf_position = np.nan * np.ones((N_neurons, N_PFmax, D))
+    pf_covariance = np.nan * np.ones((N_neurons, N_PFmax, D, D))
+    pf_maxfr = np.nan * np.zeros((N_neurons, N_PFmax))
+    pf_edges = np.zeros((N_neurons, *xF_shape))
+    pf_roundness = np.nan * np.zeros((N_neurons, N_PFmax))
+
+    # Reshape the fields
+    F_fields = F.reshape(N_neurons, *xF_shape)  # reshape F into fields
+
+    # Threshold the fields
+    F_1Hz = jnp.where(F_fields > 1.0 * dt, 1, 0)  # threshold at 1Hz
+
+    # Total environment size
+    volume_element = bin_size**D
+    env_size = n_bins * volume_element
+
+    # For each cell in turn, analyse the place fields
+    for n in range(N_neurons):
+        # Finds contiguous field areas, O/False is considered background and labelled "0".
+        # Doesn't count diagonal pixel-connections as connections
+        field = F_fields[n]
+        field_thresh = F_1Hz[n]
+        putative_pfs, putative_pfs_count = scipy.ndimage.label(field_thresh)
+        n_pfs = 0  # some of which won't meet out criteria so we use our own counter
+        combined_pf_mask = np.zeros_like(field)
+        for f in range(1, min(N_PFmax, putative_pfs_count + 1)):
+            pf_mask = jnp.where(putative_pfs == f, 1, 0)
+            pf = jnp.where(putative_pfs == f, field, 0)
+            # Check the field isn't too large
+            size = pf_mask.sum() * volume_element
+            if size > (1 / 2) * env_size:
+                continue
+            # Check max firing rate is over 2Hz
+            maxfr = jnp.max(pf)
+            if maxfr < 2.0 * dt:
+                continue
+            # Assuming it's passed these, it's a legit field. Now fit a Gaussian.
+            perimeter = bin_size * skimage.measure.perimeter(pf_mask)
+            perimeter_dilated = bin_size * skimage.measure.perimeter(scipy.ndimage.binary_dilation(pf_mask))
+            perimeter = (perimeter + perimeter_dilated) / 2
+            roundness = 4 * np.pi * size / perimeter**2
+            combined_pf_mask += pf_mask
+            mu, mode, cov = fit_gaussian(xF, pf.flatten())
+            pf_size[n, n_pfs] = size
+            pf_position[n, n_pfs] = mu
+            pf_covariance[n, n_pfs] = cov
+            pf_maxfr[n, n_pfs] = maxfr
+            pf_roundness[n, n_pfs] = roundness
+            n_pfs += 1
+        # pad combined_pf_mask with zeros
+        is_pf = combined_pf_mask > 0
+        pf_edges[n] = scipy.ndimage.binary_dilation(is_pf) ^ is_pf
+        pf_count[n] = n_pfs
+
+    place_field_results = {
+        "place_field_count": jnp.array(pf_count),
+        "place_field_size": jnp.array(pf_size),
+        "place_field_position": jnp.array(pf_position),
+        "place_field_covariance": jnp.array(pf_covariance),
+        "place_field_max_firing_rate": jnp.array(pf_maxfr),
+        "place_field_roundness": jnp.array(pf_roundness),
+        "place_field_outlines": jnp.array(pf_edges),
+    }
+
+    return place_field_results
