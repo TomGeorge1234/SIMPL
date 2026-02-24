@@ -258,11 +258,8 @@ class SIMPL:
         self.test_frac = test_frac
         self.block_size = int(speckle_block_size_seconds / self.dt)
         self.random_seed = random_seed
-        if self.resample_spike_mask:
-            self.random_seed_list = np.random.SeedSequence(self.random_seed).spawn(1000)  # pre-generate random seeds for up to 1000 epochs
-            self.random_seed_epoch_ = self.random_seed_list[self.epoch + 1].generate_state(1)[0]  # get the random seed for the current epoch
-        else:
-            self.random_seed_epoch_ = self.random_seed
+        self._seed_seq = np.random.SeedSequence(self.random_seed)
+        self.random_seed_epoch_ = self._next_seed() if self.resample_spike_mask else self.random_seed
         self.spike_mask = create_speckled_mask(
             size=(self.T, self.N_neurons),  # train/test specle mask
             sparsity=test_frac,
@@ -362,6 +359,10 @@ class SIMPL:
         else:
             self.kde = kde
 
+    def _next_seed(self) -> int:
+        """Spawn a new seed from the seed sequence."""
+        return self._seed_seq.spawn(1)[0].generate_state(1)[0]
+
     def train_N_epochs(self, N: int = 5, verbose: bool = True) -> None:
         """Trains the model for N epochs, allowing for
         KeyboardInterrupt to stop training early. This function is
@@ -417,8 +418,7 @@ class SIMPL:
                 size=(self.T, self.N_neurons),  # train/test specle mask
                 sparsity=self.test_frac,
                 block_size=self.block_size,
-                # get the random seed for the current epoch
-                random_seed=self.random_seed_list[self.epoch + 1].generate_state(1)[0], 
+                random_seed=self._next_seed(),
             )
 
         # =========== E-STEP ===========
