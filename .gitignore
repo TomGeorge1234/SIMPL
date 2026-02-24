@@ -3,7 +3,12 @@ build/
 dist/
 *.egg-info/
 *.egg/
+*.whl
 .DS_Store
 venv/
+.venv/
 *.ipynb_checkpoints/
 _*
+.ruff_cache/
+.pytest_cache/
+.coverage
