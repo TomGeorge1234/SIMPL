@@ -166,6 +166,71 @@ class TestSIMPLGetLoglikelihoods:
         assert "logPYXF_test" in lls
 
 
+class TestSIMPLSeeding:
+    """Tests for the random seeding mechanism."""
+
+    def _make_model(self, demo_data, random_seed=0, resample_spike_mask=False):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        return SIMPL(
+            data=data,
+            environment=env,
+            random_seed=random_seed,
+            resample_spike_mask=resample_spike_mask,
+        )
+
+    def test_same_seed_same_initial_mask(self, demo_data):
+        """Same random_seed should produce the same initial spike mask."""
+        m1 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
+        m2 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
+        assert np.array_equal(m1.spike_mask, m2.spike_mask)
+
+    def test_different_seed_different_mask(self, demo_data):
+        """Different random_seed should produce different initial spike masks."""
+        m1 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
+        m2 = self._make_model(demo_data, random_seed=99, resample_spike_mask=True)
+        assert not np.array_equal(m1.spike_mask, m2.spike_mask)
+
+    def test_resample_changes_mask_each_epoch(self, demo_data):
+        """With resample_spike_mask=True, the mask should change each epoch."""
+        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=True)
+        mask_init = np.array(model.spike_mask)
+        model.train_epoch()
+        model.train_epoch()
+        mask_epoch1 = np.array(model.spike_mask)
+        assert not np.array_equal(mask_init, mask_epoch1)
+
+    def test_no_resample_keeps_mask(self, demo_data):
+        """With resample_spike_mask=False, the mask should stay the same."""
+        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=False)
+        mask_init = np.array(model.spike_mask)
+        model.train_epoch()
+        model.train_epoch()
+        assert np.array_equal(mask_init, np.array(model.spike_mask))
+
+    def test_next_seed_never_repeats(self, demo_data):
+        """_next_seed should produce unique seeds across calls."""
+        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=True)
+        seeds = [model._next_seed() for _ in range(100)]
+        assert len(set(seeds)) == len(seeds)
+
+    def test_reproducible_across_runs(self, demo_data):
+        """Two models with the same seed should produce identical masks after training."""
+        m1 = self._make_model(demo_data, random_seed=7, resample_spike_mask=True)
+        m2 = self._make_model(demo_data, random_seed=7, resample_spike_mask=True)
+        m1.train_epoch()
+        m1.train_epoch()
+        m2.train_epoch()
+        m2.train_epoch()
+        assert np.array_equal(m1.spike_mask, m2.spike_mask)
+
+
 class TestSIMPLManifoldAlignment:
     def test_cca_runs(self, small_simpl_model):
         model = small_simpl_model
