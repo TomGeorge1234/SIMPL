@@ -354,7 +354,12 @@ def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     return dataset
 
 
-def create_speckled_mask(size: tuple[int, int], sparsity: float = 0.1, block_size: int = 10, random_seed: int = 0) -> jax.Array:
+def create_speckled_mask(
+    size: tuple[int, int],
+    sparsity: float = 0.1,
+    block_size: int = 10,
+    random_seed: int = 0,
+) -> jax.Array:
     """
     TODO : Rewrite this in JAX
     Creates a boolean mask of size `size`. This mask is all True except along each column randomly
