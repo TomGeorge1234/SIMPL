@@ -52,157 +52,99 @@ class SIMPL:
         """Initializes the SIMPL class.
 
         Overview:
-            SIMPL is a class which takes in a data set of spikes and
-            initial latent estimates and iteratively "redecodes" the
-            latent by (i) fitting receptive fields by KDE to the spikes
-            (the "M-step") and (ii) running a Kalman filter on the MLE
-            estimates from the spikes to redecode the latent positions
-            (the "E-step"). This procedure is reminiscent (indeed --
-            theoretically equivalent to, see paper) of the EM-algorithm
+            SIMPL takes in a data set of spikes and initial latent estimates and iteratively "redecodes" the
+            latent by (i) fitting receptive fields by KDE to the spikes (the "M-step") and (ii) running a
+            Kalman filter on the MLE estimates from the spikes to redecode the latent positions (the "E-step").
+            This procedure is reminiscent (indeed -- theoretically equivalent to, see paper) of the EM-algorithm
             for latent variable optimisation.
 
         Terminology:
             `Y` refers to spike counts, shape (T, N_neurons)
-            `X` refers to the latent process (i.e. the position of
-            the agent), shape (T, DIMS)
-            `F` refers to the receptive fields, shape (N_neurons,
-            N_bins)
-            `logPYXF` refers to the log-likelihood of the spikes
-            given the position and receptive fields, shape (T, N_bins)
-            `mu_s`, `mu_f`, `sigma_s` etc. are the Kalman
-            filtered/smoothed means/covariances of the latent
-            positions.
+            `X` refers to the latent process (i.e. the position of the agent), shape (T, DIMS)
+            `F` refers to the receptive fields, shape (N_neurons, N_bins)
+            `logPYXF` refers to the log-likelihood of the spikes given the position and receptive fields, shape (T, N_bins)
+            `mu_s`, `mu_f`, `sigma_s` etc. are the Kalman filtered/smoothed means/covariances of the latent positions.
 
         Results format:
-            Data is stored and returned in one _ginormous_ xarray
-            Dataset, `self.results`. This dataset contains _every_
-            variable at every epoch include the raw data (`Y`,
-            `X`,`Xt` etc.), outputs of the E-step and M-step such
-            as receptive fields, likelihood maps, kalman
-            filtered/smoothed means and covariances etc. (`mu_s`,
-            `F` etc.) and evaluation baselines such as R2, X_err,
-            and F_err and metrics (trajectory stability, field
-            stability, field sparsity, spatial information), spike
-            masks (used to isolate test and train splits), and
-            linear rescaling coefficients. xarrays are like numpy
-            arrays which allow you to save data arrays along with
-            their associated coordinates. xarray-datasets are like
-            dictionaries of xarrays, where each xarray is a variable
-            and the dictionary keys are the variable names where many
+            Data is stored and returned in one _ginormous_ xarray Dataset, `self.results`. This dataset contains
+            _every_ variable at every epoch including the raw data (`Y`, `X`, `Xt` etc.), outputs of the E-step
+            and M-step such as receptive fields, likelihood maps, kalman filtered/smoothed means and covariances
+            etc. (`mu_s`, `F` etc.) and evaluation baselines such as R2, X_err, and F_err and metrics (trajectory
+            stability, field stability, field sparsity, spatial information), spike masks (used to isolate test
+            and train splits), and linear rescaling coefficients. xarrays are like numpy arrays which allow you
+            to save data arrays along with their associated coordinates. xarray-datasets are like dictionaries of
+            xarrays, where each xarray is a variable and the dictionary keys are the variable names where many
             variables can share the same coordinates.
 
-            So you can then access (for example) "the smoothed latent
-            position y-coordinate of at time t on the e'th epochs" by
-            calling
-            `self.results['mu_s'].sel(epoch=e, dim='y', time=t)`.
-            Two epochs (-2 and -1) are reserved for special cases
-            ("exact" and "best" models which are calculated using the
-            ground truth data (see `calculate_baselines`).
+            So you can then access (for example) "the smoothed latent position y-coordinate at time t on the
+            e'th epoch" by calling `self.results['mu_s'].sel(epoch=e, dim='y', time=t)`. Two epochs (-2 and -1)
+            are reserved for special cases ("exact" and "best" models which are calculated using the ground truth
+            data (see `calculate_baselines`).
 
         Key methods include:
         - `train_epoch()` which runs an epoch of the EM algorithm
         - `_E_step()` which runs the E-step of the EM algorithm
         - `_M_step()` which runs the M-step of the EM algorithm
 
-
         Parameters
         ----------
         data : xr.Dataset
-            The data to be decoded. This should contain the
-            following variables:
-            - 'Y' : the spike counts of the neurons at each
-              time step (T x N_neurons)
-            - 'Xb' : the position of the agent at each time
-              step (T x DIMS)
+            The data to be decoded. This should contain the following variables:
+            - 'Y' : the spike counts of the neurons at each time step (T x N_neurons)
+            - 'Xb' : the position of the agent at each time step (T x DIMS)
             ...and if available, ground truth data...
-            - 'Xt' : the ground truth latent positions
-              (T x DIMS)
-            - 'Ft' : the ground truth place fields
-              (N_neurons x N_bins)
-            Along with the associated coordinates for each of
-            these variables.
-            - 'neurons' : the array of neuron indices
-              [0, 1, 2, ...]
-            - 'time' : the array of time stamps
-              [0, 0.05, 0.1, ...]
-            - 'dim' : the array of dimension names e.g.
-              ['x', 'y'] in 2D space
-            - 'x' : the array of x positions
-              [0, 0.1, 0.2, ...]
-            - 'y' : the array of y positions
-              [0, 0.1, 0.2, ...] (if 2D space)
+            - 'Xt' : the ground truth latent positions (T x DIMS)
+            - 'Ft' : the ground truth place fields (N_neurons x N_bins)
+            Along with the associated coordinates for each of these variables:
+            - 'neurons' : the array of neuron indices [0, 1, 2, ...]
+            - 'time' : the array of time stamps [0, 0.05, 0.1, ...]
+            - 'dim' : the array of dimension names e.g. ['x', 'y'] in 2D space
+            - 'x' : the array of x positions [0, 0.1, 0.2, ...]
+            - 'y' : the array of y positions [0, 0.1, 0.2, ...] (if 2D space)
         environment : Object
-            The environment in which the data can live. This
-            should contain the following attributes (satisfied
-            by the environment.Environment() class):
+            The environment in which the data can live. This should contain the following attributes
+            (satisfied by the environment.Environment() class):
             - 'D' : the number of dimensions of the environment
-            - 'flattened_dicretised_coords' : a list of
-              coordinates for all bins covering in the
-              environment (N_bins, D)
-            - 'dim' : the array of dimension names e.g.
-              ['x', 'y'] in 2D space
-            - 'coords_dict' : a dictionary mapping dim to
-              their coordinate values
-            - `discrete_env_shape` : the shape of the
-              discretised environment e.g. (N_xbins, N_ybins)
-              in 2D space
+            - 'flattened_discretised_coords' : coordinates for all bins in the environment (N_bins, D)
+            - 'dim' : the array of dimension names e.g. ['x', 'y'] in 2D space
+            - 'coords_dict' : a dictionary mapping dim to their coordinate values
+            - 'discrete_env_shape' : the shape of the discretised environment e.g. (N_xbins, N_ybins) in 2D
         kernel : Callable, optional
-            The kernel function to use for the KDE, by default
-            gaussian_kernel
+            The kernel function to use for the KDE, by default gaussian_kernel.
         kernel_bandwidth : float, optional
-            The bandwidth of the kernel, by default 0.02
+            The bandwidth of the kernel, by default 0.02.
         speed_prior : float, optional
-            The prior speed of the agent in units of meters per
-            second, by default 0.1 m/s.
+            The prior speed of the agent in units of meters per second, by default 0.1 m/s.
         behaviour_prior : Optional, optional
-            Prior over how far the latent positions can deviate
-            from the behaviour positions in units of meters, by
-            default None (no prior). This should typically be
-            off, or very large, unless you have good reason to
-            believe the behaviour prior should be enforced
-            strongly.
+            Prior over how far the latent positions can deviate from the behaviour positions in units of
+            meters, by default None (no prior). This should typically be off, or very large, unless you have
+            good reason to believe the behaviour prior should be enforced strongly.
         test_frac : float, optional
-            The fraction of the data to use for testing, by
-            default 0.1. Testing data is generated using a
+            The fraction of the data to use for testing, by default 0.1. Testing data is generated using a
             speckled mask.
         is_circular : bool, optional
-            Whether the latent space is circular (e.g. head
-            direction data). If True, a kde_angular is used in
-            the M-step, by default False. Currently it only
-            supports 1D circular data, so if True, the
-            environment should have D=1. It expects the
-            coordinates of the environment to be in radians and
-            to range from -pi to pi.
+            Whether the latent space is circular (e.g. head direction data). If True, kde_angular is used in
+            the M-step, by default False. Currently only supports 1D circular data, so if True, the environment
+            should have D=1. Expects coordinates in radians ranging from -pi to pi.
         speckle_block_size_seconds : float, optional
-            The size of contiguous blocks of False in the
-            speckled mask, by default 1.0 second.
+            The size of contiguous blocks of False in the speckled mask, by default 1.0 second.
         resample_spike_mask : bool, optional
-            Whether to resample the speckled mask each epoch, by default False.
-            If True, this will generate a new random speckled mask each epoch,
-            which can help to ensure the model is not overfitting to a
-            particular train/test split. If False, the same speckled
-            mask is used each epoch.
+            Whether to resample the speckled mask each epoch, by default False. If True, generates a new random
+            speckled mask each epoch, which can help ensure the model is not overfitting to a particular
+            train/test split. If False, the same speckled mask is used each epoch.
         random_seed : int, optional
-            The random seed for reproducibility of the speckled
-            mask, by default 0. Only used if resample_spike_mask
-            is True.
+            The random seed for reproducibility of the speckled mask, by default 0. Only used if
+            resample_spike_mask is True.
         manifold_align_against : str, optional
-            The variable to align the latent positions against,
-            by default 'behaviour'. This can be 'behaviour' or
-            'ground_truth' or 'none' (no manifold alignment is
-            performed).
+            The variable to align the latent positions against, by default 'behaviour'. Can be 'behaviour',
+            'ground_truth', or 'none' (no manifold alignment is performed).
         evaluate_each_epoch: bool, optional
-            Whether to evaluate the model and save results each
-            epoch (costing extra memory and compute) into the
-            results dataset, by default True. If False, the
-            results can only be saved at the end of the training
-            when self.evaluate_epoch() is manually called.
-            Epoch 0 is also always evaluated.
+            Whether to evaluate the model and save results each epoch (costing extra memory and compute) into
+            the results dataset, by default True. If False, results can only be saved at the end of training
+            when self.evaluate_epoch() is manually called. Epoch 0 is also always evaluated.
         save_likelihood_maps : bool, optional
-            Whether to save the likelihood maps of the spikes at
-            each time step (these a size env x time so cost a
-            LOT of memory, only save if needed), by default
-            False.
+            Whether to save the likelihood maps of the spikes at each time step (these are size env x time so
+            cost a LOT of memory, only save if needed), by default False.
         """
         # PREPARE THE DATA INTO JAX ARRAYS
         self.data = data.copy()
@@ -357,10 +299,10 @@ class SIMPL:
         return self._seed_seq.spawn(1)[0].generate_state(1)[0]
 
     def train_N_epochs(self, N: int = 5, verbose: bool = True) -> None:
-        """Trains the model for N epochs, allowing for
-        KeyboardInterrupt to stop training early. This function is
-        really just a wrapper on self.train_epoch() which does the
-        hard work and could be looped over manually by the user.
+        """Trains the model for N epochs, allowing for KeyboardInterrupt to stop training early.
+
+        This is really just a wrapper on self.train_epoch() which does the hard work and could be looped
+        over manually by the user.
 
         Parameters
         ----------
@@ -388,21 +330,13 @@ class SIMPL:
         self,
     ) -> None:
         """Runs an epoch of the EM algorithm.
-        1. INCREMENT: The epoch counter is incremented.
-        2. E-STEP: The E-step is performed by running
-           the Kalman decoder on the previous epoch's
-           place fields.
-        2.1. TRANSFORM: A linear transformation is applied
-           to the latent positions so they maximally
-           correlate with the behaviour.
-        3. M_STEP: The M-step is performed by fitting the
-           place fields to the new latent positions.
-        4. EVALUATE: The R2, X_err, and F_err metrics are
-           calculated between the true and estimated latent
-           positions and place fields (if available).
-        5. STORE: The results are converted to xarrays and
-           concatenated to the results dataset.
 
+        1. INCREMENT: The epoch counter is incremented.
+        2. E-STEP: The Kalman decoder is run on the previous epoch's place fields.
+        2.1. TRANSFORM: A linear transformation is applied so latent positions maximally correlate with behaviour.
+        3. M-STEP: Place fields are fitted to the new latent positions.
+        4. EVALUATE: R2, X_err, and F_err metrics are calculated between true and estimated values (if available).
+        5. STORE: Results are converted to xarrays and concatenated to the results dataset.
         """
         # =========== INCREMENT EPOCH ===========
         self.epoch += 1
@@ -443,15 +377,11 @@ class SIMPL:
         return
 
     def evaluate_epoch(self) -> None:
-        """Evaluates the current model (i.e. calculates all the
-        "metrics") and saves the results in the self.results dataset.
-        By default this is done at the end of each epoch but can be
-        turned off, see __init__() and done manually by calling this
-        function after training.
+        """Evaluates the current model (i.e. calculates all the "metrics") and saves the results in self.results.
 
-        Nothing needs to be passed as this function will use the
-        current class attributes as it's data (self.E, self.M,
-        self.epoch etc.)
+        By default this is done at the end of each epoch but can be turned off (see __init__()) and done
+        manually by calling this function after training. Nothing needs to be passed as this function will
+        use the current class attributes (self.E, self.M, self.epoch etc.).
         """
 
         evals = {}
@@ -474,39 +404,29 @@ class SIMPL:
 
     def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
         """E-STEP of the EM algorithm.
-           1. LIKELIHOOD: The log-likelihood maps of the
-              spikes, as a function of position, is calculated
-              for each time step.
-           2. FIT GAUSSIANS: Gaussians (mu, mode, sigma), are
-              fitted to the log-likelihoods maps.
-           3. KALMAN FILTER: The Kalman filter is run on the
-              modes (i.e. the MLE position) of the likelihoods
-              to calculate the latent positions. The observation
-              noise is the sigma of the Gaussians (wide
-              likelihoods = high noise => weak effect on the
-              latent positions).
-           4. KALMAN SMOOTHER: The filtered datapoints are
-              Kalman smoothed.
-           5. LINEAR SCALING: The latent positions are linearly
-              scaled to maximally correlate with the behaviour.
-           6. SAMPLE: The posterior of the latent positions is
-              sampled.
-           7. EVALUATE: The posterior likelihood of the data
-              (mode observations) under the model is calculated.
-           8. STORE: The results are stored in a dictionary.
+
+        1. LIKELIHOOD: Log-likelihood maps of spikes as a function of position, calculated for each time step.
+        2. FIT GAUSSIANS: Gaussians (mu, mode, sigma) are fitted to the log-likelihood maps.
+        3. KALMAN FILTER: Run on the modes (MLE positions) of the likelihoods to calculate latent positions.
+           The observation noise is the sigma of the Gaussians (wide likelihoods = high noise => weak effect).
+        4. KALMAN SMOOTHER: The filtered datapoints are Kalman smoothed.
+        5. LINEAR SCALING: Latent positions are linearly scaled to maximally correlate with the behaviour.
+        6. SAMPLE: The posterior of the latent positions is sampled.
+        7. EVALUATE: The posterior likelihood of the data (mode observations) under the model is calculated.
+        8. STORE: The results are stored in a dictionary.
 
         Parameters
         ----------
         Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step
+            The spike counts of the neurons at each time step.
         F : jnp.ndarray, shape (N_neurons, N_bins)
-            The place fields of the neurons (expected no. spikes
-            of each neuron at each position in one time bin)
+            The place fields of the neurons (expected no. spikes of each neuron at each position in one time bin).
 
         Returns
         -------
         E : dict
-            The results of the E-step"""
+            The results of the E-step.
+        """
 
         # Batch this
         # Calc. log-likelihood maps
@@ -620,41 +540,26 @@ class SIMPL:
         return E
 
     def _M_step(self, Y: jax.Array, X: jax.Array) -> dict:
-        """Maximisation step of the EM algorithm. This step calculates
-        the receptive fields of the neurons. F is the probability of
-        the neurons firing at each position in one time step. We
-        calculate three versions of this, (i) using the full data
-        (training spikes only), (ii) using the odd minutes of the
-        data, and (iii) using the even minutes of the data.
+        """Maximisation step of the EM algorithm.
+
+        Calculates the receptive fields of the neurons. F is the probability of the neurons firing at each
+        position in one time step. We calculate three versions: (i) using the full data (training spikes only),
+        (ii) using the odd minutes, and (iii) using the even minutes.
 
         Parameters
         ----------
         Y : jnp.ndarray, shape (T, N_neurons)
-            The spikes of the neurons at each time step
+            The spikes of the neurons at each time step.
         X : jnp.ndarray, shape (T, D)
-            The positions of the agent at each time step
+            The positions of the agent at each time step.
 
         Returns
         -------
         dict :
-            The results of the M-step. This includes
-
-            - F : jnp.ndarray, shape (N_neurons, N_bins)
-                    The place fields of the neurons (probability
-                    of the neurons firing at each position in one
-                    time step)
-            - F_odd_minutes : jnp.ndarray, shape (N_neurons, N_bins)
-                    The place fields of the neurons (probability
-                    of the neurons firing at each position in one
-                    time step) calculated from the odd minutes of
-                    the data
-            - F_even_minutes : jnp.ndarray, shape (N_neurons, N_bins)
-                    The place fields of the neurons (probability
-                    of the neurons firing at each position in one
-                    time step) calculated from the even minutes of
-                    the data
-
-
+            The results of the M-step. This includes:
+            - F : jnp.ndarray, shape (N_neurons, N_bins) — place fields (full training data).
+            - F_odd_minutes : jnp.ndarray, shape (N_neurons, N_bins) — place fields from odd minutes.
+            - F_even_minutes : jnp.ndarray, shape (N_neurons, N_bins) — place fields from even minutes.
         """
 
         # Takes a mask and returns the receptive fields calculated using that mask
@@ -685,25 +590,22 @@ class SIMPL:
         return M
 
     def get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
-        """Calculates the log-likelihoods of the spikes given the
-        firing rates. This is the sum of the log-likelihood of the
-        spikes given the firing rates at each time step, normalised
-        per neuron per time step. This uses the Kalmax
-        `poisson_log_likelihood_trajectory` function which takes the
-        spike trains, Y, and an equally shaped array of predicted
-        firing rates, FX, for every neuron at every timestep, and
-        returns the log-likelihood of the spikes given the firing
-        rates. This is then normalised by the number of neurons and
-        time steps (accounting for the mask).
+        """Calculates the log-likelihoods of the spikes given the firing rates.
+
+        This is the sum of the log-likelihood of the spikes given the firing rates at each time step,
+        normalised per neuron per time step. Uses the `poisson_log_likelihood_trajectory` function which
+        takes the spike trains Y and an equally shaped array of predicted firing rates FX, for every neuron
+        at every timestep. The result is normalised by the number of neurons and time steps (accounting for
+        the mask).
 
         LL = sum_t sum_n log(P(Y_tn | X_t, F_n)) / T*N_neurons
 
-        Params
-        ------
+        Parameters
+        ----------
         Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step
+            The spike counts of the neurons at each time step.
         FX : jnp.ndarray, shape (T, N_neurons)
-            The estimated firing rates of the neurons at each time step
+            The estimated firing rates of the neurons at each time step.
 
         Returns
         -------
@@ -731,66 +633,50 @@ class SIMPL:
         Ft: jax.Array | None = None,
         PX: jax.Array | None = None,
     ) -> dict:
-        """Calculates important metrics and baselines on the current
-        epochs results. Warning: this is a relaxed function; pass in
-        whatever data you have and it will return whatever metrics it
-        is able to calculate. These are:
+        """Calculates important metrics and baselines on the current epoch's results.
 
-        - X_R2 : the R2 between the true and estimated latent
-          positions
-        - X_err : the mean position error between the true and
-          estimated latent positions
-        - F_err : the mean field error between the true and
-          estimated place fields
-        - information : the spatial information of the receptive
-          fields, -sum(F * log(F))
-        - sparsity : how sparse are the place fields, defined as
-          the fraction of bins where the firing is greater than
-          0.1 * max firing rate
-        - stability : correlation between receptive fields
-          estimated separately using spikes from odd and even
-          minutes.
-        - field_count : the number of distinct, stable fields in
-          the place fields
-        - field_size : the average size of the fields in the
-          place fields
-        - field_change : how much the fields have shifted from
-          the last epoch (if available)
-        - trajectory_change : the change in the latent positions
-          from the last epoch (if available)
-        - PX : the density of the latent trajectory through each
-          bin of the environment (i.e. how much data supports
-          each bin of the place fields)
+        Warning: this is a relaxed function; pass in whatever data you have and it will return whatever
+        metrics it is able to calculate. These are:
 
-        Only variables which _can_ be calculated are calculated
-        (i.e. if the true latent positions are not available, the
-        X_R2 metric will not be calculated nor returned in the
-        dictionary).
+        - X_R2 : R2 between true and estimated latent positions
+        - X_err : mean position error between true and estimated latent positions
+        - F_err : mean field error between true and estimated place fields
+        - information : spatial information of receptive fields, -sum(F * log(F))
+        - sparsity : fraction of bins where firing is greater than 0.1 * max firing rate
+        - stability : correlation between receptive fields estimated from odd and even minutes
+        - field_count : number of distinct, stable fields in the place fields
+        - field_size : average size of the fields
+        - field_change : how much the fields have shifted from the last epoch (if available)
+        - trajectory_change : change in latent positions from the last epoch (if available)
+        - PX : density of the latent trajectory through each bin (i.e. how much data supports each bin)
+
+        Only variables which _can_ be calculated are calculated (i.e. if the true latent positions are not
+        available, X_R2 will not be calculated nor returned).
 
         Parameters
         ----------
         X : jnp.ndarray, shape (T, D)
-            The estimated latent positions
+            The estimated latent positions.
         F : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields
+            The estimated place fields.
         Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step
+            The spike counts of the neurons at each time step.
         FX : jnp.ndarray, shape (T, N_neurons)
-            The estimated firing rates of the neurons at each time step
+            The estimated firing rates of the neurons at each time step.
         PX : jnp.ndarray, shape (N_bins,)
-            The normalized position density of the latent trajectory through each bin of the environment
+            The normalized position density of the latent trajectory through each bin.
         F_odd_mins : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the odd minutes of the data
+            The estimated place fields from the odd minutes of the data.
         F_even_mins : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the even minutes of the data
+            The estimated place fields from the even minutes of the data.
         X_prev : jnp.ndarray, shape (T, D)
-            The estimated latent positions from the previous epoch
+            The estimated latent positions from the previous epoch.
         F_prev : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the previous epoch
+            The estimated place fields from the previous epoch.
         Xt : jnp.ndarray, shape (T, D)
-            The true latent positions, defaults to self.Xt
+            The true latent positions, defaults to self.Xt.
         Ft : jnp.ndarray, shape (N_neurons, N_bins)
-            The true place fields, defaults to self.Ft
+            The true place fields, defaults to self.Ft.
 
         Returns
         -------
@@ -867,25 +753,17 @@ class SIMPL:
         return metrics
 
     def calculate_baselines(self) -> None:
-        """There are two particular special models that can/should
-        be used as baselines:
-        - Ft ("exact") model : the exact receptive fields are
-          loaded from the data
-        - Ft_hat ("best") : e.g. when Ft is 'unknown'. The true
-          latent positions are used to fit the receptive fields
-          using the KDE.
+        """Calculates two special baseline models using ground truth data.
 
-        These should be similar except that Ft_hat is bottlenecked
-        by amount of data that is available. If the data is too
-        sparse, Ft_hat will be a poor estimate of Ft. Ft_hat
-        therefore represents a more reasonable baseline for the
-        Kalman model which is also bottlenecked by the amount of
-        data available.
+        - Ft ("exact") model: the exact receptive fields are loaded from the data.
+        - Ft_hat ("best"): the true latent positions are used to fit receptive fields using KDE.
 
-        This function fits/sets the place fields for both these
-        models then runs and evaluates and E-step and saves the
-        results in the results dataset under epoch labels -2
-        ("exact") and -1 ("best").
+        These should be similar except that Ft_hat is bottlenecked by the amount of data available. If the
+        data is too sparse, Ft_hat will be a poor estimate of Ft. Ft_hat therefore represents a more
+        reasonable baseline for the Kalman model which is also data-bottlenecked.
+
+        This function fits/sets the place fields for both models, then runs and evaluates an E-step and saves
+        the results in the results dataset under epoch labels -2 ("exact") and -1 ("best").
         """
         if not self.ground_truth_available:
             warnings.warn("Ground truth data not available, so the baselines cannot be calculated.")
@@ -941,30 +819,22 @@ class SIMPL:
         return
 
     def interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
-        """If you already have access to the discretised fields
-        you can 'predict' the firing rate at new positions by
-        interpolating the fields onto these positions (avoiding
-        a potentially more expensive full KDE calculation). This
-        is much faster than the KDE calculation. We use the
-        nearest available position bin for interpolation.
-        TODO: try linear interpolation via
-        data.F.interp(**coord_args, method='linear',
-        kwargs={"fill_value": 0}).values.T
+        """Predict firing rates at new positions by interpolating the discretised fields.
+
+        Much faster than a full KDE calculation. Uses nearest-bin interpolation.
 
         Parameters
         ----------
         X : jnp.ndarray, shape (T, D)
-            The latent positions to want to interpolate onto
+            The latent positions to interpolate onto.
         F : jnp.ndarray, shape (N_neurons, N_bins)
-            The place fields of the neurons (expected number
-            of spikes in one time steps)
+            The place fields of the neurons (expected number of spikes in one time step).
 
-            Returns
-            -------
+        Returns
+        -------
         FX : jnp.ndarray, shape (T, N_neurons)
-            The firing rates (expected number of spikes in
-            one time step) of the neurons at each position
-            in X"""
+            The firing rates (expected number of spikes in one time step) of the neurons at each position in X.
+        """
         F = np.array(F)
         X = np.array(X)
         # reshape F into the correct shape
@@ -976,33 +846,25 @@ class SIMPL:
         return FX.data
 
     def dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
-        """Converts a dictionary to an xarray Dataset. Loops over
-        any item in the dictionary and converts it to a DataArray
-        then concatenates these in a xr.Dataset. If the data is a
-        scalar, it is converted to a DataArray with no dimensions.
+        """Converts a dictionary to an xarray Dataset.
 
-        If the data name isn't recognized it is saved as an array
-        with no dimension or coordinate data.
+        Loops over any item in the dictionary and converts it to a DataArray then concatenates these in a
+        xr.Dataset. If the data is a scalar, it is converted to a DataArray with no dimensions. If the data
+        name isn't recognized it is saved as an array with no dimension or coordinate data.
 
         Parameters
         ----------
         data : dict
             The dictionary to convert to an xarray Dataset.
         coords : dict
-            A dictionary containing the coordinates of the data.
-            If not provided, the coordinates are taken from the
-            self.coordinates_dict. These coords include:
-            - 'neuron' : the array of neuron indices
-            - 'time' : the array of time indices
-            - 'dim' : the array of dimension names, e.g.
-              ['x', 'y'] in 2D space
-            - 'x' : the array of x positions
-            - 'y' : the array of y positions (if 2D space)
+            A dictionary containing the coordinates of the data. If not provided, the coordinates are taken
+            from self.coordinates_dict. These coords include: 'neuron', 'time', 'dim', 'x', 'y' (if 2D), etc.
 
         Returns
         -------
         xr.Dataset
-            The xarray Dataset containing the data in the dictionary"""
+            The xarray Dataset containing the data in the dictionary.
+        """
         dataset = xr.Dataset()
         if coords is None:
             coords = self.coordinates_dict
@@ -1037,28 +899,17 @@ class SIMPL:
 
     def init_variables_dict(self) -> dict:
         """Initialises a dictionary of variables and their metadata.
-        This dictionary summarises _all_ the variable that are used
-        and returned by the SIMPL class. Each entry is attached as
-        the `attrs` to the DataArray when these variables are saved
-        and is itself a dictionary taking the following form:
-        key : dict
-            name : str
-                The name of the variable
-            description : str
-                A brief description of the variable
-            dims : list
-                The dimensions of the variable (excluding any
-                epoch dimension)
-            axis_title : str
-                The title of the axis when plotting the variable
-            formula : str
-                A formula for the variable (if applicable)
-            reshape : bool
-                Whether the variable should be forcefully reshaped
-                to those of the dimensions given in `dims` when
-                saved. This is useful for variables that are
-                calculated in a different shape to the final
-                intended shape (e.g. receptive fields).
+
+        This dictionary summarises _all_ the variables used and returned by the SIMPL class. Each entry is
+        attached as the `attrs` to the DataArray when these variables are saved. Each entry is a dict with:
+            name : str — the name of the variable
+            description : str — a brief description of the variable
+            dims : list — the dimensions of the variable (excluding any epoch dimension)
+            axis_title : str — the title of the axis when plotting the variable
+            formula : str — a formula for the variable (if applicable)
+            reshape : bool — whether to forcefully reshape to the dimensions given in `dims` when saved.
+                This is useful for variables calculated in a different shape to the final intended shape
+                (e.g. receptive fields).
         """
         variable_info_dict = {
             # Core data variables
@@ -1540,21 +1391,21 @@ class SIMPL:
         return variable_info_dict
 
     def analyse_place_fields(self, F: jax.Array) -> dict:
-        """Analyses the tuning curves and returns a dictionary of
-        information about the number, size, position and shape of
-        place fields (pfs) for each neuron. Terminology: field is
-        the _whole_ tuning curve. place field (pf) is the portion
-        of the whole tuning curve identified as a particular place
-        field.
+        """Analyses the tuning curves and returns a dictionary of information about the number, size, position
+        and shape of place fields (pfs) for each neuron.
 
-        Params
-        ------
+        Terminology: "field" is the _whole_ tuning curve. "place field" (pf) is the portion of the whole
+        tuning curve identified as a particular place field.
+
+        Parameters
+        ----------
         F : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields
+            The estimated place fields.
 
         Returns
         -------
-        dict : The place field results dictionary
+        dict
+            The place field results dictionary.
         """
 
         # Initialise arrays
@@ -1628,16 +1479,13 @@ class SIMPL:
         return place_field_results
 
     def _set_pbar_desc(self, pbar: tqdm | range) -> None:
-        """Tries to set the description of the progress bar to the
-        current log-likelihoods. If this fails, it just sets the
-        epoch number.
+        """Tries to set the progress bar description to the current log-likelihoods. Falls back to epoch number.
 
         Parameters
         ----------
         pbar : tqdm
-            The progress bar to set the description of (can be
-            any iterable, not just a tqdm bar, in which case
-            the description is not set).
+            The progress bar to set the description of (can be any iterable, not just a tqdm bar, in which
+            case the description is not set).
         """
         try:
             likelihood = self.loglikelihoods.logPYXF.sel(epoch=self.epoch).values
@@ -1658,8 +1506,7 @@ class SIMPL:
                 pass
 
     def save_results(self, path: str) -> None:
-        """Saves the results of the SIMPL model to a netCDF file at
-        the given path. The results are saved as an xarray Dataset.
+        """Saves the results of the SIMPL model to a netCDF file at the given path.
 
         Parameters
         ----------
