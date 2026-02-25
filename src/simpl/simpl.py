@@ -15,6 +15,7 @@ from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
     analyse_place_fields,
+    calculate_spatial_information,
     cca,
     coefficient_of_determination,
     create_speckled_mask,
@@ -746,18 +747,7 @@ class SIMPL:
 
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
-            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
-            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
-            I_F = I_F / lambda_  # bits/spike
-            if lambda_.mean() < 0.01 or lambda_.mean() > 100:
-                print(
-                    f"Warning: mean firing rate is "
-                    f"{lambda_.mean():.4f} Hz, which is outside "
-                    f"the expected range. Check if DT is correct."
-                )
-
-            metrics["spatial_information"] = I_F
+            metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
 
         return metrics
 
