@@ -317,11 +317,11 @@ class SIMPL:
             si_max = float(si.max())
             si_mean = float(si.mean())
             print(
-                f"  Spatial info (bits/s per neuron): mean {si_mean:.2f}, "
+                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
                 f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
                 f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
             )
-            print(f"  Spatial info rate (total): {info_rate:.1f} bits/s")
+            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
             print()
 
             # Warnings
