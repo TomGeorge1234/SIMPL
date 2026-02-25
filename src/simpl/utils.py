@@ -497,10 +497,12 @@ def prepare_data(
         for SIMPL to use.
     """
 
-    assert Y.shape[0] == Xb.shape[0]
-    assert Y.shape[0] == len(time)
-    if Xt is not None:
-        assert Y.shape[0] == Xt.shape[0]
+    if Y.shape[0] != Xb.shape[0]:
+        raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
+    if Y.shape[0] != len(time):
+        raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
+    if Xt is not None and Y.shape[0] != Xt.shape[0]:
+        raise ValueError(f"Y and Xt must have the same number of time bins (got {Y.shape[0]} and {Xt.shape[0]})")
 
     T = Y.shape[0]
 
@@ -527,9 +529,12 @@ def prepare_data(
         trial_boundaries = [0]  # This makes the whole data a single "trial"
 
     trial_boundaries = np.array(trial_boundaries)
-    assert trial_boundaries[0] == 0, "First trial boundary must be 0"
-    assert trial_boundaries[-1] < T, "Last trial boundary must be < T"
-    assert np.all(np.diff(trial_boundaries) > 0), "Trial boundaries must be strictly increasing"
+    if trial_boundaries[0] != 0:
+        raise ValueError("First trial boundary must be 0")
+    if trial_boundaries[-1] >= T:
+        raise ValueError(f"Last trial boundary must be < T (got {trial_boundaries[-1]} with T={T})")
+    if not np.all(np.diff(trial_boundaries) > 0):
+        raise ValueError("Trial boundaries must be strictly increasing")
     data["trial_boundaries"] = trial_boundaries
 
     trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
