@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import numpy as np
 import xarray as xr
 from jax import vmap
-from tqdm import tqdm
 
 # Internal libraries
 from simpl._variable_registry import build_variable_info_dict
@@ -364,19 +363,16 @@ class SIMPL:
             Whether to print a loading bar and the training progress, by default True.
         """
 
-        pbar = tqdm(range(self.epoch, self.epoch + N)) if verbose else range(self.epoch, self.epoch + N)
-        self._set_pbar_desc(pbar)
-        for epoch in pbar:
+        for _ in range(N):
             try:
                 self.train_epoch()
-                self._set_pbar_desc(pbar)
+                if verbose:
+                    self._print_epoch_summary()
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch} epochs.")
                 break
         if not self.evaluate_each_epoch:
             self.evaluate_epoch()  # Always evaluate at the end if not done each epoch
-
-        return
 
     def train_epoch(
         self,
@@ -951,32 +947,19 @@ class SIMPL:
             dataset[variable_name] = dataarray
         return dataset
 
-    def _set_pbar_desc(self, pbar: tqdm | range) -> None:
-        """Tries to set the progress bar description to the current log-likelihoods. Falls back to epoch number.
-
-        Parameters
-        ----------
-        pbar : tqdm
-            The progress bar to set the description of (can be any iterable, not just a tqdm bar, in which
-            case the description is not set).
-        """
+    def _print_epoch_summary(self) -> None:
+        """Print a one-line summary of the current epoch's metrics."""
         try:
-            likelihood = self.loglikelihoods.logPYXF.sel(epoch=self.epoch).values
-            likelihood_test = self.loglikelihoods.logPYXF_test.sel(epoch=self.epoch).values
-            likelihood0 = self.loglikelihoods.logPYXF.sel(epoch=0).values
-            likelihood_test0 = self.loglikelihoods.logPYXF_test.sel(epoch=0).values
-            pbar.set_description(
+            train_ll = float(self.loglikelihoods.logPYXF.sel(epoch=self.epoch).values)
+            test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=self.epoch).values)
+            si = float(self.results.spatial_information.sel(epoch=self.epoch).mean().values)
+            print(
                 f"Epoch {self.epoch}: "
-                f"Train LL: {likelihood:.3f} "
-                f"(\u0394{likelihood - likelihood0:.3f}), "
-                f"Test LL: {likelihood_test:.3f} "
-                f"(\u0394{likelihood_test - likelihood_test0:.3f})"
+                f"spike log-likelihood (train: {train_ll:.3f}, test: {test_ll:.3f}), "
+                f"average spatial information per neuron {si:.3f}"
             )
         except Exception:
-            try:
-                pbar.set_description(f"Epoch {max(0, self.epoch)}")
-            except Exception:
-                pass
+            print(f"Epoch {self.epoch}")
 
     def save_results(self, path: str) -> None:
         """Saves the results of the SIMPL model to a netCDF file at the given path.
