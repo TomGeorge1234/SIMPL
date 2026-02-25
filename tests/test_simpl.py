@@ -16,13 +16,13 @@ class TestSIMPLInit:
         assert hasattr(model, "environment")
         assert hasattr(model, "results")
         assert model.D == 2
-        assert model.epoch == -1
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
 
 class TestSIMPLTrainOneEpoch:
     def test_runs_and_populates_results(self, small_simpl_model):
         model = small_simpl_model
-        model.train_epoch()
+        # epoch 0 already ran in __init__, so results should be populated
         assert model.epoch == 0
         assert "X" in model.results
         assert "F" in model.results
@@ -120,8 +120,7 @@ class TestSIMPLTrialBoundaries:
         env = Environment(demo_data["Xb"][:N], verbose=False)
         model = SIMPL(data=data, environment=env)
         assert len(model.trial_slices) == 2
-        model.train_epoch()
-        assert model.epoch == 0
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
 
 class TestSIMPLSaveLoadResults:
@@ -229,6 +228,64 @@ class TestSIMPLSeeding:
         m2.train_epoch()
         m2.train_epoch()
         assert np.array_equal(m1.spike_mask, m2.spike_mask)
+
+
+class TestSIMPLSpatialInformation:
+    def test_spatial_information_in_results(self, small_simpl_model):
+        """After epoch 0, spatial_information should be in results."""
+        model = small_simpl_model
+        assert "spatial_information" in model.results
+        assert "spatial_information_rate" in model.results
+
+    def test_spatial_information_shape(self, small_simpl_model):
+        """spatial_information should have one value per neuron."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0)
+        assert si.shape == (model.N_neurons,)
+
+    def test_spatial_information_nonnegative(self, small_simpl_model):
+        """Spatial information should be non-negative."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0).values
+        assert np.all(si >= -1e-6)
+
+    def test_spatial_information_rate_is_sum(self, small_simpl_model):
+        """spatial_information_rate should be the sum of per-neuron values."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0).values
+        sir = float(model.results.spatial_information_rate.sel(epoch=0))
+        assert np.isclose(sir, si.sum(), atol=1e-3)
+
+
+class TestSIMPLEpochZeroInInit:
+    def test_epoch_starts_at_zero(self, demo_data):
+        """Epoch 0 should run automatically during __init__."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, verbose=False)
+        assert model.epoch == 0
+        assert "F" in model.results
+
+    def test_verbose_false_suppresses_output(self, demo_data, capsys):
+        """verbose=False should suppress data summary and spatial info prints."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        _ = SIMPL(data=data, environment=env, verbose=False)
+        captured = capsys.readouterr().out
+        assert "DATA SUMMARY" not in captured
+        assert "Spatial info" not in captured
 
 
 class TestSIMPLManifoldAlignment:
