@@ -558,13 +558,6 @@ def print_data_summary(data: xr.Dataset) -> None:
     print(f"    1  {bar(frac_1)} {frac_1:.0%}")
     print(f"    2  {bar(frac_2)} {frac_2:.0%}")
     print(f"    3+ {bar(frac_3plus)} {frac_3plus:.0%}")
-    if (frac_2 + frac_3plus) < 0.05:
-        print()
-        print(
-            "  WARNING: fewer than 5% of time bins have 2 or more active "
-            "neurons. The Poisson likelihood will be weak in most bins. "
-            "Consider coarsening dt or adding more neurons."
-        )
 
 
 def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
