@@ -20,6 +20,22 @@ class TestSIMPLInit:
         assert model.D == 2
         assert model.epoch == 0  # epoch 0 runs in __init__
 
+    def test_use_kalman_smoothing_argument(self, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            dims=demo_data["dim"],
+            neurons=np.arange(N_neurons),
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, use_kalman_smoothing=False, speed_prior=0.1)
+        assert model.use_kalman_smoothing is False
+        # use_kalman_smoothing=False should enforce a high effective speed prior.
+        assert model.speed_prior_effective >= model.kalman_off_speed_prior
+
 
 class TestSIMPLTrainOneEpoch:
     def test_runs_and_populates_results(self, small_simpl_model):
