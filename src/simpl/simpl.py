@@ -362,7 +362,7 @@ class SIMPL:
         verbose : bool, optional
             Whether to print a loading bar and the training progress, by default True.
         """
-
+        self._print_epoch_summary()
         for _ in range(N):
             try:
                 self.train_epoch()
@@ -949,17 +949,28 @@ class SIMPL:
 
     def _print_epoch_summary(self) -> None:
         """Print a one-line summary of the current epoch's metrics."""
+        e = self.epoch
         try:
-            train_ll = float(self.loglikelihoods.logPYXF.sel(epoch=self.epoch).values)
-            test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=self.epoch).values)
-            si = float(self.results.spatial_information.sel(epoch=self.epoch).mean().values)
-            print(
-                f"Epoch {self.epoch}: "
-                f"spike log-likelihood (train: {train_ll:.3f}, test: {test_ll:.3f}), "
-                f"average spatial information per neuron {si:.3f}"
-            )
+            train_ll = float(self.loglikelihoods.logPYXF.sel(epoch=e).values)
+            test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=e).values)
+            si = float(self.results.spatial_information.sel(epoch=e).mean().values)
+            parts = [
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
+                f"spatial_info={si:.3f} bits/s/neuron",
+            ]
+            if e > 0:
+                dX = float(self.results.trajectory_change.sel(epoch=e).mean().values)
+                parts.append(f"Δ trajectory={dX:.4f} m")
+            print("     ".join(parts))
+            if e > 0:
+                epoch0_test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=0).values)
+                if test_ll < epoch0_test_ll:
+                    print(
+                        f"    WARNING: test LL below epoch 0. "
+                        f"Model may be overfitting."
+                    )
         except Exception:
-            print(f"Epoch {self.epoch}")
+            print(f"Epoch {e}")
 
     def save_results(self, path: str) -> None:
         """Saves the results of the SIMPL model to a netCDF file at the given path.
