@@ -679,3 +679,28 @@ def analyse_place_fields(
     }
 
     return place_field_results
+
+
+def calculate_spatial_information(
+    r: jax.Array,
+    PX: jax.Array,
+) -> jax.Array:
+    """Calculate Skaggs spatial information per neuron (bits/s).
+
+    Parameters
+    ----------
+    r : jax.Array (N_neurons, N_bins)
+        Firing rate maps in Hz (spikes per second, not per bin).
+    PX : jax.Array (N_bins,)
+        Occupancy probability over spatial bins (sums to 1).
+
+    Returns
+    -------
+    spatial_info : jax.Array (N_neurons,)
+        Spatial information per neuron in bits/s.
+    """
+    r_mean = jnp.sum(r * PX[None, :], axis=1)  # mean firing rate (N_neurons,) Hz
+    eps = 1e-10
+    ratio = r / (r_mean[:, None] + eps)
+    spatial_info = jnp.sum((r * jnp.log2(ratio + eps)) * PX[None, :], axis=1)
+    return spatial_info
