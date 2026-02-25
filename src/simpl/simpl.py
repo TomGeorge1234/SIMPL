@@ -275,6 +275,9 @@ class SIMPL:
             self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
 
         # MANIFOLD ALIGNMENT
+        if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
+            raise ValueError("manifold_align_against must be 'behaviour', 'ground_truth', 'none'")
+
         if manifold_align_against == "behaviour":
             self.Xalign = self.Xb
         elif manifold_align_against == "ground_truth":
