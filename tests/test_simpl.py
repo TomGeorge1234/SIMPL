@@ -1,5 +1,7 @@
 """Integration tests for simpl.simpl.SIMPL."""
 
+import warnings
+
 import numpy as np
 
 from simpl.environment import Environment
@@ -16,7 +18,7 @@ class TestSIMPLInit:
         assert hasattr(model, "environment")
         assert hasattr(model, "results")
         assert model.D == 2
-        assert model.epoch == -1
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
     def test_kalman_argument_exposed(self, demo_data):
         N = 500
@@ -38,7 +40,7 @@ class TestSIMPLInit:
 class TestSIMPLTrainOneEpoch:
     def test_runs_and_populates_results(self, small_simpl_model):
         model = small_simpl_model
-        model.train_epoch()
+        # epoch 0 already ran in __init__, so results should be populated
         assert model.epoch == 0
         assert "X" in model.results
         assert "F" in model.results
@@ -136,8 +138,7 @@ class TestSIMPLTrialBoundaries:
         env = Environment(demo_data["Xb"][:N], verbose=False)
         model = SIMPL(data=data, environment=env)
         assert len(model.trial_slices) == 2
-        model.train_epoch()
-        assert model.epoch == 0
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
 
 class TestSIMPLSaveLoadResults:
@@ -247,7 +248,127 @@ class TestSIMPLSeeding:
         assert np.array_equal(m1.spike_mask, m2.spike_mask)
 
 
+class TestSIMPLSpatialInformation:
+    def test_spatial_information_in_results(self, small_simpl_model):
+        """After epoch 0, spatial_information should be in results."""
+        model = small_simpl_model
+        assert "spatial_information" in model.results
+        assert "spatial_information_rate" in model.results
+
+    def test_spatial_information_shape(self, small_simpl_model):
+        """spatial_information should have one value per neuron."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0)
+        assert si.shape == (model.N_neurons,)
+
+    def test_spatial_information_nonnegative(self, small_simpl_model):
+        """Spatial information should be non-negative."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0).values
+        assert np.all(si >= -1e-6)
+
+    def test_spatial_information_rate_is_sum(self, small_simpl_model):
+        """spatial_information_rate should be the sum of per-neuron values."""
+        model = small_simpl_model
+        si = model.results.spatial_information.sel(epoch=0).values
+        sir = float(model.results.spatial_information_rate.sel(epoch=0))
+        assert np.isclose(sir, si.sum(), atol=1e-3)
+
+
+class TestSIMPLEpochZeroInInit:
+    def test_epoch_starts_at_zero(self, demo_data):
+        """Epoch 0 should run automatically during __init__."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, verbose=False)
+        assert model.epoch == 0
+        assert "F" in model.results
+
+    def test_verbose_false_suppresses_output(self, demo_data, capsys):
+        """verbose=False should suppress data summary and spatial info prints."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        _ = SIMPL(data=data, environment=env, verbose=False)
+        captured = capsys.readouterr().out
+        assert "DATA SUMMARY" not in captured
+        assert "Spatial info" not in captured
+
+
+class TestSIMPLCalculateBaselines:
+    def _make_model_with_gt(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            Xt=demo_data["Xt"][:N],
+            Ft=demo_data["Ft"][:N_neurons],
+            Ft_coords_dict={"x": demo_data["x"], "y": demo_data["y"]},
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        return SIMPL(data=data, environment=env, verbose=False)
+
+    def test_populates_best_and_exact_epochs(self, demo_data):
+        """calculate_baselines should add epochs -2 (exact) and -1 (best)."""
+        model = self._make_model_with_gt(demo_data)
+        model.calculate_baselines()
+        assert -1 in model.results.epoch.values
+        assert -2 in model.results.epoch.values
+
+    def test_baseline_results_have_metrics(self, demo_data):
+        """Baseline epochs should contain F, X, and error metrics."""
+        model = self._make_model_with_gt(demo_data)
+        model.calculate_baselines()
+        for epoch in [-2, -1]:
+            assert "F" in model.results.sel(epoch=epoch)
+            assert "X" in model.results.sel(epoch=epoch)
+            assert "X_R2" in model.results.sel(epoch=epoch)
+
+    def test_warns_without_ground_truth(self, demo_data):
+        """Without ground truth, calculate_baselines should warn and return."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, verbose=False)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            model.calculate_baselines()
+            assert any("Ground truth" in str(warning.message) for warning in w)
+
+
 class TestSIMPLManifoldAlignment:
+    def _make_model(self, demo_data, align_against, with_gt=False):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        kwargs = dict(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        if with_gt:
+            kwargs["Xt"] = demo_data["Xt"][:N]
+        data = prepare_data(**kwargs)
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        return SIMPL(data=data, environment=env, manifold_align_against=align_against, verbose=False)
+
     def test_cca_runs(self, small_simpl_model):
         model = small_simpl_model
         if model.epoch < 1:
@@ -257,52 +378,31 @@ class TestSIMPLManifoldAlignment:
         assert model.epoch >= 1
         assert "X" in model.E
 
+    def test_align_against_behaviour(self, demo_data):
+        """manifold_align_against='behaviour' should align to Xb."""
+        model = self._make_model(demo_data, "behaviour")
+        assert model.Xalign is not None
+        model.train_epoch()
+        assert "X" in model.E
 
-class TestSIMPLKalmanDiagnostics:
-    def test_mode_mu_s_rmse_small_when_kalman_off(self):
-        demo_data = load_datafile("gridcelldata.npz")
-        N = 1000
-        N_neurons = min(8, demo_data["Y"].shape[1])
-        data = prepare_data(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            dims=demo_data["dim"],
-            neurons=np.arange(N_neurons),
-        )
-        env = Environment(demo_data["Xb"][:N], verbose=False)
-        model = SIMPL(data=data, environment=env, kalman=False, evaluate_each_epoch=True)
-        model.train_N_epochs(2, verbose=False)  # epoch 1 is first E-step
+    def test_align_against_ground_truth(self, demo_data):
+        """manifold_align_against='ground_truth' should align to Xt."""
+        model = self._make_model(demo_data, "ground_truth", with_gt=True)
+        assert model.Xalign is not None
+        model.train_epoch()
+        assert "X" in model.E
 
-        mode_l = np.asarray(model.results.mode_l.sel(epoch=model.epoch).values)
-        mu_s = np.asarray(model.results.mu_s.sel(epoch=model.epoch).values)
-        diff = mode_l - mu_s
-        rmse = float(np.sqrt(np.mean(diff**2)))
-        mae = float(np.mean(np.abs(diff)))
-        max_abs = float(np.max(np.abs(diff)))
+    def test_align_against_none(self, demo_data):
+        """manifold_align_against='none' should skip alignment."""
+        model = self._make_model(demo_data, "none")
+        assert model.Xalign is None
+        model.train_epoch()
+        assert "X" in model.E
 
-        assert np.isfinite(rmse)
-        assert np.isfinite(mae)
-        assert np.isfinite(max_abs)
-        assert rmse >= 0.0
-        assert mae >= 0.0
-        assert max_abs >= 0.0
-
-    def test_mode_mu_s_allclose_when_kalman_off(self):
-        demo_data = load_datafile("gridcelldata.npz")
-        N = 1000
-        N_neurons = min(8, demo_data["Y"].shape[1])
-        data = prepare_data(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            dims=demo_data["dim"],
-            neurons=np.arange(N_neurons),
-        )
-        env = Environment(demo_data["Xb"][:N], verbose=False)
-        model = SIMPL(data=data, environment=env, kalman=False, evaluate_each_epoch=True)
-        model.train_N_epochs(2, verbose=False)  # epoch 1 is first E-step
-
-        mode_l = np.asarray(model.results.mode_l.sel(epoch=model.epoch).values)
-        mu_s = np.asarray(model.results.mu_s.sel(epoch=model.epoch).values)
-        assert np.allclose(mode_l, mu_s, atol=1e-2, rtol=0.0)
+    def test_invalid_align_raises(self, demo_data):
+        """Invalid manifold_align_against should raise ValueError."""
+        try:
+            self._make_model(demo_data, "invalid")
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass

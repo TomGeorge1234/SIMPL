@@ -18,12 +18,11 @@ dependencies = [
     "scikit-learn>=1.3",
     "scikit-image",
     "matplotlib",
-    "tqdm",
     "netcdf4",
 ]
 
 [project.optional-dependencies]
-demos = ["jupyter", "ratinabox"]
+demos = ["jupyter", "ratinabox", "tqdm"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -57,4 +56,4 @@ source = ["simpl"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 50
+fail_under = 80
