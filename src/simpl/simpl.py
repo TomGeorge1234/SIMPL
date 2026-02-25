@@ -745,6 +745,7 @@ class SIMPL:
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
             metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
+            metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
 
