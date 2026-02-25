@@ -403,6 +403,18 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["neuron"],
             "formula": r"$I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$",
         },
+        "spatial_information_rate": {
+            "axis title": "Spatial Information Rate (bits/s)",
+            "name": "Spatial information rate",
+            "description": (
+                "How many bits of information per second the "
+                "spikes give us (on average) about the agent's "
+                "position. Computed as the sum of per-neuron "
+                "Skaggs spatial information rates."
+            ),
+            "dims": [],
+            "formula": r"$\dot{\mathcal{I}} = \sum_n I_n$",
+        },
         "negative_entropy": {
             "name": "Negative entropy",
             "description": "The negative entropy of each of the receptive fields, -sum(F * log(F)).",
