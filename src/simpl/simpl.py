@@ -965,10 +965,7 @@ class SIMPL:
             if e > 0:
                 epoch0_test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=0).values)
                 if test_ll < epoch0_test_ll:
-                    print(
-                        f"    WARNING: test LL below epoch 0. "
-                        f"Model may be overfitting."
-                    )
+                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
         except Exception:
             print(f"Epoch {e}")
 
