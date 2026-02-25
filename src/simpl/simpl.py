@@ -173,7 +173,8 @@ class SIMPL:
 
         # SET UP THE ENVIRONMENT
         self.environment = environment
-        assert self.D == environment.D, "The environment and data dimensions must match"
+        if self.D != environment.D:
+            raise ValueError(f"Data has {self.D} dimensions but environment has {environment.D}")
         self.xF = jnp.array(environment.flattened_discretised_coords)  # (N_bins, D)
         self.xF_shape = environment.discrete_env_shape
         self.N_bins = len(self.xF)
@@ -231,7 +232,6 @@ class SIMPL:
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim  # as ordered in positon variables X = ['x', 'y', ...]
         self.variable_info_dict = build_variable_info_dict(self.dim)
-        self.N_PFmax = 20  # to keep a fixed shape each tuning curve has max possible number of place fields
         self.coordinates_dict = {
             "neuron": self.neuron,
             "time": self.time,
