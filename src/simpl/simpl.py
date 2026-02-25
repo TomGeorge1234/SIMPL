@@ -323,6 +323,7 @@ class SIMPL:
                 f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
             )
             print(f"  Spatial info rate (total): {info_rate:.1f} bits/s")
+            print()
 
             # Warnings
             active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
