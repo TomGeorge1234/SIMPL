@@ -1,4 +1,5 @@
 # Jax, for the majority of the calculations
+import threading
 import warnings
 
 import jax
@@ -6,7 +7,6 @@ import jax.numpy as jnp
 import numpy as np
 import xarray as xr
 from jax import vmap
-from tqdm import tqdm
 
 # Internal libraries
 from simpl._variable_registry import build_variable_info_dict
@@ -15,10 +15,12 @@ from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
     analyse_place_fields,
+    calculate_spatial_information,
     cca,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
+    print_data_summary,
     save_results_to_netcdf,
 )
 
@@ -44,6 +46,7 @@ class SIMPL:
         manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
+        verbose: bool = True,
     ) -> None:
         """Initializes the SIMPL class.
 
@@ -177,7 +180,8 @@ class SIMPL:
 
         # SET UP THE ENVIRONMENT
         self.environment = environment
-        assert self.D == environment.D, "The environment and data dimensions must match"
+        if self.D != environment.D:
+            raise ValueError(f"Data has {self.D} dimensions but environment has {environment.D}")
         self.xF = jnp.array(environment.flattened_discretised_coords)  # (N_bins, D)
         self.xF_shape = environment.discrete_env_shape
         self.N_bins = len(self.xF)
@@ -214,34 +218,11 @@ class SIMPL:
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1)
         self.even_minute_mask = ~self.odd_minute_mask  # mask for even minutes
 
-        # INITIALISE THE KALMAN FILTER
-        speed_sigma = self.speed_prior_effective * self.dt
-        # if no behaviour prior, set to a large value (effectively no prior)
-        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
-        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-
-        F = lam * jnp.eye(self.D)  # state transition matrix
-        B = (1 - lam) * jnp.eye(self.D)  # control input matrix
-        Q = sigma_eff_square * jnp.eye(self.D)  # process noise covariance
-        H = jnp.eye(self.D)  # observation matrix
-
-        # Prepare Kalman Filter
-        self.kalman_filter = KalmanFilter(
-            dim_Z=self.D,
-            dim_Y=self.D,
-            dim_U=self.D,
-            F=F,
-            B=B,
-            Q=Q,
-            H=H,
-            R=None,
-        )
+        self._init_kalman_filter(speed_prior, behaviour_prior)
 
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim  # as ordered in positon variables X = ['x', 'y', ...]
         self.variable_info_dict = build_variable_info_dict(self.dim)
-        self.N_PFmax = 20  # to keep a fixed shape each tuning curve has max possible number of place fields
         self.coordinates_dict = {
             "neuron": self.neuron,
             "time": self.time,
@@ -266,28 +247,12 @@ class SIMPL:
         # a smaller dict just to save likelihoods for online evaluation
         self.loglikelihoods = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
 
-        # ESTABLISH GROUND TRUTH (IF AVAILABLE)
-        self.ground_truth_available = "Xt" in list(data.keys())
-        self.Ft, self.Xt = None, None
-        if "Xt" in list(self.data.keys()):
-            self.Xt = jnp.array(self.data.Xt)
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Xt": self.Xt})])
-        # interpolate the "true" receptive fields onto the environment coords
-        if "Ft" in list(self.data.keys()):
-            Ft = (
-                self.data.Ft.interp(
-                    **self.environment.coords_dict,
-                    method="linear",
-                    kwargs={"fill_value": "extrapolate"},
-                )
-                * self.dt
-            )
-            Ft = Ft.transpose("neuron", *self.environment.dim)  # make coord order matches those of this class
-            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins)  # flatten to shape (N_neurons, N_bins)
-            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)  # threshold Ft at 0 just in case they weren't already
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
+        self._init_ground_truth()
 
         # MANIFOLD ALIGNMENT
+        if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
+            raise ValueError("manifold_align_against must be 'behaviour', 'ground_truth', 'none'")
+
         if manifold_align_against == "behaviour":
             self.Xalign = self.Xb
         elif manifold_align_against == "ground_truth":
@@ -300,6 +265,94 @@ class SIMPL:
             self.kde = kde_angular
         else:
             self.kde = kde
+
+        self._run_epoch_zero(data, verbose)
+
+    def _init_kalman_filter(self, speed_prior: float, behaviour_prior: float | None) -> None:
+        """Set up the Kalman filter from prior parameters."""
+        speed_sigma = speed_prior * self.dt
+        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
+        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+
+        F = lam * jnp.eye(self.D)
+        B = (1 - lam) * jnp.eye(self.D)
+        Q = sigma_eff_square * jnp.eye(self.D)
+        H = jnp.eye(self.D)
+
+        self.kalman_filter = KalmanFilter(dim_Z=self.D, dim_Y=self.D, dim_U=self.D, F=F, B=B, Q=Q, H=H, R=None)
+
+    def _init_ground_truth(self) -> None:
+        """Load and interpolate ground truth data (Xt, Ft) if available."""
+        self.ground_truth_available = "Xt" in list(self.data.keys())
+        self.Ft, self.Xt = None, None
+        if "Xt" in list(self.data.keys()):
+            self.Xt = jnp.array(self.data.Xt)
+            self.results = xr.merge([self.results, self.dict_to_dataset({"Xt": self.Xt})])
+        if "Ft" in list(self.data.keys()):
+            Ft = (
+                self.data.Ft.interp(
+                    **self.environment.coords_dict,
+                    method="linear",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+                * self.dt
+            )
+            Ft = Ft.transpose("neuron", *self.environment.dim)
+            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins)
+            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)
+            self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
+
+    def _run_epoch_zero(self, data: xr.Dataset, verbose: bool) -> None:
+        """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
+        if verbose:
+            print_data_summary(data)
+
+        _epoch0_done = threading.Event()
+
+        def _delayed_message():
+            if not _epoch0_done.wait(3):
+                print("  ...[estimating spatial receptive fields from Xb (epoch 0)]")
+
+        _timer = threading.Thread(target=_delayed_message, daemon=True)
+        _timer.start()
+        self.train_epoch()
+        _epoch0_done.set()
+
+        if verbose:
+            si = np.array(self.results.spatial_information.sel(epoch=0))
+            info_rate = float(si.sum())
+            si_min = float(si.min())
+            si_q25 = float(np.percentile(si, 25))
+            si_med = float(np.median(si))
+            si_q75 = float(np.percentile(si, 75))
+            si_max = float(si.max())
+            si_mean = float(si.mean())
+            print(
+                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
+                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
+                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
+            )
+            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
+            print()
+
+            active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
+            frac_2plus = float(np.mean(active_per_bin >= 2))
+            if frac_2plus < 0.05:
+                print(
+                    "  WARNING: fewer than 5% of time bins have 2+ active "
+                    "neurons. The Poisson likelihood will be weak in most "
+                    "bins. Try coarsen_dt() or accumulate_spikes() to "
+                    "increase spike density, or add more neurons."
+                )
+            if info_rate < 1.0:
+                print(
+                    "  WARNING: spatial information rate is very low "
+                    f"({info_rate:.1f} bits/s). The neurons may not carry "
+                    "enough spatial information for reliable decoding. "
+                    "Try coarsen_dt() or accumulate_spikes() to increase "
+                    "spike density, or add more neurons."
+                )
 
     def _next_seed(self) -> int:
         """Spawn a new seed from the seed sequence."""
@@ -318,20 +371,17 @@ class SIMPL:
         verbose : bool, optional
             Whether to print a loading bar and the training progress, by default True.
         """
-
-        pbar = tqdm(range(self.epoch, self.epoch + N)) if verbose else range(self.epoch, self.epoch + N)
-        self._set_pbar_desc(pbar)
-        for epoch in pbar:
+        self._print_epoch_summary()
+        for _ in range(N):
             try:
                 self.train_epoch()
-                self._set_pbar_desc(pbar)
+                if verbose:
+                    self._print_epoch_summary()
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch} epochs.")
                 break
         if not self.evaluate_each_epoch:
             self.evaluate_epoch()  # Always evaluate at the end if not done each epoch
-
-        return
 
     def train_epoch(
         self,
@@ -762,18 +812,8 @@ class SIMPL:
 
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
-            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
-            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
-            I_F = I_F / lambda_  # bits/spike
-            if lambda_.mean() < 0.01 or lambda_.mean() > 100:
-                print(
-                    f"Warning: mean firing rate is "
-                    f"{lambda_.mean():.4f} Hz, which is outside "
-                    f"the expected range. Check if DT is correct."
-                )
-
-            metrics["spatial_information"] = I_F
+            metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
+            metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
 
@@ -922,32 +962,27 @@ class SIMPL:
             dataset[variable_name] = dataarray
         return dataset
 
-    def _set_pbar_desc(self, pbar: tqdm | range) -> None:
-        """Tries to set the progress bar description to the current log-likelihoods. Falls back to epoch number.
-
-        Parameters
-        ----------
-        pbar : tqdm
-            The progress bar to set the description of (can be any iterable, not just a tqdm bar, in which
-            case the description is not set).
-        """
+    def _print_epoch_summary(self) -> None:
+        """Print a one-line summary of the current epoch's metrics."""
+        e = self.epoch
         try:
-            likelihood = self.loglikelihoods.logPYXF.sel(epoch=self.epoch).values
-            likelihood_test = self.loglikelihoods.logPYXF_test.sel(epoch=self.epoch).values
-            likelihood0 = self.loglikelihoods.logPYXF.sel(epoch=0).values
-            likelihood_test0 = self.loglikelihoods.logPYXF_test.sel(epoch=0).values
-            pbar.set_description(
-                f"Epoch {self.epoch}: "
-                f"Train LL: {likelihood:.3f} "
-                f"(\u0394{likelihood - likelihood0:.3f}), "
-                f"Test LL: {likelihood_test:.3f} "
-                f"(\u0394{likelihood_test - likelihood_test0:.3f})"
-            )
+            train_ll = float(self.loglikelihoods.logPYXF.sel(epoch=e).values)
+            test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=e).values)
+            si = float(self.results.spatial_information.sel(epoch=e).mean().values)
+            parts = [
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
+                f"spatial_info={si:.3f} bits/s/neuron",
+            ]
+            if e > 0:
+                dX = float(self.results.trajectory_change.sel(epoch=e).mean().values)
+                parts.append(f"Δ trajectory={dX:.4f} m")
+            print("     ".join(parts))
+            if e > 0:
+                epoch0_test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=0).values)
+                if test_ll < epoch0_test_ll:
+                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
         except Exception:
-            try:
-                pbar.set_description(f"Epoch {max(0, self.epoch)}")
-            except Exception:
-                pass
+            print(f"Epoch {e}")
 
     def save_results(self, path: str) -> None:
         """Saves the results of the SIMPL model to a netCDF file at the given path.
