@@ -14,6 +14,7 @@ from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
+    print_data_summary,
     analyse_place_fields,
     calculate_spatial_information,
     cca,
@@ -44,6 +45,7 @@ class SIMPL:
         manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
+        verbose: bool = True,
     ) -> None:
         """Initializes the SIMPL class.
 
@@ -288,6 +290,36 @@ class SIMPL:
             self.kde = kde_angular
         else:
             self.kde = kde
+
+        # RUN EPOCH 0 (M-step on behavioural trajectory)
+        if verbose:
+            print_data_summary(data)
+        import threading
+
+        _epoch0_done = threading.Event()
+
+        def _delayed_message():
+            if not _epoch0_done.wait(0.5):
+                print("  ...[estimating spatial receptive fields (epoch 0)]")
+
+        _timer = threading.Thread(target=_delayed_message, daemon=True)
+        _timer.start()
+        self.train_epoch()
+        _epoch0_done.set()
+
+        if verbose:
+            si = np.array(self.results.spatial_information.sel(epoch=0))  # bits/s per neuron
+            info_rate = float(si.sum())
+            si_min = float(si.min())
+            si_q25 = float(np.percentile(si, 25))
+            si_med = float(np.median(si))
+            si_q75 = float(np.percentile(si, 75))
+            si_max = float(si.max())
+            si_mean = float(si.mean())
+            print(f"  Spatial info (bits/s per neuron): mean {si_mean:.2f}, "
+                  f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
+                  f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}")
+            print(f"  Spatial info rate (total): {info_rate:.1f} bits/s")
 
     def _next_seed(self) -> int:
         """Spawn a new seed from the seed sequence."""
