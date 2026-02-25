@@ -332,13 +332,16 @@ class SIMPL:
                 print(
                     "  WARNING: fewer than 5% of time bins have 2+ active "
                     "neurons. The Poisson likelihood will be weak in most "
-                    "bins. Consider coarsening dt or adding more neurons."
+                    "bins. Try coarsen_dt() or accumulate_spikes() to "
+                    "increase spike density, or add more neurons."
                 )
             if info_rate < 1.0:
                 print(
                     "  WARNING: spatial information rate is very low "
                     f"({info_rate:.1f} bits/s). The neurons may not carry "
-                    "enough spatial information for reliable decoding."
+                    "enough spatial information for reliable decoding. "
+                    "Try coarsen_dt() or accumulate_spikes() to increase "
+                    "spike density, or add more neurons."
                 )
 
     def _next_seed(self) -> int:
