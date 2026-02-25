@@ -20,6 +20,7 @@ from simpl.utils import (
     create_speckled_mask,
     fit_gaussian,
     save_results_to_netcdf,
+    calculate_spatial_information,
 )
 
 
@@ -743,18 +744,7 @@ class SIMPL:
 
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
-            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
-            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
-            I_F = I_F / lambda_  # bits/spike
-            if lambda_.mean() < 0.01 or lambda_.mean() > 100:
-                print(
-                    f"Warning: mean firing rate is "
-                    f"{lambda_.mean():.4f} Hz, which is outside "
-                    f"the expected range. Check if DT is correct."
-                )
-
-            metrics["spatial_information"] = I_F
+            metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
 
         return metrics
 
