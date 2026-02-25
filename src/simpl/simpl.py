@@ -205,29 +205,7 @@ class SIMPL:
         self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1)
         self.even_minute_mask = ~self.odd_minute_mask  # mask for even minutes
 
-        # INITIALISE THE KALMAN FILTER
-        speed_sigma = speed_prior * self.dt
-        # if no behaviour prior, set to a large value (effectively no prior)
-        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
-        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-
-        F = lam * jnp.eye(self.D)  # state transition matrix
-        B = (1 - lam) * jnp.eye(self.D)  # control input matrix
-        Q = sigma_eff_square * jnp.eye(self.D)  # process noise covariance
-        H = jnp.eye(self.D)  # observation matrix
-
-        # Prepare Kalman Filter
-        self.kalman_filter = KalmanFilter(
-            dim_Z=self.D,
-            dim_Y=self.D,
-            dim_U=self.D,
-            F=F,
-            B=B,
-            Q=Q,
-            H=H,
-            R=None,
-        )
+        self._init_kalman_filter(speed_prior, behaviour_prior)
 
         # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
         self.dim = self.environment.dim  # as ordered in positon variables X = ['x', 'y', ...]
@@ -256,26 +234,7 @@ class SIMPL:
         # a smaller dict just to save likelihoods for online evaluation
         self.loglikelihoods = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
 
-        # ESTABLISH GROUND TRUTH (IF AVAILABLE)
-        self.ground_truth_available = "Xt" in list(data.keys())
-        self.Ft, self.Xt = None, None
-        if "Xt" in list(self.data.keys()):
-            self.Xt = jnp.array(self.data.Xt)
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Xt": self.Xt})])
-        # interpolate the "true" receptive fields onto the environment coords
-        if "Ft" in list(self.data.keys()):
-            Ft = (
-                self.data.Ft.interp(
-                    **self.environment.coords_dict,
-                    method="linear",
-                    kwargs={"fill_value": "extrapolate"},
-                )
-                * self.dt
-            )
-            Ft = Ft.transpose("neuron", *self.environment.dim)  # make coord order matches those of this class
-            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins)  # flatten to shape (N_neurons, N_bins)
-            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)  # threshold Ft at 0 just in case they weren't already
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
+        self._init_ground_truth()
 
         # MANIFOLD ALIGNMENT
         if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
@@ -294,7 +253,45 @@ class SIMPL:
         else:
             self.kde = kde
 
-        # RUN EPOCH 0 (M-step on behavioural trajectory)
+        self._run_epoch_zero(data, verbose)
+
+    def _init_kalman_filter(self, speed_prior: float, behaviour_prior: float | None) -> None:
+        """Set up the Kalman filter from prior parameters."""
+        speed_sigma = speed_prior * self.dt
+        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
+        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+
+        F = lam * jnp.eye(self.D)
+        B = (1 - lam) * jnp.eye(self.D)
+        Q = sigma_eff_square * jnp.eye(self.D)
+        H = jnp.eye(self.D)
+
+        self.kalman_filter = KalmanFilter(dim_Z=self.D, dim_Y=self.D, dim_U=self.D, F=F, B=B, Q=Q, H=H, R=None)
+
+    def _init_ground_truth(self) -> None:
+        """Load and interpolate ground truth data (Xt, Ft) if available."""
+        self.ground_truth_available = "Xt" in list(self.data.keys())
+        self.Ft, self.Xt = None, None
+        if "Xt" in list(self.data.keys()):
+            self.Xt = jnp.array(self.data.Xt)
+            self.results = xr.merge([self.results, self.dict_to_dataset({"Xt": self.Xt})])
+        if "Ft" in list(self.data.keys()):
+            Ft = (
+                self.data.Ft.interp(
+                    **self.environment.coords_dict,
+                    method="linear",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+                * self.dt
+            )
+            Ft = Ft.transpose("neuron", *self.environment.dim)
+            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins)
+            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)
+            self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
+
+    def _run_epoch_zero(self, data: xr.Dataset, verbose: bool) -> None:
+        """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
         if verbose:
             print_data_summary(data)
 
@@ -306,11 +303,11 @@ class SIMPL:
 
         _timer = threading.Thread(target=_delayed_message, daemon=True)
         _timer.start()
-        self.train_epoch()  # training on epoch 0 just "fits" the behavioural receptive fields, epoch 0
+        self.train_epoch()
         _epoch0_done.set()
 
         if verbose:
-            si = np.array(self.results.spatial_information.sel(epoch=0))  # bits/s per neuron
+            si = np.array(self.results.spatial_information.sel(epoch=0))
             info_rate = float(si.sum())
             si_min = float(si.min())
             si_q25 = float(np.percentile(si, 25))
@@ -326,7 +323,6 @@ class SIMPL:
             print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
             print()
 
-            # Warnings
             active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
