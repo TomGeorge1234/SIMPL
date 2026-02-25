@@ -321,6 +321,22 @@ class SIMPL:
                   f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}")
             print(f"  Spatial info rate (total): {info_rate:.1f} bits/s")
 
+            # Warnings
+            active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
+            frac_2plus = float(np.mean(active_per_bin >= 2))
+            if frac_2plus < 0.05:
+                print(
+                    "  WARNING: fewer than 5% of time bins have 2+ active "
+                    "neurons. The Poisson likelihood will be weak in most "
+                    "bins. Consider coarsening dt or adding more neurons."
+                )
+            if info_rate < 1.0:
+                print(
+                    "  WARNING: spatial information rate is very low "
+                    f"({info_rate:.1f} bits/s). The neurons may not carry "
+                    "enough spatial information for reliable decoding."
+                )
+
     def _next_seed(self) -> int:
         """Spawn a new seed from the seed sequence."""
         return self._seed_seq.spawn(1)[0].generate_state(1)[0]
