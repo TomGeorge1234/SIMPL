@@ -1,4 +1,5 @@
 # Jax, for the majority of the calculations
+import threading
 import warnings
 
 import jax
@@ -15,10 +16,12 @@ from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
     analyse_place_fields,
+    calculate_spatial_information,
     cca,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
+    print_data_summary,
     save_results_to_netcdf,
 )
 
@@ -43,6 +46,7 @@ class SIMPL:
         manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
+        verbose: bool = True,
     ) -> None:
         """Initializes the SIMPL class.
 
@@ -275,6 +279,9 @@ class SIMPL:
             self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
 
         # MANIFOLD ALIGNMENT
+        if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
+            raise ValueError("manifold_align_against must be 'behaviour', 'ground_truth', 'none'")
+
         if manifold_align_against == "behaviour":
             self.Xalign = self.Xb
         elif manifold_align_against == "ground_truth":
@@ -287,6 +294,57 @@ class SIMPL:
             self.kde = kde_angular
         else:
             self.kde = kde
+
+        # RUN EPOCH 0 (M-step on behavioural trajectory)
+        if verbose:
+            print_data_summary(data)
+
+        _epoch0_done = threading.Event()
+
+        def _delayed_message():
+            if not _epoch0_done.wait(3):
+                print("  ...[estimating spatial receptive fields from Xb (epoch 0)]")
+
+        _timer = threading.Thread(target=_delayed_message, daemon=True)
+        _timer.start()
+        self.train_epoch()  # training on epoch 0 just "fits" the behavioural receptive fields, epoch 0
+        _epoch0_done.set()
+
+        if verbose:
+            si = np.array(self.results.spatial_information.sel(epoch=0))  # bits/s per neuron
+            info_rate = float(si.sum())
+            si_min = float(si.min())
+            si_q25 = float(np.percentile(si, 25))
+            si_med = float(np.median(si))
+            si_q75 = float(np.percentile(si, 75))
+            si_max = float(si.max())
+            si_mean = float(si.mean())
+            print(
+                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
+                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
+                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
+            )
+            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
+            print()
+
+            # Warnings
+            active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
+            frac_2plus = float(np.mean(active_per_bin >= 2))
+            if frac_2plus < 0.05:
+                print(
+                    "  WARNING: fewer than 5% of time bins have 2+ active "
+                    "neurons. The Poisson likelihood will be weak in most "
+                    "bins. Try coarsen_dt() or accumulate_spikes() to "
+                    "increase spike density, or add more neurons."
+                )
+            if info_rate < 1.0:
+                print(
+                    "  WARNING: spatial information rate is very low "
+                    f"({info_rate:.1f} bits/s). The neurons may not carry "
+                    "enough spatial information for reliable decoding. "
+                    "Try coarsen_dt() or accumulate_spikes() to increase "
+                    "spike density, or add more neurons."
+                )
 
     def _next_seed(self) -> int:
         """Spawn a new seed from the seed sequence."""
@@ -743,18 +801,8 @@ class SIMPL:
 
         # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            lambda_x = F / self.dt  # Firing rates (neuron, position_bin)
-            lambda_ = jnp.sum(lambda_x * PX, axis=1)  # Mean firing rate (neuron,) unit: hz
-            I_F = jnp.sum((lambda_x * jnp.log2(lambda_x / (lambda_[:, None] + 1e-6) + 1e-6)) * PX, axis=1)
-            I_F = I_F / lambda_  # bits/spike
-            if lambda_.mean() < 0.01 or lambda_.mean() > 100:
-                print(
-                    f"Warning: mean firing rate is "
-                    f"{lambda_.mean():.4f} Hz, which is outside "
-                    f"the expected range. Check if DT is correct."
-                )
-
-            metrics["spatial_information"] = I_F
+            metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
+            metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
 

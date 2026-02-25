@@ -337,6 +337,44 @@ def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
+    """Causal rolling sum of spikes over a backward-looking window.
+
+    Each time bin accumulates spikes from the current and previous
+    ``window - 1`` bins. This is equivalent to smoothing the spikes with
+    a causal rectangular kernel. Unlike ``coarsen_dt``, this increases
+    the spike density without affecting the time bin size.
+
+    Only ``Y`` is modified; all other variables (``Xb``, ``Xt``, etc.)
+    are left unchanged.
+
+    .. warning::
+
+        This changes the interpretation of the estimated receptive fields.
+        Since each bin now contains on average ``window`` times more spikes,
+        the fitted firing rates (and therefore ``F``) will be approximately
+        ``window`` times higher than the true single-bin rates. The receptive
+        field *shapes* are unaffected, but their *amplitudes* should not be
+        interpreted as physical firing rates.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset as returned by ``prepare_data``, must contain ``Y``.
+    window : int
+        Number of bins to sum over (looking backwards). For example,
+        ``window=5`` sums the current bin and the 4 preceding bins.
+
+    Returns
+    -------
+    dataset : xr.Dataset
+        A copy of the dataset with ``Y`` replaced by the rolling sum.
+    """
+    dataset = dataset.copy()
+    dataset["Y"] = dataset["Y"].rolling(time=window, min_periods=1).sum().astype(dataset["Y"].dtype)
+    return dataset
+
+
 def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
 
@@ -499,6 +537,67 @@ def prepare_data(
     data["trial_slices"] = trial_slices
 
     return data
+
+
+def print_data_summary(data: xr.Dataset) -> None:
+    """Print a concise summary of the dataset."""
+    Y = data.Y.values
+    Xb = data.Xb.values
+    time = data.time.values
+    dt = float(time[1] - time[0])
+    T = len(time)
+    N_neurons = Y.shape[1]
+    D = Xb.shape[1]
+    duration = float(time[-1] - time[0]) + dt
+
+    # Per-neuron firing rates
+    fr_per_neuron = Y.sum(axis=0) / (T * dt)  # (N_neurons,) Hz
+    fr_min = float(np.min(fr_per_neuron))
+    fr_q25 = float(np.percentile(fr_per_neuron, 25))
+    fr_median = float(np.median(fr_per_neuron))
+    fr_q75 = float(np.percentile(fr_per_neuron, 75))
+    fr_max = float(np.max(fr_per_neuron))
+    fr_mean = float(np.mean(fr_per_neuron))
+
+    # Speed and step size
+    step_size = np.linalg.norm(np.diff(Xb, axis=0), axis=1)
+    speed = step_size / dt
+    mean_speed = float(np.median(speed))
+    mean_step = float(np.mean(step_size))
+
+    # Active neurons per bin
+    active = (Y > 0).sum(axis=1)
+    frac_0 = float(np.mean(active == 0))
+    frac_1 = float(np.mean(active == 1))
+    frac_2 = float(np.mean(active == 2))
+    frac_3plus = float(np.mean(active >= 3))
+    max_bar = 30  # max bar width in characters
+    max_frac = max(frac_0, frac_1, frac_2, frac_3plus, 1e-10)
+
+    def bar(frac):
+        return "=" * max(1, int(frac / max_frac * max_bar))
+
+    # Number of trials
+    n_trials = len(data.trial_slices.values)
+
+    print("DATA SUMMARY:")
+    print(f"  Neurons:    {N_neurons}")
+    print(f"  Dimensions: {D}")
+    print(f"  dt:         {dt} s")
+    print(f"  Duration:   {duration:.1f} s ({T} bins)")
+    print(f"  Trials:     {n_trials}")
+    print(
+        f"  Neuron firing rate (Hz): mean {fr_mean:.2f}, "
+        f"min {fr_min:.2f}, Q1 {fr_q25:.2f}, "
+        f"median {fr_median:.2f}, Q3 {fr_q75:.2f}, max {fr_max:.2f}"
+    )
+    print(f"  Median speed:     {mean_speed:.3f} m/s")
+    print(f"  Mean distance travelled per dt: {mean_step:.4f} m (may guide your choice of dx)")
+    print("  Simultaneously active neurons per bin:")
+    print(f"    0  {bar(frac_0)} {frac_0:.0%}")
+    print(f"    1  {bar(frac_1)} {frac_1:.0%}")
+    print(f"    2  {bar(frac_2)} {frac_2:.0%}")
+    print(f"    3+ {bar(frac_3plus)} {frac_3plus:.0%}")
 
 
 def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
@@ -679,3 +778,28 @@ def analyse_place_fields(
     }
 
     return place_field_results
+
+
+def calculate_spatial_information(
+    r: jax.Array,
+    PX: jax.Array,
+) -> jax.Array:
+    """Calculate Skaggs spatial information per neuron (bits/s).
+
+    Parameters
+    ----------
+    r : jax.Array (N_neurons, N_bins)
+        Firing rate maps in Hz (spikes per second, not per bin).
+    PX : jax.Array (N_bins,)
+        Occupancy probability over spatial bins (sums to 1).
+
+    Returns
+    -------
+    spatial_info : jax.Array (N_neurons,)
+        Spatial information per neuron in bits/s.
+    """
+    r_mean = jnp.sum(r * PX[None, :], axis=1)  # mean firing rate (N_neurons,) Hz
+    eps = 1e-10
+    ratio = r / (r_mean[:, None] + eps)
+    spatial_info = jnp.sum((r * jnp.log2(ratio + eps)) * PX[None, :], axis=1)
+    return spatial_info
