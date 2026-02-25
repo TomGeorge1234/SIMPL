@@ -276,9 +276,7 @@ class SIMPL:
 
         # MANIFOLD ALIGNMENT
         if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
-            raise ValueError(
-                "manifold_align_against must be 'behaviour', 'ground_truth', 'none'"
-            )
+            raise ValueError("manifold_align_against must be 'behaviour', 'ground_truth', 'none'")
 
         if manifold_align_against == "behaviour":
             self.Xalign = self.Xb
