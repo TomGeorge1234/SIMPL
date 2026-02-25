@@ -304,7 +304,7 @@ class SIMPL:
 
         _timer = threading.Thread(target=_delayed_message, daemon=True)
         _timer.start()
-        self.train_epoch() # training on epoch 0 just "fits" the behavioural receptive fields, epoch 0
+        self.train_epoch()  # training on epoch 0 just "fits" the behavioural receptive fields, epoch 0
         _epoch0_done.set()
 
         if verbose:
