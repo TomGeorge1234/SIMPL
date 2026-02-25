@@ -1,7 +1,6 @@
 # Jax, for the majority of the calculations
-import warnings
 import threading
-import time as _time
+import warnings
 
 import jax
 import jax.numpy as jnp
@@ -16,13 +15,13 @@ from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
-    print_data_summary,
     analyse_place_fields,
     calculate_spatial_information,
     cca,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
+    print_data_summary,
     save_results_to_netcdf,
 )
 

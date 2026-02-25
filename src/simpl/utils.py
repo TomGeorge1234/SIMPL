@@ -586,9 +586,11 @@ def print_data_summary(data: xr.Dataset) -> None:
     print(f"  dt:         {dt} s")
     print(f"  Duration:   {duration:.1f} s ({T} bins)")
     print(f"  Trials:     {n_trials}")
-    print(f"  Firing rate (Hz): mean {fr_mean:.2f}, "
-          f"min {fr_min:.2f}, Q1 {fr_q25:.2f}, "
-          f"median {fr_median:.2f}, Q3 {fr_q75:.2f}, max {fr_max:.2f}")
+    print(
+        f"  Firing rate (Hz): mean {fr_mean:.2f}, "
+        f"min {fr_min:.2f}, Q1 {fr_q25:.2f}, "
+        f"median {fr_median:.2f}, Q3 {fr_q75:.2f}, max {fr_max:.2f}"
+    )
     print(f"  Median speed:     {mean_speed:.3f} m/s")
     print(f"  Mean step per dt: {mean_step:.4f} m (dx should be >= this)")
     print("  Active neurons per bin:")
