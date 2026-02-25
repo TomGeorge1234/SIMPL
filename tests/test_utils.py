@@ -9,6 +9,8 @@ from simpl.utils import (
     _bin_indices_minuspi_pi,
     _circular_conv_fft_1d,
     _wrap_minuspi_pi,
+    accumulate_spikes,
+    calculate_spatial_information,
     cca,
     coarsen_dt,
     coefficient_of_determination,
@@ -23,6 +25,7 @@ from simpl.utils import (
     load_results,
     log_gaussian_pdf,
     prepare_data,
+    print_data_summary,
 )
 
 
@@ -242,6 +245,129 @@ class TestSaveAndLoadResults:
         loaded = load_results(path)
         assert "Y" in loaded
         assert "F" in loaded
+
+
+class TestCalculateSpatialInformation:
+    def test_uniform_rate_map_zero_info(self):
+        """A uniform firing rate map should have zero spatial information."""
+        N_neurons, N_bins = 3, 50
+        r = jnp.ones((N_neurons, N_bins)) * 10.0  # uniform 10 Hz everywhere
+        PX = jnp.ones(N_bins) / N_bins
+        si = calculate_spatial_information(r, PX)
+        assert si.shape == (N_neurons,)
+        assert jnp.allclose(si, 0.0, atol=1e-5)
+
+    def test_peaked_rate_map_positive_info(self):
+        """A peaked firing rate map should have positive spatial information."""
+        N_bins = 100
+        r = jnp.zeros((1, N_bins))
+        r = r.at[0, 50].set(100.0)  # single peak
+        PX = jnp.ones(N_bins) / N_bins
+        si = calculate_spatial_information(r, PX)
+        assert float(si[0]) > 0.0
+
+    def test_returns_bits_per_second(self):
+        """Output should scale with firing rate (bits/s, not bits/spike)."""
+        N_bins = 50
+        PX = jnp.ones(N_bins) / N_bins
+        # Peaked rate map at two different overall scales
+        r_low = jnp.zeros((1, N_bins)).at[0, 25].set(10.0)
+        r_high = jnp.zeros((1, N_bins)).at[0, 25].set(100.0)
+        si_low = calculate_spatial_information(r_low, PX)
+        si_high = calculate_spatial_information(r_high, PX)
+        # Higher rate → more bits per second
+        assert float(si_high[0]) > float(si_low[0])
+
+    def test_multiple_neurons(self):
+        """Each neuron gets its own independent info value."""
+        N_bins = 50
+        PX = jnp.ones(N_bins) / N_bins
+        r = jnp.ones((2, N_bins))
+        # neuron 0: uniform → 0 info; neuron 1: peaked → positive info
+        r = r.at[1, 25].set(100.0)
+        si = calculate_spatial_information(r, PX)
+        assert float(si[0]) < float(si[1])
+
+
+class TestAccumulateSpikes:
+    def _make_dataset(self, T=20, N_neurons=3):
+        """Create a minimal dataset for testing."""
+        import xarray as xr
+
+        time = np.arange(T, dtype=float) * 0.05
+        Y = np.zeros((T, N_neurons), dtype=int)
+        Y[5, 0] = 1  # single spike at t=5 for neuron 0
+        Y[10, 1] = 2  # two spikes at t=10 for neuron 1
+        Xb = np.random.randn(T, 2)
+        ds = xr.Dataset(
+            {
+                "Y": xr.DataArray(Y, dims=["time", "neuron"], coords={"time": time}),
+                "Xb": xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time}),
+            }
+        )
+        return ds
+
+    def test_returns_copy(self):
+        """accumulate_spikes should not modify the original dataset."""
+        ds = self._make_dataset()
+        original_Y = ds.Y.values.copy()
+        _ = accumulate_spikes(ds, window=3)
+        np.testing.assert_array_equal(ds.Y.values, original_Y)
+
+    def test_window_1_is_identity(self):
+        """Window of 1 should return the same Y."""
+        ds = self._make_dataset()
+        result = accumulate_spikes(ds, window=1)
+        np.testing.assert_array_equal(result.Y.values, ds.Y.values)
+
+    def test_rolling_sum(self):
+        """With window=3, a spike at t=5 should appear in bins 5, 6, 7."""
+        ds = self._make_dataset()
+        result = accumulate_spikes(ds, window=3)
+        Y_out = result.Y.values
+        # Neuron 0 had a spike only at t=5
+        assert Y_out[5, 0] == 1
+        assert Y_out[6, 0] == 1
+        assert Y_out[7, 0] == 1
+        assert Y_out[8, 0] == 0  # spike falls out of window
+
+    def test_causal(self):
+        """Spikes should not appear before the original spike time."""
+        ds = self._make_dataset()
+        result = accumulate_spikes(ds, window=5)
+        Y_out = result.Y.values
+        # Neuron 0 spike at t=5 — bins before t=5 should be unaffected
+        assert Y_out[4, 0] == 0
+
+    def test_preserves_other_variables(self):
+        """Xb and other variables should be unchanged."""
+        ds = self._make_dataset()
+        result = accumulate_spikes(ds, window=3)
+        np.testing.assert_array_equal(result.Xb.values, ds.Xb.values)
+
+    def test_preserves_dtype(self):
+        """Output Y should have the same dtype as input Y."""
+        ds = self._make_dataset()
+        result = accumulate_spikes(ds, window=3)
+        assert result.Y.dtype == ds.Y.dtype
+
+
+class TestPrintDataSummary:
+    def test_prints_output(self, demo_data, capsys):
+        """print_data_summary should produce output with key headings."""
+        data = prepare_data(
+            Y=demo_data["Y"][:500],
+            Xb=demo_data["Xb"][:500],
+            time=demo_data["time"][:500],
+        )
+        print_data_summary(data)
+        captured = capsys.readouterr().out
+        assert "DATA SUMMARY" in captured
+        assert "Neurons" in captured
+        assert "Dimensions" in captured
+        assert "dt" in captured
+        assert "Firing rate" in captured
+        assert "Active neurons per bin" in captured
 
 
 class TestCircularHelpers:
