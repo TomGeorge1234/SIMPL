@@ -337,6 +337,44 @@ def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
+    """Causal rolling sum of spikes over a backward-looking window.
+
+    Each time bin accumulates spikes from the current and previous
+    ``window - 1`` bins. This is equivalent to smoothing the spikes with
+    a causal rectangular kernel. Unlike ``coarsen_dt``, this increases
+    the spike density without affecting the time bin size.
+
+    Only ``Y`` is modified; all other variables (``Xb``, ``Xt``, etc.)
+    are left unchanged.
+
+    .. warning::
+
+        This changes the interpretation of the estimated receptive fields.
+        Since each bin now contains on average ``window`` times more spikes,
+        the fitted firing rates (and therefore ``F``) will be approximately
+        ``window`` times higher than the true single-bin rates. The receptive
+        field *shapes* are unaffected, but their *amplitudes* should not be
+        interpreted as physical firing rates.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset as returned by ``prepare_data``, must contain ``Y``.
+    window : int
+        Number of bins to sum over (looking backwards). For example,
+        ``window=5`` sums the current bin and the 4 preceding bins.
+
+    Returns
+    -------
+    dataset : xr.Dataset
+        A copy of the dataset with ``Y`` replaced by the rolling sum.
+    """
+    dataset = dataset.copy()
+    dataset["Y"] = dataset["Y"].rolling(time=window, min_periods=1).sum().astype(dataset["Y"].dtype)
+    return dataset
+
+
 def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
 
