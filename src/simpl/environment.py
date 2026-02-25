@@ -77,7 +77,8 @@ class Environment:
         self.data_lims = None
         self.pad = pad
         if force_lims is None:
-            assert X.ndim == 2, "X should be a 2D array of size (T x D)."
+            if X.ndim != 2:
+                raise ValueError("X should be a 2D array of size (T x D).")
             self.data_lims = (tuple(np.round(X.min(axis=0), 2)), tuple(np.round(X.max(axis=0), 2)))
             self.lims = (tuple(np.round(X.min(axis=0) - pad, 2)), tuple(np.round(X.max(axis=0) + pad, 2)))
             self.D = X.shape[1]
