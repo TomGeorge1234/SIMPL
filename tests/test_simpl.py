@@ -1,5 +1,7 @@
 """Integration tests for simpl.simpl.SIMPL."""
 
+import warnings
+
 import numpy as np
 
 from simpl.environment import Environment
@@ -288,7 +290,69 @@ class TestSIMPLEpochZeroInInit:
         assert "Spatial info" not in captured
 
 
+class TestSIMPLCalculateBaselines:
+    def _make_model_with_gt(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            Xt=demo_data["Xt"][:N],
+            Ft=demo_data["Ft"][:N_neurons],
+            Ft_coords_dict={"x": demo_data["x"], "y": demo_data["y"]},
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        return SIMPL(data=data, environment=env, verbose=False)
+
+    def test_populates_best_and_exact_epochs(self, demo_data):
+        """calculate_baselines should add epochs -2 (exact) and -1 (best)."""
+        model = self._make_model_with_gt(demo_data)
+        model.calculate_baselines()
+        assert -1 in model.results.epoch.values
+        assert -2 in model.results.epoch.values
+
+    def test_baseline_results_have_metrics(self, demo_data):
+        """Baseline epochs should contain F, X, and error metrics."""
+        model = self._make_model_with_gt(demo_data)
+        model.calculate_baselines()
+        for epoch in [-2, -1]:
+            assert "F" in model.results.sel(epoch=epoch)
+            assert "X" in model.results.sel(epoch=epoch)
+            assert "X_R2" in model.results.sel(epoch=epoch)
+
+    def test_warns_without_ground_truth(self, demo_data):
+        """Without ground truth, calculate_baselines should warn and return."""
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, verbose=False)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            model.calculate_baselines()
+            assert any("Ground truth" in str(warning.message) for warning in w)
+
+
 class TestSIMPLManifoldAlignment:
+    def _make_model(self, demo_data, align_against, with_gt=False):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        kwargs = dict(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+        )
+        if with_gt:
+            kwargs["Xt"] = demo_data["Xt"][:N]
+        data = prepare_data(**kwargs)
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        return SIMPL(data=data, environment=env, manifold_align_against=align_against, verbose=False)
+
     def test_cca_runs(self, small_simpl_model):
         model = small_simpl_model
         if model.epoch < 1:
@@ -297,3 +361,32 @@ class TestSIMPLManifoldAlignment:
         # After epoch 1, alignment should have been applied
         assert model.epoch >= 1
         assert "X" in model.E
+
+    def test_align_against_behaviour(self, demo_data):
+        """manifold_align_against='behaviour' should align to Xb."""
+        model = self._make_model(demo_data, "behaviour")
+        assert model.Xalign is not None
+        model.train_epoch()
+        assert "X" in model.E
+
+    def test_align_against_ground_truth(self, demo_data):
+        """manifold_align_against='ground_truth' should align to Xt."""
+        model = self._make_model(demo_data, "ground_truth", with_gt=True)
+        assert model.Xalign is not None
+        model.train_epoch()
+        assert "X" in model.E
+
+    def test_align_against_none(self, demo_data):
+        """manifold_align_against='none' should skip alignment."""
+        model = self._make_model(demo_data, "none")
+        assert model.Xalign is None
+        model.train_epoch()
+        assert "X" in model.E
+
+    def test_invalid_align_raises(self, demo_data):
+        """Invalid manifold_align_against should raise ValueError."""
+        try:
+            self._make_model(demo_data, "invalid")
+            assert False, "Should have raised ValueError"
+        except ValueError:
+            pass
