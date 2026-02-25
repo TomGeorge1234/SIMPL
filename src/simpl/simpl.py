@@ -33,6 +33,7 @@ class SIMPL:
         # Model parameters
         kernel_bandwidth: float = 0.02,
         speed_prior: float = 0.1,
+        kalman: bool = True,
         behaviour_prior: float | None = None,
         is_circular: bool = False,
         # Mask and analysis parameters
@@ -110,6 +111,12 @@ class SIMPL:
             by default 0.02.
         speed_prior : float, optional
             The prior speed of the agent in units of meters per second, by default 0.1 m/s.
+            This controls process noise in the internal Kalman model.
+        kalman : bool, optional
+            Whether to use standard Kalman smoothing dynamics, by default True.
+            If False, SIMPL still runs the Kalman filter/smoother internally, but enforces a very
+            high effective speed prior so the smoothed trajectory (`mu_s`) becomes very close to the
+            per-time likelihood mode (`mode_l`) in practice.
         behaviour_prior : Optional, optional
             Prior over how far the latent positions can deviate from the behaviour positions in units of
             meters, by default None (no prior). This should typically be off, or very large, unless you have
@@ -184,6 +191,12 @@ class SIMPL:
         # KERNEL STUFF
         self.kernel_bandwidth = kernel_bandwidth
 
+        # Kalman configuration
+        self.kalman = kalman
+        self.speed_prior_requested = speed_prior
+        self.kalman_off_speed_prior = 1e10
+        self.speed_prior_effective = speed_prior if self.kalman else max(speed_prior, self.kalman_off_speed_prior)
+
         # CREATE SPIKE MASKS
         self.resample_spike_mask = resample_spike_mask
         self.test_frac = test_frac
@@ -202,7 +215,7 @@ class SIMPL:
         self.even_minute_mask = ~self.odd_minute_mask  # mask for even minutes
 
         # INITIALISE THE KALMAN FILTER
-        speed_sigma = speed_prior * self.dt
+        speed_sigma = self.speed_prior_effective * self.dt
         # if no behaviour prior, set to a large value (effectively no prior)
         behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
         lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
@@ -408,6 +421,12 @@ class SIMPL:
         6. SAMPLE: The posterior of the latent positions is sampled.
         7. EVALUATE: The posterior likelihood of the data (mode observations) under the model is calculated.
         8. STORE: The results are stored in a dictionary.
+
+        Notes
+        -----
+        If `self.kalman=False`, this step still uses the same Kalman equations internally but with
+        very high process noise, so smoothing has minimal effect and `mu_s` should stay close to
+        `mode_l`.
 
         Parameters
         ----------
