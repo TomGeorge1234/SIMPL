@@ -16,13 +16,13 @@ class TestSIMPLInit:
         assert hasattr(model, "environment")
         assert hasattr(model, "results")
         assert model.D == 2
-        assert model.epoch == -1
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
 
 class TestSIMPLTrainOneEpoch:
     def test_runs_and_populates_results(self, small_simpl_model):
         model = small_simpl_model
-        model.train_epoch()
+        # epoch 0 already ran in __init__, so results should be populated
         assert model.epoch == 0
         assert "X" in model.results
         assert "F" in model.results
@@ -120,8 +120,7 @@ class TestSIMPLTrialBoundaries:
         env = Environment(demo_data["Xb"][:N], verbose=False)
         model = SIMPL(data=data, environment=env)
         assert len(model.trial_slices) == 2
-        model.train_epoch()
-        assert model.epoch == 0
+        assert model.epoch == 0  # epoch 0 runs in __init__
 
 
 class TestSIMPLSaveLoadResults:
