@@ -4,7 +4,7 @@ import numpy as np
 
 from simpl.environment import Environment
 from simpl.simpl import SIMPL
-from simpl.utils import load_results, prepare_data
+from simpl.utils import load_datafile, load_results, prepare_data
 
 
 class TestSIMPLInit:
@@ -17,6 +17,22 @@ class TestSIMPLInit:
         assert hasattr(model, "results")
         assert model.D == 2
         assert model.epoch == -1
+
+    def test_kalman_argument_exposed(self, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            dims=demo_data["dim"],
+            neurons=np.arange(N_neurons),
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, kalman=False, speed_prior=0.1)
+        assert model.kalman is False
+        # kalman=False should enforce a high effective speed prior.
+        assert model.speed_prior_effective >= model.kalman_off_speed_prior
 
 
 class TestSIMPLTrainOneEpoch:
@@ -240,3 +256,53 @@ class TestSIMPLManifoldAlignment:
         # After epoch 1, alignment should have been applied
         assert model.epoch >= 1
         assert "X" in model.E
+
+
+class TestSIMPLKalmanDiagnostics:
+    def test_mode_mu_s_rmse_small_when_kalman_off(self):
+        demo_data = load_datafile("gridcelldata.npz")
+        N = 1000
+        N_neurons = min(8, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            dims=demo_data["dim"],
+            neurons=np.arange(N_neurons),
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, kalman=False, evaluate_each_epoch=True)
+        model.train_N_epochs(2, verbose=False)  # epoch 1 is first E-step
+
+        mode_l = np.asarray(model.results.mode_l.sel(epoch=model.epoch).values)
+        mu_s = np.asarray(model.results.mu_s.sel(epoch=model.epoch).values)
+        diff = mode_l - mu_s
+        rmse = float(np.sqrt(np.mean(diff**2)))
+        mae = float(np.mean(np.abs(diff)))
+        max_abs = float(np.max(np.abs(diff)))
+
+        assert np.isfinite(rmse)
+        assert np.isfinite(mae)
+        assert np.isfinite(max_abs)
+        assert rmse >= 0.0
+        assert mae >= 0.0
+        assert max_abs >= 0.0
+
+    def test_mode_mu_s_allclose_when_kalman_off(self):
+        demo_data = load_datafile("gridcelldata.npz")
+        N = 1000
+        N_neurons = min(8, demo_data["Y"].shape[1])
+        data = prepare_data(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            dims=demo_data["dim"],
+            neurons=np.arange(N_neurons),
+        )
+        env = Environment(demo_data["Xb"][:N], verbose=False)
+        model = SIMPL(data=data, environment=env, kalman=False, evaluate_each_epoch=True)
+        model.train_N_epochs(2, verbose=False)  # epoch 1 is first E-step
+
+        mode_l = np.asarray(model.results.mode_l.sel(epoch=model.epoch).values)
+        mu_s = np.asarray(model.results.mu_s.sel(epoch=model.epoch).values)
+        assert np.allclose(mode_l, mu_s, atol=1e-2, rtol=0.0)
