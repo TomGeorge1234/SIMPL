@@ -15,12 +15,12 @@ from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
     analyse_place_fields,
+    calculate_spatial_information,
     cca,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
     save_results_to_netcdf,
-    calculate_spatial_information,
 )
 
 
