@@ -6,7 +6,7 @@ import numpy as np
 
 from simpl.environment import Environment
 from simpl.simpl import SIMPL
-from simpl.utils import load_datafile, load_results, prepare_data
+from simpl.utils import load_results, prepare_data
 
 
 class TestSIMPLInit:
@@ -20,7 +20,7 @@ class TestSIMPLInit:
         assert model.D == 2
         assert model.epoch == 0  # epoch 0 runs in __init__
 
-    def test_kalman_argument_exposed(self, demo_data):
+    def test_use_kalman_smoothing_argument(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
         data = prepare_data(
@@ -31,9 +31,9 @@ class TestSIMPLInit:
             neurons=np.arange(N_neurons),
         )
         env = Environment(demo_data["Xb"][:N], verbose=False)
-        model = SIMPL(data=data, environment=env, kalman=False, speed_prior=0.1)
-        assert model.kalman is False
-        # kalman=False should enforce a high effective speed prior.
+        model = SIMPL(data=data, environment=env, use_kalman_smoothing=False, speed_prior=0.1)
+        assert model.use_kalman_smoothing is False
+        # use_kalman_smoothing=False should enforce a high effective speed prior.
         assert model.speed_prior_effective >= model.kalman_off_speed_prior
 
 
