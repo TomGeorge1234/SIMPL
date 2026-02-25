@@ -35,7 +35,7 @@ class SIMPL:
         # Model parameters
         kernel_bandwidth: float = 0.02,
         speed_prior: float = 0.1,
-        kalman: bool = True,
+        use_kalman_smoothing: bool = True,
         behaviour_prior: float | None = None,
         is_circular: bool = False,
         # Mask and analysis parameters
@@ -115,7 +115,7 @@ class SIMPL:
         speed_prior : float, optional
             The prior speed of the agent in units of meters per second, by default 0.1 m/s.
             This controls process noise in the internal Kalman model.
-        kalman : bool, optional
+        use_kalman_smoothing : bool, optional
             Whether to use standard Kalman smoothing dynamics, by default True.
             If False, SIMPL still runs the Kalman filter/smoother internally, but enforces a very
             high effective speed prior so the smoothed trajectory (`mu_s`) becomes very close to the
@@ -196,10 +196,12 @@ class SIMPL:
         self.kernel_bandwidth = kernel_bandwidth
 
         # Kalman configuration
-        self.kalman = kalman
+        self.use_kalman_smoothing = use_kalman_smoothing
         self.speed_prior_requested = speed_prior
         self.kalman_off_speed_prior = 1e10
-        self.speed_prior_effective = speed_prior if self.kalman else max(speed_prior, self.kalman_off_speed_prior)
+        self.speed_prior_effective = (
+            speed_prior if self.use_kalman_smoothing else max(speed_prior, self.kalman_off_speed_prior)
+        )
 
         # CREATE SPIKE MASKS
         self.resample_spike_mask = resample_spike_mask
@@ -474,7 +476,7 @@ class SIMPL:
 
         Notes
         -----
-        If `self.kalman=False`, this step still uses the same Kalman equations internally but with
+        If `self.use_kalman_smoothing=False`, this step still uses the same Kalman equations internally but with
         very high process noise, so smoothing has minimal effect and `mu_s` should stay close to
         `mode_l`.
 
