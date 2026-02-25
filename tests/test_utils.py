@@ -366,8 +366,8 @@ class TestPrintDataSummary:
         assert "Neurons" in captured
         assert "Dimensions" in captured
         assert "dt" in captured
-        assert "Firing rate" in captured
-        assert "Active neurons per bin" in captured
+        assert "Neuron firing rate" in captured
+        assert "Simultaneously active neurons per bin" in captured
 
 
 class TestCircularHelpers:
