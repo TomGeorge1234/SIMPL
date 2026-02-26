@@ -390,7 +390,10 @@ def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
     dataset : xr.Dataset
         The coarsened dataset"""
     dataset = dataset.coarsen(dim={"time": dt_multiplier}).mean()
-    dataset["X"] = dataset["X"] * dt_multiplier
+    pos_vars = ["X", "Xb", "Xt"]
+    for X in pos_vars:
+        if X in dataset.keys():
+            dataset[X] = dataset[X] * dt_multiplier
     return dataset
 
 
