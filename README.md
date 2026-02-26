@@ -34,11 +34,7 @@ src/simpl/
 from simpl import SIMPL, Environment, prepare_data
 
 # Load and prepare data
-data = prepare_data(
-    Y=spikes,         # (T, N)
-    Xb=positions,     # (T, D)
-    time=timestamps,  # (T,)
-    )
+data = prepare_data(Y=spikes, Xb=positions, time=timestamps) # (T, N) (T, D) (T,)
 env = Environment(X=positions, bin_size=0.02)
 
 # Fit the model
@@ -49,7 +45,7 @@ model.train_N_epochs(5)
 results = model.results
 receptive_fields = results.F.sel(epoch=5)
 latent_trajectory = results.X.sel(epoch=5)
-# ...+ many other variables, likelihoods and metrics saves across epochs
+# ...+ many other variables, likelihoods and metrics saved across epochs
 ```
 
 ## Development
