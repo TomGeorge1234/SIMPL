@@ -237,6 +237,27 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "axis title": "Linear scaling intercept",
             "formula": r"$\mathbf{c}$",
         },
+        "align_angle": {
+            "name": "Circular alignment angle",
+            "description": (
+                "Rotation angle (radians) applied to circular "
+                "latent positions to align with the target "
+                "trajectory."
+            ),
+            "dims": [],
+            "axis title": "Angle (rad)",
+            "formula": r"$\Delta\theta$",
+        },
+        "align_error": {
+            "name": "Circular alignment error",
+            "description": (
+                "Minimum mean squared wrapped angular error "
+                "after circular rotation alignment."
+            ),
+            "dims": [],
+            "axis title": "Angular error",
+            "formula": r"$\mathbb{E}[\mathrm{wrap}(\theta-\hat{\theta})^2]$",
+        },
         # Place field stuff
         "place_field_count": {
             "name": "Number of place fields indentified",

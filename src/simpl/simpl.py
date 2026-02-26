@@ -18,6 +18,7 @@ from simpl.utils import (
     calculate_spatial_information,
     cca,
     coefficient_of_determination,
+    circular_align_rotation,
     create_speckled_mask,
     fit_gaussian,
     print_data_summary,
@@ -582,9 +583,13 @@ class SIMPL:
         # against the behaviour or ground truth using a linear transform.
         align_dict = {}
         if self.Xalign is not None:
-            coef, intercept = cca(mu_s, self.Xalign)  # linear manifold alignment
-            X = mu_s @ coef.T + intercept
-            align_dict = {"coef": coef, "intercept": intercept}
+            if self.is_circular:
+                X, align_angle, align_error = circular_align_rotation(mu_s, self.Xalign)
+                align_dict = {"align_angle": align_angle, "align_error": align_error}
+            else:
+                coef, intercept = cca(mu_s, self.Xalign)  # linear manifold alignment
+                X = mu_s @ coef.T + intercept
+                align_dict = {"coef": coef, "intercept": intercept}
 
         # make this all into a dictionary
         E = {

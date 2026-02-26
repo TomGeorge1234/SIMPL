@@ -301,6 +301,57 @@ def cca(X: jax.Array, Y: jax.Array) -> tuple[np.ndarray, np.ndarray]:
     return coef, intercept
 
 
+def circular_align_rotation(
+    X: jax.Array,
+    Y: jax.Array,
+    n_angles: int = 360,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Align 1D circular trajectories by a pure rotation (no scaling).
+
+    Searches rotation angles in [-pi, pi) and returns the angle that minimises
+    mean squared wrapped angular error.
+
+    Parameters
+    ----------
+    X : jnp.ndarray, shape (T, 1) or (T,)
+        Source trajectory in radians.
+    Y : jnp.ndarray, shape (T, 1) or (T,)
+        Target trajectory in radians.
+    n_angles : int, optional
+        Number of candidate angles in [-pi, pi), by default 360.
+
+    Returns
+    -------
+    X_aligned : jnp.ndarray, shape (T, 1)
+        Rotated version of X wrapped to [-pi, pi).
+    best_angle : jnp.ndarray, shape ()
+        Rotation angle (radians) that minimises circular error.
+    best_error : jnp.ndarray, shape ()
+        Minimum mean squared wrapped angular error.
+    """
+    X = jnp.asarray(X)
+    Y = jnp.asarray(Y)
+    if X.ndim == 2:
+        assert X.shape[1] == 1, "circular_align_rotation expects 1D circular data (shape (T, 1) or (T,))."
+        X1 = X[:, 0]
+    else:
+        X1 = X
+    if Y.ndim == 2:
+        assert Y.shape[1] == 1, "circular_align_rotation expects 1D circular data (shape (T, 1) or (T,))."
+        Y1 = Y[:, 0]
+    else:
+        Y1 = Y
+    assert X1.shape == Y1.shape, "The predicted and target circular trajectories must have the same shape."
+
+    angles = jnp.linspace(-jnp.pi, jnp.pi, n_angles, endpoint=False)
+    diffs = _wrap_minuspi_pi(X1[:, None] + angles[None, :] - Y1[:, None])
+    errs = jnp.mean(diffs**2, axis=0)
+    idx = jnp.argmin(errs)
+    best_angle = angles[idx]
+    X_aligned = _wrap_minuspi_pi(X1 + best_angle)[:, None]
+    return X_aligned, best_angle, errs[idx]
+
+
 def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
     """Calculates the correlation between X1 and X2[lag:].
 
