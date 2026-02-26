@@ -34,12 +34,22 @@ src/simpl/
 from simpl import SIMPL, Environment, prepare_data
 
 # Load and prepare data
-data = prepare_data(Y=spikes, Xb=positions, time=timestamps)
-env = Environment(X=positions)
+data = prepare_data(
+    Y=spikes,         # (T, N)
+    Xb=positions,     # (T, D)
+    time=timestamps,  # (T,)
+    )
+env = Environment(X=positions, bin_size=0.02)
 
 # Fit the model
 model = SIMPL(data=data, environment=env)
 model.train_N_epochs(5)
+
+# Extract results 
+results = model.results
+receptive_fields = results.F.sel(epoch=5)
+latent_trajectory = results.X.sel(epoch=5)
+# ...+ many other variables, likelihoods and metrics saves across epochs
 ```
 
 ## Development
@@ -53,7 +63,7 @@ ruff check src/
 ruff format --check src/
 
 # Run tests
-pytest --cov=simpl
+pytest
 ```
 
 ## Cite
@@ -63,11 +73,11 @@ If you use SIMPL in your work, please cite it as:
 
 ```
 @inproceedings{
-george2025simpl,
-title={{SIMPL}: Scalable and hassle-free optimisation of neural representations from behaviour},
-author={Tom George and Pierre Glaser and Kim Stachenfeld and Caswell Barry and Claudia Clopath},
-booktitle={The Thirteenth International Conference on Learning Representations},
-year={2025},
-url={https://openreview.net/forum?id=9kFaNwX6rv}
+    george2025simpl,
+    title={{SIMPL}: Scalable and hassle-free optimisation of neural representations from behaviour},
+    author={Tom George and Pierre Glaser and Kim Stachenfeld and Caswell Barry and Claudia Clopath},
+    booktitle={The Thirteenth International Conference on Learning Representations},
+    year={2025},
+    url={https://openreview.net/forum?id=9kFaNwX6rv}
 }
 ```
