@@ -975,9 +975,6 @@ class SIMPL:
                 f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
                 f"spatial_info={si:.3f} bits/s/neuron",
             ]
-            if e > 0:
-                dX = float(self.results.trajectory_change.sel(epoch=e).mean().values)
-                parts.append(f"Δ trajectory={dX:.4f} m")
             print("     ".join(parts))
             if e > 0:
                 epoch0_test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=0).values)
