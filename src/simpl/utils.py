@@ -337,16 +337,12 @@ def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
+def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
     """Causal rolling sum of spikes over a backward-looking window.
 
     Each time bin accumulates spikes from the current and previous
     ``window - 1`` bins. This is equivalent to smoothing the spikes with
-    a causal rectangular kernel. Unlike ``coarsen_dt``, this increases
-    the spike density without affecting the time bin size.
-
-    Only ``Y`` is modified; all other variables (``Xb``, ``Xt``, etc.)
-    are left unchanged.
+    a causal rectangular kernel.
 
     .. warning::
 
@@ -359,42 +355,73 @@ def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
 
     Parameters
     ----------
-    dataset : xr.Dataset
-        Dataset as returned by ``prepare_data``, must contain ``Y``.
+    Y : np.ndarray, shape (T, N_neurons)
+        Spike counts.
     window : int
         Number of bins to sum over (looking backwards). For example,
         ``window=5`` sums the current bin and the 4 preceding bins.
 
     Returns
     -------
-    dataset : xr.Dataset
-        A copy of the dataset with ``Y`` replaced by the rolling sum.
+    Y_accumulated : np.ndarray, shape (T, N_neurons)
+        Spike counts after causal rolling sum.
     """
-    dataset = dataset.copy()
-    dataset["Y"] = dataset["Y"].rolling(time=window, min_periods=1).sum().astype(dataset["Y"].dtype)
-    return dataset
+    Y_out = np.zeros_like(Y)
+    for i in range(Y.shape[0]):
+        start = max(0, i - window + 1)
+        Y_out[i] = Y[start : i + 1].sum(axis=0)
+    return Y_out
 
 
-def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
-    """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
+def coarsen_dt(
+    Y: np.ndarray,
+    Xb: np.ndarray,
+    time: np.ndarray,
+    dt_multiplier: int,
+    Xt: np.ndarray | None = None,
+) -> tuple:
+    """Coarsen data by averaging over groups of ``dt_multiplier`` time bins.
+
+    Spikes are summed (not averaged) so that spike counts remain integers.
+    Positions and time are averaged.
 
     Parameters
     ----------
-    dataset : xr.Dataset
-        The dataset to be coarsened
+    Y : np.ndarray, shape (T, N_neurons)
+        Spike counts.
+    Xb : np.ndarray, shape (T, D)
+        Behavioural positions.
+    time : np.ndarray, shape (T,)
+        Time stamps.
     dt_multiplier : int
-        The factor by which to coarsen the data
+        Factor by which to coarsen the data.
+    Xt : np.ndarray or None, shape (T, D), optional
+        Ground truth positions.
 
     Returns
     -------
-    dataset : xr.Dataset
-        The coarsened dataset"""
-    dataset = dataset.coarsen(dim={"time": dt_multiplier}).mean()
-    pos_vars = ["X", "Xb", "Xt"]
-    for X in pos_vars:
-        if X in dataset.keys():
-            dataset[X] = dataset[X] * dt_multiplier
-    return dataset
+    Y_coarse : np.ndarray
+        Coarsened spike counts (summed).
+    Xb_coarse : np.ndarray
+        Coarsened behavioural positions (averaged).
+    time_coarse : np.ndarray
+        Coarsened time stamps (averaged).
+    Xt_coarse : np.ndarray (only if Xt was provided)
+        Coarsened ground truth positions (averaged).
+    """
+    T = Y.shape[0]
+    T_new = T // dt_multiplier
+    T_trim = T_new * dt_multiplier
+
+    Y_coarse = Y[:T_trim].reshape(T_new, dt_multiplier, -1).sum(axis=1)
+    Xb_coarse = Xb[:T_trim].reshape(T_new, dt_multiplier, -1).mean(axis=1)
+    time_coarse = time[:T_trim].reshape(T_new, dt_multiplier).mean(axis=1)
+
+    if Xt is not None:
+        Xt_coarse = Xt[:T_trim].reshape(T_new, dt_multiplier, -1).mean(axis=1)
+        return Y_coarse, Xb_coarse, time_coarse, Xt_coarse
+
+    return Y_coarse, Xb_coarse, time_coarse
 
 
 def create_speckled_mask(
