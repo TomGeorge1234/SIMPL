@@ -28,658 +28,735 @@ from simpl.utils import (
 class SIMPL:
     def __init__(
         self,
-        # Data
-        data: xr.Dataset,
-        # Environment
-        environment: Environment,
-        # Model parameters
+        # Model hyperparameters
         kernel_bandwidth: float = 0.02,
         speed_prior: float = 0.1,
         use_kalman_smoothing: bool = True,
         behaviour_prior: float | None = None,
         is_circular: bool = False,
+        # Environment parameters
+        bin_size: float = 0.02,
+        env_pad: float = 0.1,
+        env_lims: tuple | None = None,
+        environment: Environment | None = None,
         # Mask and analysis parameters
         test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         resample_spike_mask: bool = False,
         random_seed: int = 0,
-        manifold_align_against: str = "behaviour",
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
         verbose: bool = True,
+        # Optional metadata
+        dim_names: np.ndarray | None = None,
+        neurons: np.ndarray | None = None,
     ) -> None:
-        """Initializes the SIMPL class.
+        """Initialise the SIMPL model with hyperparameters only (no data, no computation).
 
-        Overview:
-            SIMPL takes in a data set of spikes and initial latent estimates and iteratively "redecodes" the
-            latent by (i) fitting receptive fields by KDE to the spikes (the "M-step") and (ii) running a
-            Kalman filter on the MLE estimates from the spikes to redecode the latent positions (the "E-step").
-            This procedure is reminiscent (indeed -- theoretically equivalent to, see paper) of the EM-algorithm
-            for latent variable optimisation.
+        Call ``fit()`` to provide data and train the model. After fitting, optimised latents,
+        receptive fields, metrics and other diagnostics can be found in ``self.results_``
+        (an ``xarray.Dataset``). Quick access to the final decoded latent and receptive fields
+        is available via ``self.X_`` and ``self.F_``. The ``predict()`` method can decode a
+        new set of spikes using the fitted receptive fields, without needing behavioural input.
 
-        Terminology:
-            `Y` refers to spike counts, shape (T, N_neurons)
-            `X` refers to the latent process (i.e. the position of the agent), shape (T, DIMS)
-            `F` refers to the receptive fields, shape (N_neurons, N_bins)
-            `logPYXF` refers to the log-likelihood of the spikes given the position and receptive fields, (T, N_bins)
-            `mu_s`, `mu_f`, `sigma_s` etc. are the Kalman filtered/smoothed means/covariances of the latent positions.
+        Overview
+        --------
+        SIMPL takes in a dataset of spikes ``Y`` and initial latent estimates ``Xb`` and
+        iteratively "redecodes" the latent by:
 
-        Results format:
-            Data is stored and returned in one _ginormous_ xarray Dataset, `self.results`. This dataset contains
-            _every_ variable at every epoch including the raw data (`Y`, `X`, `Xt` etc.), outputs of the E-step
-            and M-step such as receptive fields, likelihood maps, kalman filtered/smoothed means and covariances
-            etc. (`mu_s`, `F` etc.) and evaluation baselines such as R2, X_err, and F_err and metrics (trajectory
-            stability, field stability, field sparsity, spatial information), spike masks (used to isolate test
-            and train splits), and linear rescaling coefficients. xarrays are like numpy arrays which allow you
-            to save data arrays along with their associated coordinates. xarray-datasets are like dictionaries of
-            xarrays, where each xarray is a variable and the dictionary keys are the variable names where many
-            variables can share the same coordinates.
+        1. **M-step** — fitting receptive fields (place fields) via kernel density estimation
+           (KDE) from the current latent trajectory and spikes.
+        2. **E-step** — running a Kalman filter/smoother on the maximum-likelihood estimates
+           derived from spikes and the newly fitted receptive fields to produce an updated
+           latent trajectory.
 
-            So you can then access (for example) "the smoothed latent position y-coordinate at time t on the
-            e'th epoch" by calling `self.results['mu_s'].sel(epoch=e, dim='y', time=t)`. Two epochs (-2 and -1)
-            are reserved for special cases ("exact" and "best" models which are calculated using the ground truth
-            data (see `calculate_baselines`).
+        This procedure is reminiscent of (indeed, theoretically equivalent to, see paper) the
+        EM algorithm for latent variable optimisation. Epoch 0 runs the M-step only on the
+        behavioural initialisation trajectory ``Xb``. Subsequent epochs alternate E-step and
+        M-step.
 
-        Key methods include:
-        - `train_epoch()` which runs an epoch of the EM algorithm
-        - `_E_step()` which runs the E-step of the EM algorithm
-        - `_M_step()` which runs the M-step of the EM algorithm
+        Terminology
+        -----------
+        - **Y** : Spike counts, shape (T, N_neurons). Can be binary (0/1) or integer counts (0/1/2/3...).
+        - **Xb** : Behavioural initialisation, shape (T, D). The starting estimate of latent positions,
+          typically derived from tracked behaviour (e.g. animal position).
+        - **Xt** : Ground truth latent positions (if available), shape (T, D). Used for evaluation only.
+        - **F** : Receptive fields (place fields), shape (N_neurons, N_bins) — the estimated firing rate of each neuron
+          as a function of position, discretised on the environment grid.
+        - **FX** : Firing rates along the trajectory, shape (T, N_neurons) — F evaluated at the latent positions X.
 
         Parameters
         ----------
-        data : xr.Dataset
-            The data to be decoded. This should contain the following variables:
-            - 'Y' : the spike counts of the neurons at each time step (T x N_neurons)
-            - 'Xb' : the position of the agent at each time step (T x DIMS)
-            ...and if available, ground truth data...
-            - 'Xt' : the ground truth latent positions (T x DIMS)
-            - 'Ft' : the ground truth place fields (N_neurons x N_bins)
-            Along with the associated coordinates for each of these variables:
-            - 'neurons' : the array of neuron indices [0, 1, 2, ...]
-            - 'time' : the array of time stamps [0, 0.05, 0.1, ...]
-            - 'dim' : the array of dimension names e.g. ['x', 'y'] in 2D space
-            - 'x' : the array of x positions [0, 0.1, 0.2, ...]
-            - 'y' : the array of y positions [0, 0.1, 0.2, ...] (if 2D space)
-        environment : Object
-            The environment in which the data can live. This should contain the following attributes
-            (satisfied by the environment.Environment() class):
-            - 'D' : the number of dimensions of the environment
-            - 'flattened_discretised_coords' : coordinates for all bins in the environment (N_bins, D)
-            - 'dim' : the array of dimension names e.g. ['x', 'y'] in 2D space
-            - 'coords_dict' : a dictionary mapping dim to their coordinate values
-            - 'discrete_env_shape' : the shape of the discretised environment e.g. (N_xbins, N_ybins) in 2D
         kernel_bandwidth : float, optional
-            The bandwidth of the kernel in meters for doing kde on the spikes (default a gaussian kernel unless using a
-            1Dcircular environment in which case a von Mises kernel is used and the effective units are radians)
-            by default 0.02.
+            The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
+            meters) used for KDE when fitting receptive fields. Smaller values give sharper
+            fields but are noisier; larger values smooth more. By default 0.02.
         speed_prior : float, optional
-            The prior speed of the agent in units of meters per second, by default 0.1 m/s.
-            This controls process noise in the internal Kalman model.
+            Prior on agent speed in units of meters per second. This controls the strength of
+            the Kalman smoother: a low speed prior constrains the decoded trajectory to be
+            smooth, while a high value lets the trajectory follow the spike likelihood more
+            closely. By default 0.1 m/s.
         use_kalman_smoothing : bool, optional
-            Whether to use standard Kalman smoothing dynamics, by default True.
-            If False, SIMPL still runs the Kalman filter/smoother internally, but enforces a very
-            high effective speed prior so the smoothed trajectory (`mu_s`) becomes very close to the
-            per-time likelihood mode (`mode_l`) in practice.
-        behaviour_prior : Optional, optional
-            Prior over how far the latent positions can deviate from the behaviour positions in units of
-            meters, by default None (no prior). This should typically be off, or very large, unless you have
-            good reason to believe the behaviour prior should be enforced strongly.
-        test_frac : float, optional
-            The fraction of the data to use for testing, by default 0.1. Testing data is generated using a
-            speckled mask.
+            Whether to use Kalman smoothing dynamics in the E-step. If False, the speed prior
+            is set very high, effectively disabling temporal smoothing and letting the
+            trajectory follow the per-bin maximum-likelihood estimate. By default True.
+        behaviour_prior : float or None, optional
+            Prior on how far the latent positions can deviate from the behavioural positions,
+            in units of meters. This acts as a soft constraint pulling the decoded trajectory
+            towards ``Xb``. None means no prior (the latent is free to move anywhere).
+            By default None.
         is_circular : bool, optional
-            Whether the latent space is circular (e.g. head direction data). If True, kde_angular is used in
-            the M-step, by default False. Currently only supports 1D circular data, so if True, the environment
-            should have D=1. Expects coordinates in radians ranging from -pi to pi.
+            Whether the latent space is circular (e.g. head direction data in radians). If
+            True, angular KDE is used and the space is assumed to be in [-pi, pi].
+            By default False.
+        bin_size : float, optional
+            Spatial bin size for discretising the environment, in the same units as the latent
+            space. Controls the resolution of the receptive field grid. Smaller bins give
+            higher resolution but increase computation and memory. By default 0.02.
+        env_pad : float, optional
+            Padding added outside the data bounds when constructing the environment grid. This
+            ensures that receptive fields near the boundary of the explored space are not
+            clipped. In the same units as the latent space. By default 0.1.
+        env_lims : tuple or None, optional
+            Force the environment limits to specific values instead of inferring them from the
+            data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
+            By default None (auto-inferred from ``Xb``).
+        environment : Environment or None, optional
+            A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
+            ``env_pad``, and ``env_lims`` are all ignored. By default None.
+        test_frac : float, optional
+            Fraction of spike observations held out for testing, implemented via a speckled
+            (block-structured) mask. Used to compute held-out log-likelihood for monitoring
+            overfitting. By default 0.1.
         speckle_block_size_seconds : float, optional
-            The size of contiguous blocks of False in the speckled mask, by default 1.0 second.
+            Temporal size (in seconds) of contiguous blocks in the speckled test mask. Larger
+            blocks give more temporally coherent held-out segments. By default 1.0.
         resample_spike_mask : bool, optional
-            Whether to resample the speckled mask each epoch, by default False. If True, generates a new random
-            speckled mask each epoch, which can help ensure the model is not overfitting to a particular
-            train/test split. If False, the same speckled mask is used each epoch.
+            Whether to resample the speckled test mask at each epoch. If False, the same mask
+            is used throughout training. By default False.
         random_seed : int, optional
-            The random seed for reproducibility of the speckled mask, by default 0. Only used if
-            resample_spike_mask is True.
-        manifold_align_against : str, optional
-            The variable to align the latent positions against, by default 'behaviour'. Can be 'behaviour',
-            'ground_truth', or 'none' (no manifold alignment is performed).
-        evaluate_each_epoch: bool, optional
-            Whether to evaluate the model and save results each epoch (costing extra memory and compute) into
-            the results dataset, by default True. If False, results can only be saved at the end of training
-            when self.evaluate_epoch() is manually called. Epoch 0 is also always evaluated.
+            Random seed for reproducibility (controls the spike mask generation).
+            By default 0.
+        evaluate_each_epoch : bool, optional
+            Whether to compute and store all metrics (spatial information, stability, place
+            field analysis, etc.) at every epoch. If False, metrics are only computed after
+            the final epoch. Set to False for faster training when intermediate metrics are
+            not needed. By default True.
         save_likelihood_maps : bool, optional
-            Whether to save the likelihood maps of the spikes at each time step (these are size env x time so
-            cost a LOT of memory, only save if needed), by default False.
+            Whether to save the full log-likelihood maps at each E-step. These are large
+            arrays (T x N_bins) and are usually not needed. By default False.
+        verbose : bool, optional
+            Whether to print progress information (data summary, epoch summaries, warnings)
+            during ``fit()``. By default True.
+        dim_names : np.ndarray or None, optional
+            Names for the latent dimensions, e.g. ``['x', 'y']``. These are used as
+            coordinate labels in the results Dataset. If None, auto-generated from the
+            Environment (``'x'``, ``'y'``, ``'z'`` for ≤3D; ``'x1'``, ``'x2'``, ... for
+            higher). By default None.
+        neurons : np.ndarray or None, optional
+            Array of neuron identifiers (e.g. cluster IDs). Used as coordinate labels in the
+            results Dataset. If None, auto-generated as ``[0, 1, ..., N_neurons-1]``.
+            By default None.
+
+        Examples
+        --------
+        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> print(model.X_.shape)  # decoded latent positions
+        >>> print(model.F_.shape)  # fitted receptive fields
         """
-        # PREPARE THE DATA INTO JAX ARRAYS
-        self.data = data.copy()
-        self.Y = jnp.array(data.Y.values)  # (T, N_neurons)
-        self.Xb = jnp.array(data.Xb.values)  # (T, D)
-        self.time = jnp.array(data.time.values)  # (T,)
-        self.neuron = jnp.array(data.neuron.values)  # (N_neurons,)
-        self.dt = self.time[1] - self.time[0]  # time step size
+        # Model hyperparameters
+        self.kernel_bandwidth = kernel_bandwidth
+        self.speed_prior = speed_prior
+        self.use_kalman_smoothing = use_kalman_smoothing
+        self.behaviour_prior = behaviour_prior
+        self.is_circular = is_circular
 
-        # INTEGER VARIABLES
-        self.D = data.Xb.shape[1]  # number of dimensions of the latent space
-        self.T = len(data.time)  # number of time steps
-        self.N_neurons = data.Y.shape[1]
-        self.N_PFmax = 20  # to keep a fixed shape each tuning curve has max possible number of place fields
+        # Environment config
+        self.bin_size = bin_size
+        self.env_pad = env_pad
+        self.env_lims = env_lims
+        self._environment_override = environment  # power-user pre-built Environment
 
-        # SET TRIAL BOUNDARIES (IF GIVEN)
-        self.trial_boundaries = np.array(
-            [
-                0,
-            ]
-        )
-        self.trial_slices = [
-            slice(0, self.T),
-        ]
-        if "trial_boundaries" in data.keys():
-            self.trial_boundaries = data.trial_boundaries.values
-            self.trial_slices = data.trial_slices.values
-
-        # SET UP THE ENVIRONMENT
-        self.environment = environment
-        if self.D != environment.D:
-            raise ValueError(f"Data has {self.D} dimensions but environment has {environment.D}")
-        self.xF = jnp.array(environment.flattened_discretised_coords)  # (N_bins, D)
-        self.xF_shape = environment.discrete_env_shape
-        self.N_bins = len(self.xF)
-
-        # INITIALSE SOME VARIABLES
-        self.lastF, self.lastX = None, None
-        self.epoch = -1
+        # Mask and analysis parameters
+        self.test_frac = test_frac
+        self.speckle_block_size_seconds = speckle_block_size_seconds
+        self.resample_spike_mask = resample_spike_mask
+        self.random_seed = random_seed
         self.evaluate_each_epoch = evaluate_each_epoch
         self.save_likelihood_maps = save_likelihood_maps
+        self.verbose = verbose
 
-        # KERNEL STUFF
-        self.kernel_bandwidth = kernel_bandwidth
+        # Optional metadata
+        self.dim_names = dim_names
+        self.neurons = neurons
 
-        # Kalman configuration
-        self.use_kalman_smoothing = use_kalman_smoothing
-        self.speed_prior_requested = speed_prior
-        self.kalman_off_speed_prior = 1e10
-        self.speed_prior_effective = (
-            speed_prior if self.use_kalman_smoothing else max(speed_prior, self.kalman_off_speed_prior)
-        )
+        # Fitted flag
+        self.is_fitted_ = False
 
-        # CREATE SPIKE MASKS
-        self.resample_spike_mask = resample_spike_mask
-        self.test_frac = test_frac
-        self.block_size = int(speckle_block_size_seconds / self.dt)
-        self.random_seed = random_seed
-        self._seed_seq = np.random.SeedSequence(self.random_seed)
-        self.random_seed_epoch_ = self._next_seed() if self.resample_spike_mask else self.random_seed
-        self.spike_mask = create_speckled_mask(
-            size=(self.T, self.N_neurons),  # train/test specle mask
-            sparsity=test_frac,
-            block_size=self.block_size,
-            random_seed=self.random_seed_epoch_,
-        )
-        # mask for odd minutes
-        self.odd_minute_mask = jnp.stack([jnp.array(self.time // 60 % 2 == 0)] * self.N_neurons, axis=1)
-        self.even_minute_mask = ~self.odd_minute_mask  # mask for even minutes
+    def fit(
+        self,
+        Y: np.ndarray,
+        Xb: np.ndarray,
+        time: np.ndarray,
+        n_epochs: int = 5,
+        trial_boundaries: np.ndarray | None = None,
+        align_to_behaviour: bool = True,
+        resume: bool = False,
+        verbose: bool | None = None,
+    ) -> "SIMPL":
+        """Fit the SIMPL model to data.
 
-        self._init_kalman_filter(speed_prior, behaviour_prior)
+        This is the main entry point for training. It performs the following steps:
 
-        # SET UP THE DIMENSIONS AND VARIABLES DICTIONARY
-        self.dim = self.environment.dim  # as ordered in positon variables X = ['x', 'y', ...]
-        self.variable_info_dict = build_variable_info_dict(self.dim)
-        self.coordinates_dict = {
-            "neuron": self.neuron,
-            "time": self.time,
-            "dim": self.dim,
-            "dim_": self.dim,  # for covariance matrices, two coords can't be the same
-            **self.environment.coords_dict,
-            "place_field": jnp.arange(self.N_PFmax),
-        }
+        1. **Setup** — validates inputs, creates the ``Environment`` (spatial discretisation
+           grid), sets up the Kalman filter, and builds the speckled test mask.
+        2. **Epoch 0** — runs the M-step only on the behavioural trajectory ``Xb`` to produce
+           the initial receptive fields. Prints a data summary and spatial information
+           diagnostics (if ``verbose=True``).
+        3. **Epochs 1..n_epochs** — alternates E-step (Kalman decoding using current receptive
+           fields) and M-step (KDE re-fitting of receptive fields from updated trajectory).
 
-        # INITIALISE THE RESULTS DATASET
-        self.results = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
-        self.results.attrs = {  # env meta data in case you need it later
-            "env_extent": self.environment.extent,
-            "env_pad": self.environment.pad,
-            "env_bin_size": self.environment.bin_size,
-            "trial_boundaries": self.trial_boundaries,
-            "trial_slices": self.trial_slices,
-        }
-        # add spikes and behaviour to the results
-        data_dict = {"Xb": self.Xb, "Y": self.Y, "spike_mask": self.spike_mask}
-        self.results = xr.merge([self.results, self.dict_to_dataset(data_dict)])
-        # a smaller dict just to save likelihoods for online evaluation
-        self.loglikelihoods = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
+        After fitting, results are available via:
 
-        self._init_ground_truth()
-
-        # MANIFOLD ALIGNMENT
-        if manifold_align_against not in {"behaviour", "ground_truth", "none"}:
-            raise ValueError("manifold_align_against must be 'behaviour', 'ground_truth', 'none'")
-
-        if manifold_align_against == "behaviour":
-            self.Xalign = self.Xb
-        elif manifold_align_against == "ground_truth":
-            self.Xalign = self.Xt
-        elif manifold_align_against == "none":
-            self.Xalign = None
-
-        self.is_circular = is_circular
-        if is_circular:
-            self.kde = kde_angular
-        else:
-            self.kde = kde
-
-        self._run_epoch_zero(data, verbose)
-
-    def _init_kalman_filter(self, speed_prior: float, behaviour_prior: float | None) -> None:
-        """Set up the Kalman filter from prior parameters."""
-        speed_sigma = speed_prior * self.dt
-        behaviour_sigma = behaviour_prior if behaviour_prior is not None else 1e6
-        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-
-        F = lam * jnp.eye(self.D)
-        B = (1 - lam) * jnp.eye(self.D)
-        Q = sigma_eff_square * jnp.eye(self.D)
-        H = jnp.eye(self.D)
-
-        self.kalman_filter = KalmanFilter(dim_Z=self.D, dim_Y=self.D, dim_U=self.D, F=F, B=B, Q=Q, H=H, R=None)
-
-    def _init_ground_truth(self) -> None:
-        """Load and interpolate ground truth data (Xt, Ft) if available."""
-        self.ground_truth_available = "Xt" in list(self.data.keys())
-        self.Ft, self.Xt = None, None
-        if "Xt" in list(self.data.keys()):
-            self.Xt = jnp.array(self.data.Xt)
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Xt": self.Xt})])
-        if "Ft" in list(self.data.keys()):
-            Ft = (
-                self.data.Ft.interp(
-                    **self.environment.coords_dict,
-                    method="linear",
-                    kwargs={"fill_value": "extrapolate"},
-                )
-                * self.dt
-            )
-            Ft = Ft.transpose("neuron", *self.environment.dim)
-            self.Ft = jnp.array(Ft.values).reshape(self.N_neurons, self.N_bins)
-            self.Ft = jnp.where(self.Ft < 0, 0, self.Ft)
-            self.results = xr.merge([self.results, self.dict_to_dataset({"Ft": self.Ft})])
-
-    def _run_epoch_zero(self, data: xr.Dataset, verbose: bool) -> None:
-        """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
-        if verbose:
-            print_data_summary(data)
-
-        _epoch0_done = threading.Event()
-
-        def _delayed_message():
-            if not _epoch0_done.wait(3):
-                print("  ...[estimating spatial receptive fields from Xb (epoch 0)]")
-
-        _timer = threading.Thread(target=_delayed_message, daemon=True)
-        _timer.start()
-        self.train_epoch()
-        _epoch0_done.set()
-
-        if verbose:
-            si = np.array(self.results.spatial_information.sel(epoch=0))
-            info_rate = float(si.sum())
-            si_min = float(si.min())
-            si_q25 = float(np.percentile(si, 25))
-            si_med = float(np.median(si))
-            si_q75 = float(np.percentile(si, 75))
-            si_max = float(si.max())
-            si_mean = float(si.mean())
-            print(
-                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
-                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
-                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
-            )
-            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
-            print()
-
-            active_per_bin = (np.array(self.Y) > 0).sum(axis=1)
-            frac_2plus = float(np.mean(active_per_bin >= 2))
-            if frac_2plus < 0.05:
-                print(
-                    "  WARNING: fewer than 5% of time bins have 2+ active "
-                    "neurons. The Poisson likelihood will be weak in most "
-                    "bins. Try coarsen_dt() or accumulate_spikes() to "
-                    "increase spike density, or add more neurons."
-                )
-            if info_rate < 1.0:
-                print(
-                    "  WARNING: spatial information rate is very low "
-                    f"({info_rate:.1f} bits/s). The neurons may not carry "
-                    "enough spatial information for reliable decoding. "
-                    "Try coarsen_dt() or accumulate_spikes() to increase "
-                    "spike density, or add more neurons."
-                )
-
-    def _next_seed(self) -> int:
-        """Spawn a new seed from the seed sequence."""
-        return self._seed_seq.spawn(1)[0].generate_state(1)[0]
-
-    def train_N_epochs(self, N: int = 5, verbose: bool = True) -> None:
-        """Trains the model for N epochs, allowing for KeyboardInterrupt to stop training early.
-
-        This is really just a wrapper on self.train_epoch() which does the hard work and could be looped
-        over manually by the user.
+        - ``self.X_`` — the final decoded latent positions, shape (T, D).
+        - ``self.F_`` — the final receptive fields, shape (N_neurons, N_bins).
+        - ``self.results_`` — full ``xarray.Dataset`` with all epochs, metrics, and
+          intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
+          stability, etc.).
+        - ``self.loglikelihoods_`` — per-epoch train/test log-likelihoods.
 
         Parameters
         ----------
-        N : int
-            The number of epochs to train for.
-        verbose : bool, optional
-            Whether to print a loading bar and the training progress, by default True.
-        """
-        self._print_epoch_summary()
-        for _ in range(N):
-            try:
-                self.train_epoch()
-                if verbose:
-                    self._print_epoch_summary()
-            except KeyboardInterrupt:
-                print(f"Training interrupted after {self.epoch} epochs.")
-                break
-        if not self.evaluate_each_epoch:
-            self.evaluate_epoch()  # Always evaluate at the end if not done each epoch
+        Y : np.ndarray, shape (T, N_neurons)
+            Spike counts. Can be binary (0/1) or integer-valued. Each row is one time bin,
+            each column is one neuron.
+        Xb : np.ndarray, shape (T, D)
+            Behavioural initialisation positions. This is the starting estimate of the latent
+            trajectory, typically the tracked position of the animal. D is the number of
+            latent dimensions (e.g. 2 for 2D position).
+        time : np.ndarray, shape (T,)
+            Time stamps (in seconds) for each time bin. Must be uniformly spaced. The time
+            step ``dt`` is inferred as ``time[1] - time[0]``.
+        n_epochs : int, optional
+            Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
+            M-step (useful for manual epoch control via ``train_epoch()``). By default 5.
+        trial_boundaries : np.ndarray or None, optional
+            Array of indices where new trials start, e.g. ``[0, 1000, 2000]``. The first
+            element must be 0. The Kalman filter runs independently within each trial to
+            prevent smoothing across trial boundaries (e.g. between separate recording
+            sessions). If None, all data is treated as a single trial. By default None.
+        align_to_behaviour : bool, optional
+            Whether to linearly align (via CCA) the decoded latent positions to the
+            behavioural trajectory ``Xb`` after each E-step. This keeps the latent space in
+            a coordinate system consistent with the behaviour, which is important for
+            interpretable receptive fields. By default True.
+        resume : bool, optional
+            If True, continue training from the current state without re-initialising. The
+            ``Y``, ``Xb``, and ``time`` arguments are ignored when resuming — training
+            continues on the original data. Useful when the model has not yet converged.
+            By default False.
+        verbose : bool or None, optional
+            Override the instance-level ``verbose`` setting for this call. If None, uses the
+            value set at ``__init__``. By default None.
 
-    def train_epoch(
+        Returns
+        -------
+        self : SIMPL
+            The fitted model instance (for method chaining).
+
+        Raises
+        ------
+        ValueError
+            If Y, Xb, and time have inconsistent shapes, or if the data dimensionality does
+            not match the environment.
+        RuntimeError
+            If ``resume=True`` but the model has not been fitted yet.
+
+        Examples
+        --------
+        >>> model = SIMPL(speed_prior=0.4)
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> print(model.results_)  # xarray Dataset with all epochs
+
+        Resume training for more epochs:
+
+        >>> model.fit(Y, Xb, time, n_epochs=3, resume=True)
+        """
+        verbose = self.verbose if verbose is None else verbose
+
+        if resume:
+            if not self.is_fitted_:
+                raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
+            self._train_N_epochs(n_epochs, verbose=verbose)
+            self.X_ = self.E_["X"]
+            self.F_ = self.M_["F"]
+            return self
+
+        # ── Validate inputs ──
+        if Y.shape[0] != Xb.shape[0]:
+            raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
+        if Y.shape[0] != len(time):
+            raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
+
+        # ── Create or use Environment ──
+        if self._environment_override is not None:
+            self.environment_ = self._environment_override
+        else:
+            self.environment_ = Environment(
+                Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
+            )
+
+        # ── Extract dimensions ──
+        self.D_ = Xb.shape[1]
+        self.T_ = Y.shape[0]
+        self.N_neurons_ = Y.shape[1]
+        self.N_PFmax_ = 20
+
+        if self.D_ != self.environment_.D:
+            raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
+
+        # ── Set up coordinate metadata ──
+        neurons = self.neurons if self.neurons is not None else np.arange(self.N_neurons_)
+
+        # ── Convert to JAX arrays ──
+        self.Y_ = jnp.array(Y)
+        self.Xb_ = jnp.array(Xb)
+        self.time_ = jnp.array(time)
+        self.neuron_ = jnp.array(neurons)
+        self.dt_ = float(self.time_[1] - self.time_[0])
+
+        # ── Environment bins ──
+        self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
+        self.xF_shape_ = self.environment_.discrete_env_shape
+        self.N_bins_ = len(self.xF_)
+
+        # ── Trial boundaries ──
+        self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
+
+        # ── Kalman filter ──
+        self._init_kalman_filter()
+
+        # ── Spike mask ──
+        self._seed_seq = np.random.SeedSequence(self.random_seed)
+        self.block_size_ = int(self.speckle_block_size_seconds / self.dt_)
+        self.random_seed_epoch_ = self._next_seed() if self.resample_spike_mask else self.random_seed
+        self.spike_mask_ = create_speckled_mask(
+            size=(self.T_, self.N_neurons_),
+            sparsity=self.test_frac,
+            block_size=self.block_size_,
+            random_seed=self.random_seed_epoch_,
+        )
+
+        # ── Stability masks (odd/even minutes) ──
+        self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
+        self.even_minute_mask_ = ~self.odd_minute_mask_
+
+        # ── Manifold alignment ──
+        self.Xalign_ = self.Xb_ if align_to_behaviour else None
+
+        # ── KDE function ──
+        self._kde = kde_angular if self.is_circular else kde
+
+        # ── Epoch tracking ──
+        self.lastF_, self.lastX_ = None, None
+        self.epoch_ = -1
+
+        # ── Variable registry and coordinates ──
+        self.dim_ = self.environment_.dim
+        self.variable_info_dict_ = build_variable_info_dict(self.dim_)
+        self.coordinates_dict_ = {
+            "neuron": self.neuron_,
+            "time": self.time_,
+            "dim": self.dim_,
+            "dim_": self.dim_,
+            **self.environment_.coords_dict,
+            "place_field": jnp.arange(self.N_PFmax_),
+        }
+
+        # ── Initialise results dataset ──
+        self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
+        self.results_.attrs = {
+            "env_extent": self.environment_.extent,
+            "env_pad": self.environment_.pad,
+            "env_bin_size": self.environment_.bin_size,
+            "trial_boundaries": self.trial_boundaries_,
+            "trial_slices": self.trial_slices_,
+        }
+        data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
+        self.results_ = xr.merge([self.results_, self._dict_to_dataset(data_dict)])
+        self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
+
+        # ── Ground truth (not stored — use add_baselines_to_results) ──
+        self.Xt_ = None
+        self.Ft_ = None
+        self.ground_truth_available_ = False
+
+        # ── Print data summary ──
+        if verbose:
+            self._print_data_summary()
+
+        # ── Run epoch 0 (M-step on behavioural trajectory) ──
+        self._run_epoch_zero(verbose)
+
+        # ── Train for n_epochs ──
+        self._train_N_epochs(n_epochs, verbose=verbose)
+
+        # ── Set convenience attributes ──
+        self.X_ = self.E_["X"]
+        self.F_ = self.M_["F"]
+        self.is_fitted_ = True
+
+        return self
+
+    def predict(
         self,
-    ) -> None:
-        """Runs an epoch of the EM algorithm.
+        Y: np.ndarray,
+        trial_boundaries: np.ndarray | None = None,
+        return_std: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        """Decode latent positions from new spikes using the fitted receptive fields.
 
-        1. INCREMENT: The epoch counter is incremented.
-        2. E-STEP: The Kalman decoder is run on the previous epoch's place fields.
-        2.1. TRANSFORM: A linear transformation is applied so latent positions maximally correlate with behaviour.
-        3. M-STEP: Place fields are fitted to the new latent positions.
-        4. EVALUATE: R2, X_err, and F_err metrics are calculated between true and estimated values (if available).
-        5. STORE: Results are converted to xarrays and concatenated to the results dataset.
+        This method uses the receptive fields learned during ``fit()`` (stored in
+        ``self.F_``) and a Kalman smoother to decode latent positions from a new set of
+        spike observations. No behavioural input is required — the Kalman filter runs with
+        zero control input (``U=0``), acting as a pure random-walk smoother constrained
+        only by the spike likelihoods and the speed prior.
+
+        The decoded trajectory is returned directly. For power users, the full decode
+        results (filtered/smoothed means and covariances, log-likelihoods, etc.) are also
+        stored in ``self.prediction_results_``.
+
+        .. important::
+
+            The spike data must be binned at the same ``dt`` as the training data (i.e. the
+            ``time`` array passed to ``fit()``). The Kalman filter dynamics and receptive
+            fields are calibrated to the training ``dt`` (available as ``self.dt_``). Using
+            a different bin width will produce incorrect results. If your new data has a
+            different temporal resolution, rebin it to match before calling ``predict()``.
+
+        Parameters
+        ----------
+        Y : np.ndarray, shape (T_new, N_neurons)
+            Spike counts for the new data. Must have the same number of neurons as the
+            training data, and must be binned at the same ``dt`` as used during ``fit()``.
+        trial_boundaries : np.ndarray or None, optional
+            Trial start indices for the new data, e.g. ``[0, 500]``. The Kalman filter runs
+            independently per trial. If None, all data is a single trial. By default None.
+        return_std : bool, optional
+            If True, also return the Kalman-smoothed covariance matrices, which can be used
+            as a measure of decoding uncertainty. By default False.
+
+        Returns
+        -------
+        X_decoded : np.ndarray, shape (T_new, D)
+            Decoded latent positions.
+        sigma_s : np.ndarray, shape (T_new, D, D)
+            Smoothed covariance matrices (only returned if ``return_std=True``).
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fitted yet.
+        ValueError
+            If the number of neurons in ``Y`` does not match the training data.
+
+        Examples
+        --------
+        >>> model = SIMPL(speed_prior=0.4)
+        >>> model.fit(Y_train, Xb_train, time_train, n_epochs=5)
+        >>> X_decoded = model.predict(Y_test)
+        >>> X_decoded, sigma = model.predict(Y_test, return_std=True)
         """
-        # =========== INCREMENT EPOCH ===========
-        self.epoch += 1
-        if self.resample_spike_mask and self.epoch > 0:
-            self.spike_mask = create_speckled_mask(
-                size=(self.T, self.N_neurons),  # train/test specle mask
+        if not self.is_fitted_:
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+        if Y.shape[1] != self.N_neurons_:
+            raise ValueError(f"Y has {Y.shape[1]} neurons but model was fitted with {self.N_neurons_}")
+
+        Y_jax = jnp.array(Y)
+        T_new = Y_jax.shape[0]
+
+        _, trial_slices = self._validate_trial_boundaries(trial_boundaries, T_new)
+
+        # Decode using fitted receptive fields, no behaviour input (mask=None → all spikes)
+        E = self._decode(
+            Y=Y_jax,
+            F=self.F_,
+            trial_slices=trial_slices,
+        )
+
+        X_decoded = np.array(E["mu_s"])
+
+        # Store full decode results for power users
+        self.prediction_results_ = E
+
+        if return_std:
+            return X_decoded, np.array(E["sigma_s"])
+        return X_decoded
+
+    def train_epoch(self) -> None:
+        """Run a single epoch of the EM algorithm (E-step then M-step).
+
+        This is the low-level method for manual epoch control. It increments the epoch
+        counter, runs the E-step (Kalman decoding — skipped at epoch 0), then the M-step
+        (KDE receptive field fitting), and stores the results. The convenience attributes
+        ``self.X_`` and ``self.F_`` are updated after each call.
+
+        Must be called after ``fit()`` has been called at least once (at minimum with
+        ``n_epochs=0`` to set up all internal state).
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been initialised via ``fit()`` yet.
+        """
+        if not hasattr(self, "Y_"):
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+
+        # ── Increment epoch ──
+        self.epoch_ += 1
+        if self.resample_spike_mask and self.epoch_ > 0:
+            self.spike_mask_ = create_speckled_mask(
+                size=(self.T_, self.N_neurons_),
                 sparsity=self.test_frac,
-                block_size=self.block_size,
+                block_size=self.block_size_,
                 random_seed=self._next_seed(),
             )
 
-        # =========== E-STEP ===========
-        if self.epoch == 0:
-            self.E = {"X": self.Xb}
+        # ── E-step ──
+        if self.epoch_ == 0:
+            self.E_ = {"X": self.Xb_}
         else:
-            self.E = self._E_step(Y=self.Y, F=self.lastF)
+            assert self.lastF_ is not None
+            self.E_ = self._E_step(Y=self.Y_, F=self.lastF_)
 
-        # =========== M-STEP ===========
-        X = self.E["X"]
-        self.M = self._M_step(Y=self.Y, X=X)
+        # ── M-step ──
+        X = self.E_["X"]
+        self.M_ = self._M_step(Y=self.Y_, X=X)
 
-        # =========== EVALUATE AND SAVE RESULTS ===========
-        if self.evaluate_each_epoch or self.epoch == 0:
-            self.evaluate_epoch()  # stores ALL metrics and the current trajectory, fields etc. in self.results
-        # Regardless of the above, always save the spike likelihoods
-        ll_data = self.get_loglikelihoods(Y=self.Y, FX=self.M["FX"])
-        loglikelihoods = self.dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch]})
-        self.loglikelihoods = xr.concat(
-            [self.loglikelihoods, loglikelihoods],
+        # ── Evaluate and save results ──
+        if self.evaluate_each_epoch or self.epoch_ == 0:
+            self.evaluate_epoch()
+        ll_data = self.get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
+        loglikelihoods = self._dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch_]})
+        self.loglikelihoods_ = xr.concat(
+            [self.loglikelihoods_, loglikelihoods],
             dim="epoch",
             data_vars="minimal",
         )
 
-        # =========== STORE THE RESULTS FOR THE NEXT EPOCH ===========
-        self.lastF = self.M["F"]  # save the place fields for the next epoch
-        self.lastX = self.E["X"]  # save the latent positions for the next epoch
+        # ── Store for next epoch ──
+        self.lastF_ = self.M_["F"]
+        self.lastX_ = self.E_["X"]
 
-        return
+        # ── Update convenience attributes ──
+        self.X_ = self.E_["X"]
+        self.F_ = self.M_["F"]
 
     def evaluate_epoch(self) -> None:
-        """Evaluates the current model (i.e. calculates all the "metrics") and saves the results in self.results.
+        """Evaluate the current epoch's metrics and append to the results Dataset.
 
-        By default this is done at the end of each epoch but can be turned off (see __init__()) and done
-        manually by calling this function after training. Nothing needs to be passed as this function will
-        use the current class attributes (self.E, self.M, self.epoch etc.).
+        Computes log-likelihoods, spatial information, stability, place field analysis,
+        and (if ground truth is available) R², trajectory error, and field error. The
+        results are stored under the current epoch in ``self.results_``.
         """
-
-        evals = {}
         evals = self.get_metrics(
-            X=self.E["X"],
-            F=self.M["F"],
-            Y=self.Y,
-            FX=self.M["FX"],
-            F_odd_mins=self.M["F_odd_minutes"],
-            F_even_mins=self.M["F_even_minutes"],
-            X_prev=self.lastX,
-            F_prev=self.lastF,
-            Xt=self.Xt,
-            Ft=self.Ft,
-            PX=self.M["PX"],
+            X=self.E_["X"],
+            F=self.M_["F"],
+            Y=self.Y_,
+            FX=self.M_["FX"],
+            F_odd_mins=self.M_["F_odd_minutes"],
+            F_even_mins=self.M_["F_even_minutes"],
+            X_prev=self.lastX_,
+            F_prev=self.lastF_,
+            Xt=self.Xt_,
+            Ft=self.Ft_,
+            PX=self.M_["PX"],
         )
-        results = self.dict_to_dataset({**self.M, **self.E, **evals}).expand_dims({"epoch": [self.epoch]})
-        self.results = xr.concat([self.results, results], dim="epoch", data_vars="minimal")
-        return
+        results = self._dict_to_dataset({**self.M_, **self.E_, **evals}).expand_dims({"epoch": [self.epoch_]})
+        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
-    def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
-        """E-STEP of the EM algorithm.
+    def add_baselines_to_results(
+        self,
+        Xt: np.ndarray,
+        Ft: np.ndarray | None = None,
+        Ft_coords_dict: dict | None = None,
+    ) -> None:
+        """Compute baseline models from ground truth and append to the results Dataset.
 
-        1. LIKELIHOOD: Log-likelihood maps of spikes as a function of position, calculated for each time step.
-        2. FIT GAUSSIANS: Gaussians (mu, mode, sigma) are fitted to the log-likelihood maps.
-        3. KALMAN FILTER: Run on the modes (MLE positions) of the likelihoods to calculate latent positions.
-           The observation noise is the sigma of the Gaussians (wide likelihoods = high noise => weak effect).
-        4. KALMAN SMOOTHER: The filtered datapoints are Kalman smoothed.
-        5. LINEAR SCALING: Latent positions are linearly scaled to maximally correlate with the behaviour.
-        6. SAMPLE: The posterior of the latent positions is sampled.
-        7. EVALUATE: The posterior likelihood of the data (mode observations) under the model is calculated.
-        8. STORE: The results are stored in a dictionary.
+        This method computes two special baseline epochs that serve as upper bounds on
+        model performance. These are useful for evaluating how close the learned model is
+        to the best achievable:
 
-        Notes
-        -----
-        If `self.use_kalman_smoothing=False`, this step still uses the same Kalman equations internally but with
-        very high process noise, so smoothing has minimal effect and `mu_s` should stay close to
-        `mode_l`.
+        - **Epoch -1 ("best")** — Receptive fields are fit via KDE to the *true* latent
+          positions ``Xt`` (rather than the decoded trajectory). This represents the best
+          possible KDE-based model given perfect position knowledge. The E-step is then
+          run using these fields to decode positions.
+        - **Epoch -2 ("exact")** — The exact ground truth receptive fields ``Ft`` are used
+          directly (if provided). This represents the best possible model given both perfect
+          fields and perfect decoding. Only computed if ``Ft`` is provided.
+
+        After calling this method, the baseline epochs are appended to ``self.results_``
+        and metrics like ``X_R2``, ``X_err``, and ``F_err`` become available across all
+        epochs (including baselines) for comparison.
 
         Parameters
         ----------
-        Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step.
-        F : jnp.ndarray, shape (N_neurons, N_bins)
-            The place fields of the neurons (expected no. spikes of each neuron at each position in one time bin).
+        Xt : np.ndarray, shape (T, D)
+            Ground truth latent positions. Must have the same number of time bins as the
+            training data.
+        Ft : np.ndarray or None, optional
+            Ground truth receptive fields, shape ``(N_neurons, *spatial_dims)``. For example,
+            for 2D data with 100x100 bins, shape would be ``(N_neurons, 100, 100)``. These
+            are interpolated onto the model's environment grid. By default None.
+        Ft_coords_dict : dict or None, optional
+            Coordinate arrays for ``Ft``, mapping dimension names to bin centres. For example:
+            ``{"x": np.linspace(0, 1, 100), "y": np.linspace(0, 1, 100)}``. Required if
+            ``Ft`` is provided. By default None.
 
-        Returns
-        -------
-        E : dict
-            The results of the E-step.
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fitted yet.
+        ValueError
+            If ``Xt`` has a different number of time bins than the training data.
+
+        Examples
+        --------
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.add_baselines_to_results(
+        ...     Xt=Xt,
+        ...     Ft=Ft,
+        ...     Ft_coords_dict={"x": xbins, "y": ybins},
+        ... )
+        >>> print(model.results_.X_R2)  # R² vs ground truth, per epoch
         """
+        if not self.is_fitted_:
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+        if Xt.shape[0] != self.T_:
+            raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
 
-        # Batch this
-        # Calc. log-likelihood maps
-        logPYXF_maps = poisson_log_likelihood(Y, F, mask=self.spike_mask)
-        no_spikes = jnp.sum(Y * self.spike_mask, axis=1) == 0
-        # Fit Gaussians
-        mu_l, mode_l, sigma_l = vmap(
-            fit_gaussian,
-            in_axes=(
-                None,
-                0,
-            ),
-        )(self.xF, jnp.exp(logPYXF_maps))
+        Xt_jax = jnp.array(Xt)
+        self.Xt_ = Xt_jax
+        self.ground_truth_available_ = True
 
-        # Kalman observation noise is the covariance of the likelihoods
-        # (artificially inflated when there are no spikes)
-        observation_noise = jnp.where(
-            no_spikes[:, None, None],
-            jnp.eye(self.D) * 1e6,
-            sigma_l,
-        )
+        # Store Xt in results
+        self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Xt": Xt_jax})])
 
-        # Process each trial (or full dataset if no trial boundaries are specified)
-        mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
-        logPYF_list, logPYF_test_list = [], []
-        for trial_slice in self.trial_slices:
-            # Extract data from this slice
-            _mode_l = mode_l[trial_slice]
-            _Xb = self.Xb[trial_slice]
-            _R = observation_noise[trial_slice]
-            _Y = Y[trial_slice]
-            spike_mask = self.spike_mask[trial_slice]
-
-            # Calculate initial state estimates for this trial
-            _mu0 = _Xb.mean(axis=0)
-            _sigma0 = (1 / len(_Xb)) * (((_Xb - _mu0).T) @ (_Xb - _mu0))
-
-            # Run filter and smoother
-            mu_f, sigma_f = self.kalman_filter.filter(mu0=_mu0, sigma0=_sigma0, Y=_mode_l, U=_Xb, R=_R)
-            mu_s, sigma_s = self.kalman_filter.smooth(mus_f=mu_f, sigmas_f=sigma_f)
-
-            # Calculate likelihoods
-            logPYF = self.kalman_filter.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
-
-            # Test likelihood
-            logPYXF_maps_test = poisson_log_likelihood(_Y, F, mask=~spike_mask)
-            no_spikes_test = jnp.sum(_Y * ~spike_mask, axis=1) == 0
-            _, mode_l_test, sigma_l_test = vmap(
-                fit_gaussian,
-                in_axes=(
-                    None,
-                    0,
-                ),
-            )(self.xF, jnp.exp(logPYXF_maps_test))
-            observation_noise_test = jnp.where(
-                no_spikes_test[:, None, None],
-                jnp.eye(self.D) * 1e6,
-                sigma_l_test,
+        # Interpolate Ft onto environment grid if provided
+        if Ft is not None and Ft_coords_dict is not None:
+            Ft_da = xr.DataArray(
+                Ft,
+                dims=["neuron", *Ft_coords_dict.keys()],
+                coords={"neuron": self.neuron_, **Ft_coords_dict},
             )
-            logPYF_test = self.kalman_filter.loglikelihood(
-                Y=mode_l_test,
-                R=observation_noise_test,
-                mu=mu_s,
-                sigma=sigma_s,
-            ).sum()
+            Ft_interp = (
+                Ft_da.interp(
+                    **self.environment_.coords_dict,
+                    method="linear",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+                * self.dt_
+            )
+            Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
+            self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
+            self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
+            self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Ft": self.Ft_})])
 
-            # Store results
-            mu_f_list.append(mu_f)
-            sigma_f_list.append(sigma_f)
-            mu_s_list.append(mu_s)
-            sigma_s_list.append(sigma_s)
-            logPYF_list.append(logPYF)
-            logPYF_test_list.append(logPYF_test)
+        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
+        M_best = self._M_step(self.Y_, self.Xt_)
+        E_best = self._E_step(self.Y_, M_best["F"])
+        evals_best = self.get_metrics(
+            X=E_best["X"],
+            F=M_best["F"],
+            Y=self.Y_,
+            FX=M_best["FX"],
+            F_odd_mins=M_best["F_odd_minutes"],
+            F_even_mins=M_best["F_even_minutes"],
+            X_prev=None,
+            F_prev=None,
+            Xt=self.Xt_,
+            Ft=self.Ft_,
+            PX=M_best["PX"],
+        )
+        results = self._dict_to_dataset({**M_best, **E_best, **evals_best}).expand_dims({"epoch": [-1]})
+        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
-        # Concatenate results
-        mu_f = jnp.concatenate(mu_f_list, axis=0)
-        sigma_f = jnp.concatenate(sigma_f_list, axis=0)
-        mu_s = jnp.concatenate(mu_s_list, axis=0)
-        sigma_s = jnp.concatenate(sigma_s_list, axis=0)
-        logPYF = sum(logPYF_list)
-        logPYF_test = sum(logPYF_test_list)
+        if self.Ft_ is not None:
+            # EXACT MODEL: Ft (use the exact receptive fields)
+            M_exact = {
+                "F": self.Ft_,
+                "FX": self.interpolate_firing_rates(self.Xt_, self.Ft_),
+                "PX": M_best["PX"],
+            }
+            E_exact = self._E_step(self.Y_, self.Ft_)
+            evals_exact = self.get_metrics(
+                X=E_exact["X"],
+                F=self.Ft_,
+                Y=self.Y_,
+                FX=M_exact["FX"],
+                F_odd_mins=None,
+                F_even_mins=None,
+                X_prev=None,
+                F_prev=None,
+                Xt=self.Xt_,
+                Ft=self.Ft_,
+                PX=M_exact["PX"],
+            )
+            results = self._dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({"epoch": [-2]})
+            self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
+            self.results_ = self.results_.sortby("epoch")
+        else:
+            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
 
-        # Get position from kalman filtering
-        X = mu_s
+    def interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
+        """Predict firing rates at arbitrary positions by interpolating the discretised fields.
 
-        # By default X, the latent used for the next M-step is just
-        # mu_s. However we can optionally also align this latent (wlog)
-        # against the behaviour or ground truth using a linear transform.
-        align_dict = {}
-        if self.Xalign is not None:
-            coef, intercept = cca(mu_s, self.Xalign)  # linear manifold alignment
-            X = mu_s @ coef.T + intercept
-            align_dict = {"coef": coef, "intercept": intercept}
-
-        # make this all into a dictionary
-        E = {
-            "X": X,
-            "mu_l": mu_l,
-            "mode_l": mode_l,
-            "sigma_l": sigma_l,
-            "mu_f": mu_f,
-            "sigma_f": sigma_f,
-            "mu_s": mu_s,
-            "sigma_s": sigma_s,
-            "logPYF": logPYF,
-            "logPYF_test": logPYF_test,
-            **align_dict,
-            **({"logPYXF_maps": logPYXF_maps} if self.save_likelihood_maps else {}),
-        }
-
-        return E
-
-    def _M_step(self, Y: jax.Array, X: jax.Array) -> dict:
-        """Maximisation step of the EM algorithm.
-
-        Calculates the receptive fields of the neurons. F is the probability of the neurons firing at each
-        position in one time step. We calculate three versions: (i) using the full data (training spikes only),
-        (ii) using the odd minutes, and (iii) using the even minutes.
+        Given a set of latent positions ``X`` and receptive fields ``F`` (discretised on
+        the environment grid), this method computes the expected firing rate of each neuron
+        at each position using nearest-bin lookup. This is much faster than a full KDE
+        recalculation and is used internally during the M-step to compute ``FX``.
 
         Parameters
         ----------
-        Y : jnp.ndarray, shape (T, N_neurons)
-            The spikes of the neurons at each time step.
         X : jnp.ndarray, shape (T, D)
-            The positions of the agent at each time step.
+            Latent positions to interpolate onto.
+        F : jnp.ndarray, shape (N_neurons, N_bins)
+            Receptive fields (place fields) of each neuron, flattened over spatial bins.
 
         Returns
         -------
-        dict :
-            The results of the M-step. This includes:
-            - F : jnp.ndarray, shape (N_neurons, N_bins) — place fields (full training data).
-            - F_odd_minutes : jnp.ndarray, shape (N_neurons, N_bins) — place fields from odd minutes.
-            - F_even_minutes : jnp.ndarray, shape (N_neurons, N_bins) — place fields from even minutes.
+        FX : jnp.ndarray, shape (T, N_neurons)
+            Estimated firing rate (expected spike count per time bin) of each neuron at
+            each position in ``X``.
         """
-
-        # Takes a mask and returns the receptive fields calculated using that mask
-        def kde_func(mask):
-            return self.kde(
-                bins=self.xF,
-                trajectory=X,
-                spikes=Y,
-                kernel=gaussian_kernel,
-                kernel_bandwidth=self.kernel_bandwidth,
-                mask=mask,
-                return_position_density=True,
-            )
-
-        # vmap over the mask input (avoids a lot of redundant computation)
-        # TODO It would be cleaner to the odd/even masks in get_metrics() but then I couldn't exploit the vmap.
-        stacked_masks = jnp.array([self.spike_mask, self.odd_minute_mask, self.even_minute_mask])
-        all_F, all_PX = vmap(kde_func)(stacked_masks)
-        F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-        PX = all_PX[0]  # (N_bins,) Normalized position density.
-        # Interpolates the rate maps just calculated onto the latent
-        # trajectory to establish a "smoothed" continuous estimate of
-        # the firing rates (note using KDE func directly would be too
-        # slow here)
-        FX = self.interpolate_firing_rates(X, F)
-        M = {"F": F, "F_odd_minutes": F_odd_minutes, "F_even_minutes": F_even_minutes, "FX": FX, "PX": PX}
-
-        return M
+        F = np.array(F)
+        X = np.array(X)
+        data = self._dict_to_dataset({"F": F, "X": X})
+        coord_args = {dim: data.X.sel(dim=dim) for dim in self.dim_}
+        FX = data.F.sel(**coord_args, method="nearest").T
+        return FX.data
 
     def get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
-        """Calculates the log-likelihoods of the spikes given the firing rates.
-
-        This is the sum of the log-likelihood of the spikes given the firing rates at each time step,
-        normalised per neuron per time step. Uses the `poisson_log_likelihood_trajectory` function which
-        takes the spike trains Y and an equally shaped array of predicted firing rates FX, for every neuron
-        at every timestep. The result is normalised by the number of neurons and time steps (accounting for
-        the mask).
-
-        LL = sum_t sum_n log(P(Y_tn | X_t, F_n)) / T*N_neurons
+        """Calculate log-likelihoods of spikes given firing rates.
 
         Parameters
         ----------
         Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step.
+            Spike counts.
         FX : jnp.ndarray, shape (T, N_neurons)
-            The estimated firing rates of the neurons at each time step.
+            Estimated firing rates.
 
         Returns
         -------
         dict
-            A dictionary containing the log-likelihood of the spikes given the firing rates.
+            Dictionary with 'logPYXF' and 'logPYXF_test' keys.
         """
         LLs = {}
-        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=self.spike_mask).sum() / self.spike_mask.sum()
-        logPYXF_test = poisson_log_likelihood_trajectory(Y, FX, mask=~self.spike_mask).sum() / (~self.spike_mask).sum()
+        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=self.spike_mask_).sum() / self.spike_mask_.sum()
+        logPYXF_test = (
+            poisson_log_likelihood_trajectory(Y, FX, mask=~self.spike_mask_).sum() / (~self.spike_mask_).sum()
+        )
         LLs["logPYXF"] = logPYXF
         LLs["logPYXF_test"] = logPYXF_test
         return LLs
@@ -698,251 +775,490 @@ class SIMPL:
         Ft: jax.Array | None = None,
         PX: jax.Array | None = None,
     ) -> dict:
-        """Calculates important metrics and baselines on the current epoch's results.
+        """Calculate metrics on the current epoch's results.
 
-        Warning: this is a relaxed function; pass in whatever data you have and it will return whatever
-        metrics it is able to calculate. These are:
-
-        - X_R2 : R2 between true and estimated latent positions
-        - X_err : mean position error between true and estimated latent positions
-        - F_err : mean field error between true and estimated place fields
-        - information : spatial information of receptive fields, -sum(F * log(F))
-        - sparsity : fraction of bins where firing is greater than 0.1 * max firing rate
-        - stability : correlation between receptive fields estimated from odd and even minutes
-        - field_count : number of distinct, stable fields in the place fields
-        - field_size : average size of the fields
-        - field_change : how much the fields have shifted from the last epoch (if available)
-        - trajectory_change : change in latent positions from the last epoch (if available)
-        - PX : density of the latent trajectory through each bin (i.e. how much data supports each bin)
-
-        Only variables which _can_ be calculated are calculated (i.e. if the true latent positions are not
-        available, X_R2 will not be calculated nor returned).
+        This is a relaxed function: pass in whatever data you have and it will return
+        whatever metrics it can calculate.
 
         Parameters
         ----------
-        X : jnp.ndarray, shape (T, D)
-            The estimated latent positions.
-        F : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields.
-        Y : jnp.ndarray, shape (T, N_neurons)
-            The spike counts of the neurons at each time step.
-        FX : jnp.ndarray, shape (T, N_neurons)
-            The estimated firing rates of the neurons at each time step.
-        PX : jnp.ndarray, shape (N_bins,)
-            The normalized position density of the latent trajectory through each bin.
-        F_odd_mins : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the odd minutes of the data.
-        F_even_mins : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the even minutes of the data.
-        X_prev : jnp.ndarray, shape (T, D)
-            The estimated latent positions from the previous epoch.
-        F_prev : jnp.ndarray, shape (N_neurons, N_bins)
-            The estimated place fields from the previous epoch.
-        Xt : jnp.ndarray, shape (T, D)
-            The true latent positions, defaults to self.Xt.
-        Ft : jnp.ndarray, shape (N_neurons, N_bins)
-            The true place fields, defaults to self.Ft.
+        X : jnp.ndarray, shape (T, D), optional
+            Estimated latent positions.
+        F : jnp.ndarray, shape (N_neurons, N_bins), optional
+            Estimated place fields.
+        Y : jnp.ndarray, shape (T, N_neurons), optional
+            Spike counts.
+        FX : jnp.ndarray, shape (T, N_neurons), optional
+            Estimated firing rates.
+        F_odd_mins : jnp.ndarray, optional
+            Place fields from odd minutes.
+        F_even_mins : jnp.ndarray, optional
+            Place fields from even minutes.
+        X_prev : jnp.ndarray, optional
+            Latent positions from previous epoch.
+        F_prev : jnp.ndarray, optional
+            Place fields from previous epoch.
+        Xt : jnp.ndarray, optional
+            True latent positions.
+        Ft : jnp.ndarray, optional
+            True place fields.
+        PX : jnp.ndarray, optional
+            Position occupancy.
 
         Returns
         -------
         dict
-            A dictionary containing any metrics that could be calculated from the input variables provided.
+            Dictionary of calculated metrics.
         """
         metrics = {}
 
-        # LOGPYXF The log-likelihood of the spikes given the trajectory
         if Y is not None and FX is not None:
             LLs = self.get_loglikelihoods(Y, FX)
             metrics.update(LLs)
 
-        # R2 between the true and estimated latent positions
         if X is not None and Xt is not None:
             metrics["X_R2"] = coefficient_of_determination(X, Xt)
 
-        # MEAN POSITION ERROR between the true and estimated latent positions
         if X is not None and Xt is not None:
             metrics["X_err"] = jnp.mean(jnp.linalg.norm(X - Xt, axis=1))
 
-        # MEAN FIELD ERROR between the true and estimated place fields
         if F is not None and Ft is not None:
             metrics["F_err"] = jnp.mean(jnp.linalg.norm(F - Ft, axis=1))
 
-        # NEGATIVE ENTROPY
         if F is not None:
-            F_pdf = (F + 1e-6) / jnp.sum(F, axis=1)[:, None]  # normalise the place fields
-            I_F = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1)  # negative entropy of the place fields
+            F_pdf = (F + 1e-6) / jnp.sum(F, axis=1)[:, None]
+            I_F = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1)
             metrics["negative_entropy"] = I_F
 
-        # SPARSITY
         if F is not None:
-            rho_F = jnp.mean(F < 1.0 * self.dt, axis=1)  # fraction of bins where the firing is greater less than 1 Hz
+            rho_F = jnp.mean(F < 1.0 * self.dt_, axis=1)
             metrics["sparsity"] = rho_F
 
-        # STABILITY
         if F_odd_mins is not None and F_even_mins is not None:
             corr = jnp.corrcoef(F_odd_mins, F_even_mins)
-            cross_corr = corr[: self.N_neurons, self.N_neurons :]
+            cross_corr = corr[: self.N_neurons_, self.N_neurons_ :]
             stability = jnp.diag(cross_corr)
             metrics["stability"] = stability
 
-        # PLACE FIELD ANALYSIS (number, size, position and shape)
-        if F is not None and self.environment.D == 2:
+        if F is not None and self.environment_.D == 2:
             metrics.update(
                 analyse_place_fields(
                     F,
-                    N_neurons=self.N_neurons,
-                    N_PFmax=self.N_PFmax,
-                    D=self.D,
-                    xF_shape=self.xF_shape,
-                    xF=self.xF,
-                    dt=self.dt,
-                    bin_size=self.environment.bin_size,
-                    n_bins=self.N_bins,
+                    N_neurons=self.N_neurons_,
+                    N_PFmax=self.N_PFmax_,
+                    D=self.D_,
+                    xF_shape=self.xF_shape_,
+                    xF=self.xF_,
+                    dt=self.dt_,
+                    bin_size=self.environment_.bin_size,
+                    n_bins=self.N_bins_,
                 )
             )
 
-        # FIELD CHANGE
         if F_prev is not None and F is not None:
             delta_F = jnp.linalg.norm(F - F_prev, axis=1)
             metrics["field_change"] = delta_F
 
-        # TRAJECTORY CHANGE
-        delta_X = None
         if X_prev is not None and X is not None:
             delta_X = jnp.linalg.norm(X - X_prev, axis=1)
             metrics["trajectory_change"] = delta_X
 
-        # SPATIAL INFORMATION
         if F is not None and PX is not None:
-            metrics["spatial_information"] = calculate_spatial_information(F / self.dt, PX)
+            metrics["spatial_information"] = calculate_spatial_information(F / self.dt_, PX)
             metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
 
-    def calculate_baselines(self) -> None:
-        """Calculates two special baseline models using ground truth data.
+    def save_results(self, path: str) -> None:
+        """Save the results Dataset to a netCDF file.
 
-        - Ft ("exact") model: the exact receptive fields are loaded from the data.
-        - Ft_hat ("best"): the true latent positions are used to fit receptive fields using KDE.
-
-        These should be similar except that Ft_hat is bottlenecked by the amount of data available. If the
-        data is too sparse, Ft_hat will be a poor estimate of Ft. Ft_hat therefore represents a more
-        reasonable baseline for the Kalman model which is also data-bottlenecked.
-
-        This function fits/sets the place fields for both models, then runs and evaluates an E-step and saves
-        the results in the results dataset under epoch labels -2 ("exact") and -1 ("best").
-        """
-        if not self.ground_truth_available:
-            warnings.warn("Ground truth data not available, so the baselines cannot be calculated.")
-            return
-
-        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
-        M_best = self._M_step(self.Y, self.Xt)
-        E_best = self._E_step(self.Y, M_best["F"])
-        evals_best = self.get_metrics(
-            X=E_best["X"],
-            F=M_best["F"],
-            Y=self.Y,
-            FX=M_best["FX"],
-            F_odd_mins=M_best["F_odd_minutes"],
-            F_even_mins=M_best["F_even_minutes"],
-            X_prev=None,
-            F_prev=None,
-            Xt=self.Xt,
-            Ft=self.Ft,
-            PX=M_best["PX"],
-        )
-        results = self.dict_to_dataset({**M_best, **E_best, **evals_best}).expand_dims({"epoch": [-1]})
-        self.results = xr.concat([self.results, results], dim="epoch", data_vars="minimal")
-
-        if self.Ft is not None:
-            # EXACT MODEL: Ft (fit place fields using the exact receptive fields)
-            M_exact = {
-                "F": self.Ft,
-                "FX": self.interpolate_firing_rates(self.Xt, self.Ft),
-                "PX": M_best["PX"],  # the occupancy is the same as the best model.
-            }
-            E_exact = self._E_step(self.Y, self.Ft)
-            evals_exact = self.get_metrics(
-                X=E_exact["X"],
-                F=self.Ft,
-                Y=self.Y,
-                FX=M_exact["FX"],
-                F_odd_mins=None,
-                F_even_mins=None,
-                X_prev=None,
-                F_prev=None,
-                Xt=self.Xt,
-                Ft=self.Ft,
-                PX=M_exact["PX"],
-            )
-            results = self.dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({"epoch": [-2]})
-            self.results = xr.concat([self.results, results], dim="epoch", data_vars="minimal")
-            # sort results by epoch so exact comes before best model
-            self.results = self.results.sortby("epoch")
-        else:
-            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
-
-        return
-
-    def interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
-        """Predict firing rates at new positions by interpolating the discretised fields.
-
-        Much faster than a full KDE calculation. Uses nearest-bin interpolation.
+        The saved file can be loaded back with ``simpl.load_results(path)``, which returns
+        an ``xarray.Dataset`` with all epochs, metrics, and fitted variables.
 
         Parameters
         ----------
-        X : jnp.ndarray, shape (T, D)
-            The latent positions to interpolate onto.
-        F : jnp.ndarray, shape (N_neurons, N_bins)
-            The place fields of the neurons (expected number of spikes in one time step).
+        path : str
+            File path to save to (typically ending in ``.nc``).
+        """
+        save_results_to_netcdf(self.results_, path)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Private methods
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _init_kalman_filter(self) -> None:
+        """Set up the Kalman filter from prior parameters."""
+        speed_sigma = self.speed_prior * self.dt_
+
+        # Kalman configuration
+        self.speed_prior_requested_ = self.speed_prior
+        self.kalman_off_speed_prior_ = 1e10
+        speed_prior_effective = (
+            self.speed_prior if self.use_kalman_smoothing else max(self.speed_prior, self.kalman_off_speed_prior_)
+        )
+        self.speed_prior_effective_ = speed_prior_effective
+        speed_sigma = speed_prior_effective * self.dt_
+
+        behaviour_sigma = self.behaviour_prior if self.behaviour_prior is not None else 1e6
+        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+
+        F = lam * jnp.eye(self.D_)
+        B = (1 - lam) * jnp.eye(self.D_)
+        Q = sigma_eff_square * jnp.eye(self.D_)
+        H = jnp.eye(self.D_)
+
+        self.kalman_filter_ = KalmanFilter(dim_Z=self.D_, dim_Y=self.D_, dim_U=self.D_, F=F, B=B, Q=Q, H=H, R=None)
+
+    def _next_seed(self) -> int:
+        """Spawn a new seed from the seed sequence."""
+        return self._seed_seq.spawn(1)[0].generate_state(1)[0]
+
+    @staticmethod
+    def _validate_trial_boundaries(trial_boundaries, T):
+        """Validate trial boundaries and create trial slices.
+
+        Parameters
+        ----------
+        trial_boundaries : np.ndarray or None
+            Trial start indices. If None, treats all data as one trial.
+        T : int
+            Total number of time bins.
 
         Returns
         -------
-        FX : jnp.ndarray, shape (T, N_neurons)
-            The firing rates (expected number of spikes in one time step) of the neurons at each position in X.
+        trial_boundaries : np.ndarray
+            Validated boundaries array.
+        trial_slices : list[slice]
+            List of slice objects for each trial.
         """
-        F = np.array(F)
-        X = np.array(X)
-        # reshape F into the correct shape
-        data = self.dict_to_dataset({"F": F, "X": X})
-        # get the coordinates of the latent positions
-        coord_args = {dim: data.X.sel(dim=dim) for dim in self.dim}
-        # interpolate fields onto latent positions
-        FX = data.F.sel(**coord_args, method="nearest").T
-        return FX.data
+        if trial_boundaries is None:
+            trial_boundaries = np.array([0])
+        else:
+            trial_boundaries = np.array(trial_boundaries)
 
-    def dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
-        """Converts a dictionary to an xarray Dataset.
+        if trial_boundaries[0] != 0:
+            raise ValueError("First trial boundary must be 0")
+        if trial_boundaries[-1] >= T:
+            raise ValueError(f"Last trial boundary must be < T (got {trial_boundaries[-1]} with T={T})")
+        if len(trial_boundaries) > 1 and not np.all(np.diff(trial_boundaries) > 0):
+            raise ValueError("Trial boundaries must be strictly increasing")
 
-        Loops over any item in the dictionary and converts it to a DataArray then concatenates these in a
-        xr.Dataset. If the data is a scalar, it is converted to a DataArray with no dimensions. If the data
-        name isn't recognized it is saved as an array with no dimension or coordinate data.
+        trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
+        trial_slices.append(slice(trial_boundaries[-1], T))
+        return trial_boundaries, trial_slices
+
+    def _decode(
+        self,
+        Y: jax.Array,
+        F: jax.Array,
+        trial_slices: list,
+        mask: jax.Array | None = None,
+        Xb: jax.Array | None = None,
+    ) -> dict:
+        """Core decoding: likelihood maps -> Gaussian fit -> Kalman filter/smooth.
+
+        Shared by ``_E_step`` (fit-time) and ``predict`` (inference-time).
+
+        Parameters
+        ----------
+        Y : jnp.ndarray, shape (T, N_neurons)
+            Spike counts.
+        F : jnp.ndarray, shape (N_neurons, N_bins)
+            Place fields.
+        trial_slices : list[slice]
+            Trial boundaries as slices.
+        mask : jnp.ndarray or None, shape (T, N_neurons)
+            Boolean mask (True = use for likelihood). If None, all spikes are used.
+        Xb : jnp.ndarray or None, shape (T, D)
+            Behavioural positions. If None, Kalman runs with U=0 (pure smoother).
+
+        Returns
+        -------
+        dict
+            Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
+            logPYF, logPYF_test, and optionally logPYXF_maps.
+        """
+        if mask is None:
+            mask = jnp.ones(Y.shape, dtype=bool)
+
+        # Log-likelihood maps
+        logPYXF_maps = poisson_log_likelihood(Y, F, mask=mask)
+        no_spikes = jnp.sum(Y * mask, axis=1) == 0
+
+        # Fit Gaussians
+        mu_l, mode_l, sigma_l = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps))
+
+        # Observation noise (inflated when no spikes)
+        observation_noise = jnp.where(
+            no_spikes[:, None, None],
+            jnp.eye(self.D_) * 1e6,
+            sigma_l,
+        )
+
+        # Process each trial
+        mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
+        logPYF_list, logPYF_test_list = [], []
+
+        for trial_slice in trial_slices:
+            _mode_l = mode_l[trial_slice]
+            _R = observation_noise[trial_slice]
+            _Y = Y[trial_slice]
+            _mask = mask[trial_slice]
+            T_trial = _mode_l.shape[0]
+
+            # Control input: behaviour if available, zeros otherwise
+            if Xb is not None:
+                _U = Xb[trial_slice]
+                _mu0 = _U.mean(axis=0)
+                _sigma0 = (1 / len(_U)) * (((_U - _mu0).T) @ (_U - _mu0))
+            else:
+                _U = jnp.zeros((T_trial, self.D_))
+                # Initialise from first few likelihood modes
+                _mu0 = _mode_l[: min(10, T_trial)].mean(axis=0)
+                _sigma0 = jnp.eye(self.D_) * 1.0
+
+            # Filter and smooth
+            mu_f, sigma_f = self.kalman_filter_.filter(mu0=_mu0, sigma0=_sigma0, Y=_mode_l, U=_U, R=_R)
+            mu_s, sigma_s = self.kalman_filter_.smooth(mus_f=mu_f, sigmas_f=sigma_f)
+
+            # Likelihoods
+            logPYF = self.kalman_filter_.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
+
+            # Test likelihood
+            logPYXF_maps_test = poisson_log_likelihood(_Y, F, mask=~_mask)
+            no_spikes_test = jnp.sum(_Y * ~_mask, axis=1) == 0
+            _, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_test))
+            observation_noise_test = jnp.where(
+                no_spikes_test[:, None, None],
+                jnp.eye(self.D_) * 1e6,
+                sigma_l_test,
+            )
+            logPYF_test = self.kalman_filter_.loglikelihood(
+                Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s
+            ).sum()
+
+            mu_f_list.append(mu_f)
+            sigma_f_list.append(sigma_f)
+            mu_s_list.append(mu_s)
+            sigma_s_list.append(sigma_s)
+            logPYF_list.append(logPYF)
+            logPYF_test_list.append(logPYF_test)
+
+        # Concatenate
+        mu_f = jnp.concatenate(mu_f_list, axis=0)
+        sigma_f = jnp.concatenate(sigma_f_list, axis=0)
+        mu_s = jnp.concatenate(mu_s_list, axis=0)
+        sigma_s = jnp.concatenate(sigma_s_list, axis=0)
+        logPYF = sum(logPYF_list)
+        logPYF_test = sum(logPYF_test_list)
+
+        E = {
+            "mu_l": mu_l,
+            "mode_l": mode_l,
+            "sigma_l": sigma_l,
+            "mu_f": mu_f,
+            "sigma_f": sigma_f,
+            "mu_s": mu_s,
+            "sigma_s": sigma_s,
+            "logPYF": logPYF,
+            "logPYF_test": logPYF_test,
+        }
+        if self.save_likelihood_maps:
+            E["logPYXF_maps"] = logPYXF_maps
+
+        return E
+
+    def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
+        """E-step: decode latent positions and optionally align to behaviour.
+
+        Parameters
+        ----------
+        Y : jnp.ndarray, shape (T, N_neurons)
+            Spike counts.
+        F : jnp.ndarray, shape (N_neurons, N_bins)
+            Place fields from previous M-step.
+
+        Returns
+        -------
+        dict
+            E-step results including X (aligned latent positions).
+        """
+        E = self._decode(
+            Y=Y,
+            F=F,
+            mask=self.spike_mask_,
+            trial_slices=self.trial_slices_,
+            Xb=self.Xb_,
+        )
+
+        # Manifold alignment (fit-time only)
+        align_dict = {}
+        if self.Xalign_ is not None:
+            coef, intercept = cca(E["mu_s"], self.Xalign_)
+            E["X"] = E["mu_s"] @ coef.T + intercept
+            align_dict = {"coef": coef, "intercept": intercept}
+        else:
+            E["X"] = E["mu_s"]
+
+        E.update(align_dict)
+        return E
+
+    def _M_step(self, Y: jax.Array, X: jax.Array) -> dict:
+        """M-step: fit receptive fields via KDE.
+
+        Parameters
+        ----------
+        Y : jnp.ndarray, shape (T, N_neurons)
+            Spike counts.
+        X : jnp.ndarray, shape (T, D)
+            Latent positions.
+
+        Returns
+        -------
+        dict
+            M-step results: F, F_odd_minutes, F_even_minutes, FX, PX.
+        """
+
+        def kde_func(mask):
+            return self._kde(
+                bins=self.xF_,
+                trajectory=X,
+                spikes=Y,
+                kernel=gaussian_kernel,
+                kernel_bandwidth=self.kernel_bandwidth,
+                mask=mask,
+                return_position_density=True,
+            )
+
+        stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
+        all_F, all_PX = vmap(kde_func)(stacked_masks)
+        F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
+        PX = all_PX[0]
+        FX = self.interpolate_firing_rates(X, F)
+        M = {"F": F, "F_odd_minutes": F_odd_minutes, "F_even_minutes": F_even_minutes, "FX": FX, "PX": PX}
+        return M
+
+    def _train_N_epochs(self, N: int, verbose: bool = True) -> None:
+        """Train for N epochs with KeyboardInterrupt support."""
+        if N <= 0:
+            return
+        self._print_epoch_summary()
+        for _ in range(N):
+            try:
+                self.train_epoch()
+                if verbose:
+                    self._print_epoch_summary()
+            except KeyboardInterrupt:
+                print(f"Training interrupted after {self.epoch_} epochs.")
+                break
+        if not self.evaluate_each_epoch:
+            self.evaluate_epoch()
+
+    def _run_epoch_zero(self, verbose: bool) -> None:
+        """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
+        _epoch0_done = threading.Event()
+
+        def _delayed_message():
+            if not _epoch0_done.wait(3):
+                print("  ...[estimating spatial receptive fields from Xb (epoch 0)]")
+
+        _timer = threading.Thread(target=_delayed_message, daemon=True)
+        _timer.start()
+        self.train_epoch()
+        _epoch0_done.set()
+
+        if verbose:
+            si = np.array(self.results_.spatial_information.sel(epoch=0))
+            info_rate = float(si.sum())
+            si_min = float(si.min())
+            si_q25 = float(np.percentile(si, 25))
+            si_med = float(np.median(si))
+            si_q75 = float(np.percentile(si, 75))
+            si_max = float(si.max())
+            si_mean = float(si.mean())
+            print(
+                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
+                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
+                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
+            )
+            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
+            print()
+
+            active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
+            frac_2plus = float(np.mean(active_per_bin >= 2))
+            if frac_2plus < 0.05:
+                print(
+                    "  WARNING: fewer than 5% of time bins have 2+ active "
+                    "neurons. The Poisson likelihood will be weak in most "
+                    "bins. Try coarsen_dt() or accumulate_spikes() to "
+                    "increase spike density, or add more neurons."
+                )
+            if info_rate < 1.0:
+                print(
+                    "  WARNING: spatial information rate is very low "
+                    f"({info_rate:.1f} bits/s). The neurons may not carry "
+                    "enough spatial information for reliable decoding. "
+                    "Try coarsen_dt() or accumulate_spikes() to increase "
+                    "spike density, or add more neurons."
+                )
+
+    def _print_data_summary(self) -> None:
+        """Print a summary of the input data."""
+        # Build a minimal xr.Dataset for print_data_summary
+        data = xr.Dataset(
+            {
+                "Y": xr.DataArray(
+                    self.Y_, dims=["time", "neuron"], coords={"time": self.time_, "neuron": self.neuron_}
+                ),
+                "Xb": xr.DataArray(self.Xb_, dims=["time", "dim"], coords={"time": self.time_}),
+            }
+        )
+        data["trial_slices"] = self.trial_slices_
+        print_data_summary(data)
+
+    def _print_epoch_summary(self) -> None:
+        """Print a one-line summary of the current epoch's metrics."""
+        e = self.epoch_
+        try:
+            train_ll = float(self.loglikelihoods_.logPYXF.sel(epoch=e).values)
+            test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=e).values)
+            si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
+            parts = [
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
+                f"spatial_info={si:.3f} bits/s/neuron",
+            ]
+            print("     ".join(parts))
+            if e > 0:
+                epoch0_test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=0).values)
+                if test_ll < epoch0_test_ll:
+                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
+        except Exception:
+            print(f"Epoch {e}")
+
+    def _dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
+        """Convert a dictionary to an xarray Dataset.
 
         Parameters
         ----------
         data : dict
-            The dictionary to convert to an xarray Dataset.
-        coords : dict
-            A dictionary containing the coordinates of the data. If not provided, the coordinates are taken
-            from self.coordinates_dict. These coords include: 'neuron', 'time', 'dim', 'x', 'y' (if 2D), etc.
+            Dictionary of variable_name -> array.
+        coords : dict or None
+            Coordinate arrays. If None, uses self.coordinates_dict_.
 
         Returns
         -------
         xr.Dataset
-            The xarray Dataset containing the data in the dictionary.
         """
         dataset = xr.Dataset()
         if coords is None:
-            coords = self.coordinates_dict
+            coords = self.coordinates_dict_
         for variable_name in data.keys():
-            if variable_name in self.variable_info_dict:
-                variable_info = self.variable_info_dict[variable_name]
+            if variable_name in self.variable_info_dict_:
+                variable_info = self.variable_info_dict_[variable_name]
                 variable_coords = {k: coords[k] for k in variable_info["dims"]}
-                # shape implied by the dimensions
                 intended_variable_shape = tuple([len(variable_coords[c]) for c in variable_info["dims"]])
                 if "reshape" in variable_info and variable_info["reshape"]:
-                    # reshape the data to the intended shape
                     variable_data = data[variable_name].reshape(intended_variable_shape)
                 else:
                     variable_data = data[variable_name]
@@ -963,35 +1279,6 @@ class SIMPL:
                 dataarray = xr.DataArray(data[variable_name])
             dataset[variable_name] = dataarray
         return dataset
-
-    def _print_epoch_summary(self) -> None:
-        """Print a one-line summary of the current epoch's metrics."""
-        e = self.epoch
-        try:
-            train_ll = float(self.loglikelihoods.logPYXF.sel(epoch=e).values)
-            test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=e).values)
-            si = float(self.results.spatial_information.sel(epoch=e).mean().values)
-            parts = [
-                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
-                f"spatial_info={si:.3f} bits/s/neuron",
-            ]
-            print("     ".join(parts))
-            if e > 0:
-                epoch0_test_ll = float(self.loglikelihoods.logPYXF_test.sel(epoch=0).values)
-                if test_ll < epoch0_test_ll:
-                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
-        except Exception:
-            print(f"Epoch {e}")
-
-    def save_results(self, path: str) -> None:
-        """Saves the results of the SIMPL model to a netCDF file at the given path.
-
-        Parameters
-        ----------
-        path : str
-            The path to save the results to.
-        """
-        save_results_to_netcdf(self.results, path)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,6 @@ import jax.numpy as jnp
 import jax.random as random
 import numpy as np
 
-from simpl.environment import Environment
 from simpl.utils import (
     _bin_indices_minuspi_pi,
     _circular_conv_fft_1d,
@@ -161,17 +160,32 @@ class TestCorrelationAtLag:
 
 class TestCoarsenDt:
     def test_shape_halved(self):
-        import xarray as xr
+        T, N, D = 100, 5, 2
+        Y = np.random.randint(0, 3, (T, N))
+        Xb = np.random.randn(T, D)
+        time = np.arange(T, dtype=float) * 0.05
+        Y_c, Xb_c, time_c = coarsen_dt(Y, Xb, time, dt_multiplier=2)
+        assert Y_c.shape[0] == T // 2
+        assert Xb_c.shape[0] == T // 2
+        assert time_c.shape[0] == T // 2
 
-        T, D = 100, 2
+    def test_spikes_are_summed(self):
+        T, N = 10, 2
+        Y = np.ones((T, N), dtype=int)
+        Xb = np.zeros((T, 1))
         time = np.arange(T, dtype=float)
-        ds = xr.Dataset(
-            {
-                "X": xr.DataArray(np.random.randn(T, D), dims=["time", "dim"], coords={"time": time}),
-            }
-        )
-        coarsened = coarsen_dt(ds, 2)
-        assert coarsened.X.shape[0] == T // 2
+        Y_c, _, _ = coarsen_dt(Y, Xb, time, dt_multiplier=5)
+        # Each coarsened bin should sum 5 spikes per neuron
+        assert np.all(Y_c == 5)
+
+    def test_with_Xt(self):
+        T, N, D = 100, 5, 2
+        Y = np.random.randint(0, 3, (T, N))
+        Xb = np.random.randn(T, D)
+        Xt = np.random.randn(T, D)
+        time = np.arange(T, dtype=float) * 0.05
+        Y_c, Xb_c, time_c, Xt_c = coarsen_dt(Y, Xb, time, dt_multiplier=2, Xt=Xt)
+        assert Xt_c.shape[0] == T // 2
 
 
 class TestCreateSpeckledMask:
@@ -226,19 +240,18 @@ class TestPrepareData:
 
 
 class TestSaveAndLoadResults:
-    def test_round_trip(self, tmp_path, prepared_data, environment):
+    def test_round_trip(self, tmp_path, demo_data):
         from simpl.simpl import SIMPL
 
         N = 500
-        N_neurons = min(5, prepared_data.Y.shape[1])
-        data = prepare_data(
-            Y=np.array(prepared_data.Y.values[:N, :N_neurons]),
-            Xb=np.array(prepared_data.Xb.values[:N]),
-            time=np.array(prepared_data.time.values[:N]),
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(verbose=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_epochs=1,
         )
-        env = Environment(np.array(prepared_data.Xb.values[:N]), verbose=False)
-        model = SIMPL(data=data, environment=env)
-        model.train_epoch()
 
         path = str(tmp_path / "results.nc")
         model.save_results(path)
@@ -290,41 +303,30 @@ class TestCalculateSpatialInformation:
 
 
 class TestAccumulateSpikes:
-    def _make_dataset(self, T=20, N_neurons=3):
-        """Create a minimal dataset for testing."""
-        import xarray as xr
-
-        time = np.arange(T, dtype=float) * 0.05
+    def _make_Y(self, T=20, N_neurons=3):
+        """Create a minimal spike array for testing."""
         Y = np.zeros((T, N_neurons), dtype=int)
         Y[5, 0] = 1  # single spike at t=5 for neuron 0
         Y[10, 1] = 2  # two spikes at t=10 for neuron 1
-        Xb = np.random.randn(T, 2)
-        ds = xr.Dataset(
-            {
-                "Y": xr.DataArray(Y, dims=["time", "neuron"], coords={"time": time}),
-                "Xb": xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time}),
-            }
-        )
-        return ds
+        return Y
 
-    def test_returns_copy(self):
-        """accumulate_spikes should not modify the original dataset."""
-        ds = self._make_dataset()
-        original_Y = ds.Y.values.copy()
-        _ = accumulate_spikes(ds, window=3)
-        np.testing.assert_array_equal(ds.Y.values, original_Y)
+    def test_does_not_modify_original(self):
+        """accumulate_spikes should not modify the original array."""
+        Y = self._make_Y()
+        original_Y = Y.copy()
+        _ = accumulate_spikes(Y, window=3)
+        np.testing.assert_array_equal(Y, original_Y)
 
     def test_window_1_is_identity(self):
         """Window of 1 should return the same Y."""
-        ds = self._make_dataset()
-        result = accumulate_spikes(ds, window=1)
-        np.testing.assert_array_equal(result.Y.values, ds.Y.values)
+        Y = self._make_Y()
+        result = accumulate_spikes(Y, window=1)
+        np.testing.assert_array_equal(result, Y)
 
     def test_rolling_sum(self):
         """With window=3, a spike at t=5 should appear in bins 5, 6, 7."""
-        ds = self._make_dataset()
-        result = accumulate_spikes(ds, window=3)
-        Y_out = result.Y.values
+        Y = self._make_Y()
+        Y_out = accumulate_spikes(Y, window=3)
         # Neuron 0 had a spike only at t=5
         assert Y_out[5, 0] == 1
         assert Y_out[6, 0] == 1
@@ -333,23 +335,16 @@ class TestAccumulateSpikes:
 
     def test_causal(self):
         """Spikes should not appear before the original spike time."""
-        ds = self._make_dataset()
-        result = accumulate_spikes(ds, window=5)
-        Y_out = result.Y.values
+        Y = self._make_Y()
+        Y_out = accumulate_spikes(Y, window=5)
         # Neuron 0 spike at t=5 — bins before t=5 should be unaffected
         assert Y_out[4, 0] == 0
 
-    def test_preserves_other_variables(self):
-        """Xb and other variables should be unchanged."""
-        ds = self._make_dataset()
-        result = accumulate_spikes(ds, window=3)
-        np.testing.assert_array_equal(result.Xb.values, ds.Xb.values)
-
     def test_preserves_dtype(self):
         """Output Y should have the same dtype as input Y."""
-        ds = self._make_dataset()
-        result = accumulate_spikes(ds, window=3)
-        assert result.Y.dtype == ds.Y.dtype
+        Y = self._make_Y()
+        result = accumulate_spikes(Y, window=3)
+        assert result.dtype == Y.dtype
 
 
 class TestPrintDataSummary:
