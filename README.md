@@ -19,8 +19,8 @@ To run the example you will need to install `simpl` by
 
 ```
 src/simpl/
-├── __init__.py        # Top-level exports: SIMPL, Environment, prepare_data, ...
-├── simpl.py           # Core SIMPL class (EM algorithm)
+├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
+├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
 ├── environment.py     # Environment class (spatial discretisation)
 ├── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ├── kalman.py          # KalmanFilter class + Kalman functions
@@ -28,24 +28,60 @@ src/simpl/
 └── data/              # Bundled demo data
 ```
 
-## Top-level API
+## API
+
+SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
 
 ```python
-from simpl import SIMPL, Environment, prepare_data
+from simpl import SIMPL
 
-# Load and prepare data
-data = prepare_data(Y=spikes, Xb=positions, time=timestamps) # (T, N) (T, D) (T,)
-env = Environment(X=positions, bin_size=0.02)
+# 1. Configure the model (no data, no computation)
+model = SIMPL(
+    speed_prior=0.4,        # prior on agent speed (m/s) — controls Kalman smoothing
+    kernel_bandwidth=0.02,  # KDE bandwidth for fitting receptive fields
+    bin_size=0.02,          # spatial bin size for environment discretisation
+    env_pad=0.0,            # padding around data bounds
+)
 
-# Fit the model
-model = SIMPL(data=data, environment=env)
-model.train_N_epochs(5)
+# 2. Fit: pass spikes (T, N), behavioural positions (T, D), and timestamps (T,)
+model.fit(Y, Xb, time, n_epochs=5)
 
-# Extract results 
-results = model.results
-receptive_fields = results.F.sel(epoch=5)
-latent_trajectory = results.X.sel(epoch=5)
-# ...+ many other variables, likelihoods and metrics saved across epochs
+# 3. Access results
+model.X_           # final decoded latent positions, shape (T, D)
+model.F_           # final receptive fields, shape (N_neurons, N_bins)
+model.results_     # full xarray.Dataset with all epochs, metrics, intermediates
+
+# Resume training if not yet converged
+model.fit(Y, Xb, time, n_epochs=5, resume=True)
+```
+
+### Prediction
+
+Decode new spikes using the fitted receptive fields (no behavioural input needed). The new data must be binned at the same `dt` as the training data.
+
+```python
+X_decoded = model.predict(Y_new)
+X_decoded, sigma = model.predict(Y_new, return_std=True)
+```
+
+### Ground truth baselines
+
+If you have ground truth positions (and optionally ground truth receptive fields), you can compute baseline metrics for comparison:
+
+```python
+model.add_baselines_to_results(Xt=Xt, Ft=Ft, Ft_coords_dict={"x": xbins, "y": ybins})
+```
+
+### Data preprocessing utilities
+
+```python
+from simpl import accumulate_spikes, coarsen_dt
+
+# Roll up spikes into wider time bins (e.g. sum every 2 bins)
+Y_coarse, Xb_coarse, time_coarse = coarsen_dt(Y, Xb, time, dt_multiplier=2)
+
+# Accumulate spikes with a causal sliding window
+Y_accum = accumulate_spikes(Y, window=3)
 ```
 
 ## Development
