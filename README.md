@@ -49,7 +49,7 @@ model.fit(Y, Xb, time, n_epochs=5)
 # 3. Access results
 model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, N_bins)
-model.results_     # full xarray.Dataset with all epochs, metrics, intermediates
+model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across epochs. 
 
 # Resume training if not yet converged
 model.fit(Y, Xb, time, n_epochs=5, resume=True)
@@ -61,7 +61,7 @@ Decode new spikes using the fitted receptive fields (no behavioural input needed
 
 ```python
 X_decoded = model.predict(Y_new)
-X_decoded, sigma = model.predict(Y_new, return_std=True)
+model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-likelihoods, etc.)
 ```
 
 ### Ground truth baselines

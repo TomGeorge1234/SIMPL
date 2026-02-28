@@ -618,7 +618,7 @@ def print_data_summary(data: xr.Dataset) -> None:
     print("DATA SUMMARY:")
     print(f"  Neurons:    {N_neurons}")
     print(f"  Dimensions: {D}")
-    print(f"  dt:         {dt} s")
+    print(f"  dt:         {dt:.4f} s")
     print(f"  Duration:   {duration:.1f} s ({T} bins)")
     print(f"  Trials:     {n_trials}")
     print(

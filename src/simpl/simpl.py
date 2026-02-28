@@ -47,9 +47,6 @@ class SIMPL:
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
         verbose: bool = True,
-        # Optional metadata
-        dim_names: np.ndarray | None = None,
-        neurons: np.ndarray | None = None,
     ) -> None:
         """Initialise the SIMPL model with hyperparameters only (no data, no computation).
 
@@ -148,16 +145,6 @@ class SIMPL:
         verbose : bool, optional
             Whether to print progress information (data summary, epoch summaries, warnings)
             during ``fit()``. By default True.
-        dim_names : np.ndarray or None, optional
-            Names for the latent dimensions, e.g. ``['x', 'y']``. These are used as
-            coordinate labels in the results Dataset. If None, auto-generated from the
-            Environment (``'x'``, ``'y'``, ``'z'`` for ≤3D; ``'x1'``, ``'x2'``, ... for
-            higher). By default None.
-        neurons : np.ndarray or None, optional
-            Array of neuron identifiers (e.g. cluster IDs). Used as coordinate labels in the
-            results Dataset. If None, auto-generated as ``[0, 1, ..., N_neurons-1]``.
-            By default None.
-
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
@@ -186,10 +173,6 @@ class SIMPL:
         self.evaluate_each_epoch = evaluate_each_epoch
         self.save_likelihood_maps = save_likelihood_maps
         self.verbose = verbose
-
-        # Optional metadata
-        self.dim_names = dim_names
-        self.neurons = neurons
 
         # Fitted flag
         self.is_fitted_ = False
@@ -317,7 +300,7 @@ class SIMPL:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
 
         # ── Set up coordinate metadata ──
-        neurons = self.neurons if self.neurons is not None else np.arange(self.N_neurons_)
+        neurons = np.arange(self.N_neurons_)
 
         # ── Convert to JAX arrays ──
         self.Y_ = jnp.array(Y)
@@ -397,6 +380,8 @@ class SIMPL:
             self._print_data_summary()
 
         # ── Run epoch 0 (M-step on behavioural trajectory) ──
+        if verbose:
+            print("FITTING:")
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
@@ -413,8 +398,7 @@ class SIMPL:
         self,
         Y: np.ndarray,
         trial_boundaries: np.ndarray | None = None,
-        return_std: bool = False,
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    ) -> np.ndarray:
         """Decode latent positions from new spikes using the fitted receptive fields.
 
         This method uses the receptive fields learned during ``fit()`` (stored in
@@ -423,9 +407,9 @@ class SIMPL:
         zero control input (``U=0``), acting as a pure random-walk smoother constrained
         only by the spike likelihoods and the speed prior.
 
-        The decoded trajectory is returned directly. For power users, the full decode
-        results (filtered/smoothed means and covariances, log-likelihoods, etc.) are also
-        stored in ``self.prediction_results_``.
+        The decoded trajectory is returned directly. The full decode results
+        (filtered/smoothed means and covariances, log-likelihoods, etc.) are stored as an
+        ``xr.Dataset`` in ``self.prediction_results_``.
 
         .. important::
 
@@ -443,16 +427,11 @@ class SIMPL:
         trial_boundaries : np.ndarray or None, optional
             Trial start indices for the new data, e.g. ``[0, 500]``. The Kalman filter runs
             independently per trial. If None, all data is a single trial. By default None.
-        return_std : bool, optional
-            If True, also return the Kalman-smoothed covariance matrices, which can be used
-            as a measure of decoding uncertainty. By default False.
 
         Returns
         -------
         X_decoded : np.ndarray, shape (T_new, D)
             Decoded latent positions.
-        sigma_s : np.ndarray, shape (T_new, D, D)
-            Smoothed covariance matrices (only returned if ``return_std=True``).
 
         Raises
         ------
@@ -466,7 +445,7 @@ class SIMPL:
         >>> model = SIMPL(speed_prior=0.4)
         >>> model.fit(Y_train, Xb_train, time_train, n_epochs=5)
         >>> X_decoded = model.predict(Y_test)
-        >>> X_decoded, sigma = model.predict(Y_test, return_std=True)
+        >>> sigma = model.prediction_results_["sigma_s"]  # smoothed covariances
         """
         if not self.is_fitted_:
             raise RuntimeError("Model has not been fitted yet. Call fit() first.")
@@ -487,11 +466,11 @@ class SIMPL:
 
         X_decoded = np.array(E["mu_s"])
 
-        # Store full decode results for power users
-        self.prediction_results_ = E
+        # Store full decode results as an xr.Dataset
+        pred_time = np.arange(T_new) * self.dt_
+        pred_coords = {**self.coordinates_dict_, "time": pred_time}
+        self.prediction_results_ = self._dict_to_dataset(E, coords=pred_coords)
 
-        if return_std:
-            return X_decoded, np.array(E["sigma_s"])
         return X_decoded
 
     def train_epoch(self) -> None:
@@ -1204,7 +1183,7 @@ class SIMPL:
                 )
 
     def _print_data_summary(self) -> None:
-        """Print a summary of the input data."""
+        """Print a summary of the input data and environment."""
         # Build a minimal xr.Dataset for print_data_summary
         data = xr.Dataset(
             {
@@ -1215,6 +1194,16 @@ class SIMPL:
             }
         )
         data["trial_slices"] = self.trial_slices_
+        Xb_np = np.asarray(self.Xb_)
+        env = self.environment_
+        Xb_extent_str = " x ".join(f"[{Xb_np[:, i].min():.2f}, {Xb_np[:, i].max():.2f}]" for i in range(self.D_))
+        extent_str = " x ".join(f"[{env.extent[2 * i]:.2f}, {env.extent[2 * i + 1]:.2f}]" for i in range(env.D))
+        print("ENVIRONMENT:")
+        print(f"  Extent:     {extent_str} (Xb: {Xb_extent_str})")
+        print(f"  Bin size:   {env.bin_size}")
+        print(f"  Grid shape: {env.discrete_env_shape} ({self.N_bins_} bins)")
+        print(f"  Padding:    {env.pad}")
+        print()
         print_data_summary(data)
 
     def _print_epoch_summary(self) -> None:
@@ -1237,7 +1226,8 @@ class SIMPL:
             print(f"Epoch {e}")
 
     def _dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
-        """Convert a dictionary to an xarray Dataset.
+        """Convert a dictionary to an xarray Dataset, appending metadata from variable_info_dict_ where
+        available.
 
         Parameters
         ----------
