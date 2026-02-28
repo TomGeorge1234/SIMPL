@@ -42,7 +42,6 @@ class SIMPL:
         # Mask and analysis parameters
         test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
-        resample_spike_mask: bool = False,
         random_seed: int = 0,
         evaluate_each_epoch: bool = True,
         save_likelihood_maps: bool = False,
@@ -128,9 +127,6 @@ class SIMPL:
         speckle_block_size_seconds : float, optional
             Temporal size (in seconds) of contiguous blocks in the speckled test mask. Larger
             blocks give more temporally coherent held-out segments. By default 1.0.
-        resample_spike_mask : bool, optional
-            Whether to resample the speckled test mask at each epoch. If False, the same mask
-            is used throughout training. By default False.
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
@@ -168,7 +164,6 @@ class SIMPL:
         # Mask and analysis parameters
         self.test_frac = test_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
-        self.resample_spike_mask = resample_spike_mask
         self.random_seed = random_seed
         self.evaluate_each_epoch = evaluate_each_epoch
         self.save_likelihood_maps = save_likelihood_maps
@@ -321,14 +316,12 @@ class SIMPL:
         self._init_kalman_filter()
 
         # ── Spike mask ──
-        self._seed_seq = np.random.SeedSequence(self.random_seed)
         self.block_size_ = int(self.speckle_block_size_seconds / self.dt_)
-        self.random_seed_epoch_ = self._next_seed() if self.resample_spike_mask else self.random_seed
         self.spike_mask_ = create_speckled_mask(
             size=(self.T_, self.N_neurons_),
             sparsity=self.test_frac,
             block_size=self.block_size_,
-            random_seed=self.random_seed_epoch_,
+            random_seed=self.random_seed,
         )
 
         # ── Stability masks (odd/even minutes) ──
@@ -492,13 +485,6 @@ class SIMPL:
 
         # ── Increment epoch ──
         self.epoch_ += 1
-        if self.resample_spike_mask and self.epoch_ > 0:
-            self.spike_mask_ = create_speckled_mask(
-                size=(self.T_, self.N_neurons_),
-                sparsity=self.test_frac,
-                block_size=self.block_size_,
-                random_seed=self._next_seed(),
-            )
 
         # ── E-step ──
         if self.epoch_ == 0:
@@ -886,10 +872,6 @@ class SIMPL:
         H = jnp.eye(self.D_)
 
         self.kalman_filter_ = KalmanFilter(dim_Z=self.D_, dim_Y=self.D_, dim_U=self.D_, F=F, B=B, Q=Q, H=H, R=None)
-
-    def _next_seed(self) -> int:
-        """Spawn a new seed from the seed sequence."""
-        return self._seed_seq.spawn(1)[0].generate_state(1)[0]
 
     @staticmethod
     def _validate_trial_boundaries(trial_boundaries, T):
