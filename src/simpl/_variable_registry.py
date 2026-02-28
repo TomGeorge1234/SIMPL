@@ -28,9 +28,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         # Core data variables
         "Y": {
             "name": "Spikes",
-            "description": (
-                "The spikes of the neurons at each time step. Each a binary vector of length N_neurons."
-            ),
+            "description": ("The spikes of the neurons at each time step. Each a binary vector of length N_neurons."),
             "dims": ["time", "neuron"],
             "axis_title": "Spike counts",
             "formula": r"$y(t)$",
@@ -156,9 +154,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         "logPYXF_maps": {
             "name": "Log-likelihoods",
             "description": (
-                "The log-likelihood maps of the spikes, as a "
-                "function of position, is calculated for each "
-                "time step."
+                "The log-likelihood maps of the spikes, as a function of position, is calculated for each time step."
             ),
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
@@ -432,9 +428,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         "stability": {
             "name": "Stability",
             "description": (
-                "The correlation between receptive fields "
-                "estimated separately using spikes from odd "
-                "and even minutes."
+                "The correlation between receptive fields estimated separately using spikes from odd and even minutes."
             ),
             "dims": ["neuron"],
             "axis title": "Field stability",
