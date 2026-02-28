@@ -275,14 +275,10 @@ class TestSIMPLGetLoglikelihoods:
 class TestSIMPLSeeding:
     """Tests for the random seeding mechanism."""
 
-    def _make_model(self, demo_data, random_seed=0, resample_spike_mask=False):
+    def _make_model(self, demo_data, random_seed=0):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(
-            random_seed=random_seed,
-            resample_spike_mask=resample_spike_mask,
-            verbose=False,
-        )
+        model = SIMPL(random_seed=random_seed, verbose=False)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -291,44 +287,22 @@ class TestSIMPLSeeding:
         )
         return model
 
-    def test_same_seed_same_initial_mask(self, demo_data):
-        m1 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
-        m2 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
+    def test_same_seed_same_mask(self, demo_data):
+        m1 = self._make_model(demo_data, random_seed=42)
+        m2 = self._make_model(demo_data, random_seed=42)
         assert np.array_equal(m1.spike_mask_, m2.spike_mask_)
 
     def test_different_seed_different_mask(self, demo_data):
-        m1 = self._make_model(demo_data, random_seed=42, resample_spike_mask=True)
-        m2 = self._make_model(demo_data, random_seed=99, resample_spike_mask=True)
+        m1 = self._make_model(demo_data, random_seed=42)
+        m2 = self._make_model(demo_data, random_seed=99)
         assert not np.array_equal(m1.spike_mask_, m2.spike_mask_)
 
-    def test_resample_changes_mask_each_epoch(self, demo_data):
-        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=True)
-        mask_init = np.array(model.spike_mask_)
-        model.train_epoch()
-        model.train_epoch()
-        mask_epoch1 = np.array(model.spike_mask_)
-        assert not np.array_equal(mask_init, mask_epoch1)
-
-    def test_no_resample_keeps_mask(self, demo_data):
-        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=False)
+    def test_mask_unchanged_across_epochs(self, demo_data):
+        model = self._make_model(demo_data, random_seed=0)
         mask_init = np.array(model.spike_mask_)
         model.train_epoch()
         model.train_epoch()
         assert np.array_equal(mask_init, np.array(model.spike_mask_))
-
-    def test_next_seed_never_repeats(self, demo_data):
-        model = self._make_model(demo_data, random_seed=0, resample_spike_mask=True)
-        seeds = [model._next_seed() for _ in range(100)]
-        assert len(set(seeds)) == len(seeds)
-
-    def test_reproducible_across_runs(self, demo_data):
-        m1 = self._make_model(demo_data, random_seed=7, resample_spike_mask=True)
-        m2 = self._make_model(demo_data, random_seed=7, resample_spike_mask=True)
-        m1.train_epoch()
-        m1.train_epoch()
-        m2.train_epoch()
-        m2.train_epoch()
-        assert np.array_equal(m1.spike_mask_, m2.spike_mask_)
 
 
 class TestSIMPLSpatialInformation:
