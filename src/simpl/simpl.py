@@ -359,13 +359,9 @@ class SIMPL:
 
         # ── Initialise results dataset ──
         self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
-        self.results_.attrs = {
-            "env_extent": self.environment_.extent,
-            "env_pad": self.environment_.pad,
-            "env_bin_size": self.environment_.bin_size,
-            "trial_boundaries": self.trial_boundaries_,
-            "trial_slices": self.trial_slices_,
-        }
+        self.results_.attrs = self._build_dataset_attrs(
+            trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
+        )
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge([self.results_, self._dict_to_dataset(data_dict)])
         self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
@@ -380,8 +376,6 @@ class SIMPL:
             self._print_data_summary()
 
         # ── Run epoch 0 (M-step on behavioural trajectory) ──
-        if verbose:
-            print("FITTING:")
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
@@ -470,6 +464,10 @@ class SIMPL:
         pred_time = np.arange(T_new) * self.dt_
         pred_coords = {**self.coordinates_dict_, "time": pred_time}
         self.prediction_results_ = self._dict_to_dataset(E, coords=pred_coords)
+        self.prediction_results_.attrs = self._build_dataset_attrs(
+            trial_boundaries=trial_boundaries if trial_boundaries is not None else [0],
+            trial_slices=trial_slices,
+        )
 
         return X_decoded
 
@@ -1163,6 +1161,7 @@ class SIMPL:
             )
             print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
             print()
+            print("FITTING:")
 
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
@@ -1224,6 +1223,16 @@ class SIMPL:
                     print("    WARNING: test LL below epoch 0. Model may be overfitting.")
         except Exception:
             print(f"Epoch {e}")
+
+    def _build_dataset_attrs(self, trial_boundaries, trial_slices) -> dict:
+        """Build the standard attrs dict for results datasets."""
+        return {
+            "env_extent": self.environment_.extent,
+            "env_pad": self.environment_.pad,
+            "env_bin_size": self.environment_.bin_size,
+            "trial_boundaries": trial_boundaries,
+            "trial_slices": trial_slices,
+        }
 
     def _dict_to_dataset(self, data: dict, coords: dict | None = None) -> xr.Dataset:
         """Convert a dictionary to an xarray Dataset, appending metadata from variable_info_dict_ where
