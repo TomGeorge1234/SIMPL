@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from simpl.environment import Environment
 from simpl.simpl import SIMPL
@@ -483,25 +484,6 @@ class TestSIMPLPredict:
         )
         assert X_decoded.shape == (N_pred, model.D_)
 
-    def test_predict_with_return_std(self, demo_data):
-        N = 1000
-        N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
-        model.fit(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            n_epochs=1,
-        )
-
-        N_pred = 200
-        X_decoded, sigma = model.predict(
-            Y=demo_data["Y"][N : N + N_pred, :N_neurons],
-            return_std=True,
-        )
-        assert X_decoded.shape == (N_pred, model.D_)
-        assert sigma.shape == (N_pred, model.D_, model.D_)
-
     def test_predict_stores_prediction_results(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
@@ -513,12 +495,16 @@ class TestSIMPLPredict:
             n_epochs=1,
         )
 
+        N_pred = 200
         model.predict(
-            Y=demo_data["Y"][N : N + 200, :N_neurons],
+            Y=demo_data["Y"][N : N + N_pred, :N_neurons],
         )
         assert hasattr(model, "prediction_results_")
+        assert isinstance(model.prediction_results_, xr.Dataset)
         assert "mu_s" in model.prediction_results_
         assert "sigma_s" in model.prediction_results_
+        assert model.prediction_results_["mu_s"].dims == ("time", "dim")
+        assert model.prediction_results_["mu_s"].shape == (N_pred, model.D_)
 
     def test_predict_with_trial_boundaries(self, demo_data):
         N = 1000
