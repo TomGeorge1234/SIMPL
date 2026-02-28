@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
+import xarray as xr
 
 from simpl.utils import (
     _bin_indices_minuspi_pi,
@@ -23,7 +24,6 @@ from simpl.utils import (
     load_datafile,
     load_results,
     log_gaussian_pdf,
-    prepare_data,
     print_data_summary,
 )
 
@@ -211,34 +211,6 @@ class TestLoadDatafile:
         assert "time" in data
 
 
-class TestPrepareData:
-    def test_correct_structure(self, demo_data):
-        data = prepare_data(
-            Y=demo_data["Y"],
-            Xb=demo_data["Xb"],
-            time=demo_data["time"],
-        )
-        assert "Y" in data
-        assert "Xb" in data
-        assert "time" in data.coords
-        assert "trial_boundaries" in data
-        assert "trial_slices" in data
-
-    def test_with_trial_boundaries(self, demo_data):
-        T = demo_data["Y"].shape[0]
-        boundaries = np.array([0, T // 2])
-        data = prepare_data(
-            Y=demo_data["Y"],
-            Xb=demo_data["Xb"],
-            time=demo_data["time"],
-            trial_boundaries=boundaries,
-        )
-        slices = data["trial_slices"].values
-        assert len(slices) == 2
-        assert slices[0] == slice(0, T // 2)
-        assert slices[1] == slice(T // 2, T)
-
-
 class TestSaveAndLoadResults:
     def test_round_trip(self, tmp_path, demo_data):
         from simpl.simpl import SIMPL
@@ -350,11 +322,16 @@ class TestAccumulateSpikes:
 class TestPrintDataSummary:
     def test_prints_output(self, demo_data, capsys):
         """print_data_summary should produce output with key headings."""
-        data = prepare_data(
-            Y=demo_data["Y"][:500],
-            Xb=demo_data["Xb"][:500],
-            time=demo_data["time"][:500],
+        Y = demo_data["Y"][:500]
+        Xb = demo_data["Xb"][:500]
+        time = demo_data["time"][:500]
+        data = xr.Dataset(
+            {
+                "Y": xr.DataArray(Y, dims=["time", "neuron"], coords={"time": time}),
+                "Xb": xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time}),
+            }
         )
+        data["trial_slices"] = [slice(0, 500)]
         print_data_summary(data)
         captured = capsys.readouterr().out
         assert "DATA SUMMARY" in captured
