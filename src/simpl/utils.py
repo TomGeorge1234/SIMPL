@@ -477,7 +477,6 @@ def load_datafile(name: str = "gridcelldata.npz") -> np.lib.npyio.NpzFile:
     return data_npz
 
 
-
 def print_data_summary(data: xr.Dataset) -> None:
     """Print a concise summary of the dataset."""
     Y = data.Y.values
