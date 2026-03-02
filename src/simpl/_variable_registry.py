@@ -135,7 +135,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "reshape": True,
         },
         "FX": {
-            "name": "Smoothed firing rates",
+            "name": "Firing rates trajectories",
             "description": (
                 "An estimate of the firing rate of the "
                 "neurons at each time step based on the "
@@ -557,12 +557,10 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         },
     }
     # FX_latest: same as FX but only for the final epoch (not stored per epoch to save memory)
-    variable_info_dict["FX_latest"] = {
-        **variable_info_dict["FX"],
-        "name": "Smoothed firing rates (final epoch)",
-        "description": (
-            variable_info_dict["FX"]["description"]
-            + " Only stored for the final epoch to save memory (see save_full_history)."
-        ),
-    }
+    variable_info_dict["FX_latest"] = {**variable_info_dict["FX"]}
+    variable_info_dict["FX_latest"]["name"] = "Firing rates trajectories (final epoch)"
+    variable_info_dict["FX_latest"]["description"] = (
+        variable_info_dict["FX"]["description"]
+        + " Only stored for the final epoch to save memory (see save_full_history)."
+    )
     return variable_info_dict
