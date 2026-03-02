@@ -135,12 +135,13 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "reshape": True,
         },
         "FX": {
-            "name": "Smoothed firing rates",
+            "name": "Firing rates trajectories",
             "description": (
                 "An estimate of the firing rate of the "
                 "neurons at each time step based on the "
                 "latest position estimates and their "
-                "receptive fields."
+                "receptive fields. Only stored for the last "
+                "epoch unless save_full_history is True."
             ),
             "dims": ["time", "neuron"],
             "axis_title": r"Firing rate",
@@ -203,7 +204,8 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         "logPYXF_maps": {
             "name": "Log-likelihoods",
             "description": (
-                "The log-likelihood maps of the spikes, as a function of position, is calculated for each time step."
+                "The log-likelihood maps of the spikes, as a function of position, calculated for each time step. "
+                "Only saved when save_full_history is True, and even then only for the last epoch due to its size."
             ),
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
