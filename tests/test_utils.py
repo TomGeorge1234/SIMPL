@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
+import pytest
 import xarray as xr
 
 from simpl.utils import (
@@ -21,7 +22,7 @@ from simpl.utils import (
     gaussian_norm_const,
     gaussian_pdf,
     gaussian_sample,
-    load_datafile,
+    load_demo_data,
     load_results,
     log_gaussian_pdf,
     print_data_summary,
@@ -204,12 +205,16 @@ class TestCreateSpeckledMask:
         assert 0.05 < false_frac < 0.5  # rough check
 
 
-class TestLoadDatafile:
+class TestLoadDemoData:
     def test_loads_successfully(self):
-        data = load_datafile()
+        data = load_demo_data()
         assert "Y" in data
         assert "Xb" in data
         assert "time" in data
+
+    def test_rejects_unknown_file(self):
+        with pytest.raises(ValueError, match="Unknown demo data file"):
+            load_demo_data("nonexistent.npz")
 
 
 class TestSaveAndLoadResults:

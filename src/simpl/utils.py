@@ -468,13 +468,80 @@ def create_speckled_mask(
     return jnp.array(mask)
 
 
-def load_datafile(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFile:
-    # Use pkg_resources.files to get a pathlib.Path object
-    import importlib.resources as pkg_resources
+_AVAILABLE_DEMO_DATA = [
+    "gridcells_synthetic.npz",
+    "placecells_real_tanni2022.npz",
+]
 
-    path = pkg_resources.files("simpl").joinpath("data/" + name)
-    data_npz = np.load(path)
-    return data_npz
+
+def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFile:
+    """Load a demo data file, downloading from GitHub releases if not cached.
+
+    Resolution order:
+
+    1. **Local source tree** — ``examples/data/`` relative to the package root
+       (available in editable / development installs).
+    2. **User cache** — ``~/.simpl/data/``.
+    3. **Download** — fetched from the matching GitHub release and saved to the
+       user cache for next time.
+
+    Parameters
+    ----------
+    name : str
+        Filename to load (e.g. ``"gridcells_synthetic.npz"``).
+
+    Returns
+    -------
+    np.lib.npyio.NpzFile
+        The loaded ``.npz`` archive.
+
+    Raises
+    ------
+    ValueError
+        If *name* is not one of the available demo data files.
+    """
+    if name not in _AVAILABLE_DEMO_DATA:
+        available = ", ".join(f'"{f}"' for f in _AVAILABLE_DEMO_DATA)
+        raise ValueError(f'Unknown demo data file "{name}". Available files: {available}')
+
+    from pathlib import Path
+
+    # 1. Check local source tree (editable installs)
+    local_path = Path(__file__).resolve().parent.parent.parent / "examples" / "data" / name
+    if local_path.is_file():
+        return np.load(local_path)
+
+    # 2. Check user cache
+    cache_dir = Path.home() / ".simpl" / "data"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached_path = cache_dir / name
+
+    if not cached_path.exists():
+        # 3. Download from GitHub release
+        import sys
+        import urllib.request
+        from importlib.metadata import version
+
+        pkg_version = version("simpl")
+        url = f"https://github.com/TomGeorge1234/simpl/releases/download/v{pkg_version}/{name}"
+        print(f"Downloading {name} from {url} ...", file=sys.stderr)
+
+        def _reporthook(block_num, block_size, total_size):
+            if total_size > 0:
+                downloaded = block_num * block_size
+                pct = min(100, downloaded * 100 // total_size)
+                mb_done = downloaded / 1_000_000
+                mb_total = total_size / 1_000_000
+                print(f"\r  {pct:3d}% ({mb_done:.1f}/{mb_total:.1f} MB)", end="", file=sys.stderr)
+
+        try:
+            urllib.request.urlretrieve(url, cached_path, reporthook=_reporthook)
+        except Exception:
+            cached_path.unlink(missing_ok=True)
+            raise
+        print(file=sys.stderr)  # newline after progress
+
+    return np.load(cached_path)
 
 
 def print_data_summary(data: xr.Dataset) -> None:
