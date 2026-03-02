@@ -1206,8 +1206,8 @@ class SIMPL:
             test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=e).values)
             si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
             parts = [
-                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.3f}, test={test_ll:.3f})",
-                f"spatial_info={si:.3f} bits/s/neuron",
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, test={test_ll:.4f})",
+                f"spatial_info={si:.4f} bits/s/neuron",
             ]
             print("     ".join(parts))
             if e > 0:
