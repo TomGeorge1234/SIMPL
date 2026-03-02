@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "simpl"
-version = "0.3.0"
+version = "0.4.0"
 description = "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour"
 readme = "README.md"
 license = "MIT"
@@ -33,9 +33,6 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-simpl = ["data/*"]
 
 [tool.ruff]
 line-length = 120
