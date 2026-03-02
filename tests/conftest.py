@@ -2,13 +2,13 @@
 
 import pytest
 
-from simpl.utils import load_datafile
+from simpl.utils import load_demo_data
 
 
 @pytest.fixture(scope="session")
 def demo_data():
     """Load the bundled gridcells_synthetic.npz."""
-    return load_datafile("gridcells_synthetic.npz")
+    return load_demo_data("gridcells_synthetic.npz")
 
 
 @pytest.fixture(scope="session")
