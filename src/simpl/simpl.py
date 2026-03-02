@@ -276,11 +276,11 @@ class SIMPL:
         self._fit_N_epochs(n_epochs, verbose=verbose)
 
         # ── Attach FX for the final epoch when not saving full history ──
+        # Store without epoch dim so xarray doesn't NaN-fill all other epochs.
         if not self.save_full_history_:
-            FX_ds = dict_to_dataset(
+            self.results_["FX_latest"] = dict_to_dataset(
                 {"FX": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-            ).expand_dims({"epoch": [self.epoch_]})
-            self.results_["FX"] = FX_ds["FX"]
+            )["FX"]
 
         # ── Set convenience attributes ──
         self.X_ = self.E_["X"]
