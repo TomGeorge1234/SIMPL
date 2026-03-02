@@ -43,8 +43,6 @@ class SIMPL:
         test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
-        evaluate_each_epoch: bool = True,
-        save_likelihood_maps: bool = False,
         verbose: bool = True,
     ) -> None:
         """Initialise the SIMPL model with hyperparameters only (no data, no computation).
@@ -130,14 +128,6 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
-        evaluate_each_epoch : bool, optional
-            Whether to compute and store all metrics (spatial information, stability, place
-            field analysis, etc.) at every epoch. If False, metrics are only computed after
-            the final epoch. Set to False for faster training when intermediate metrics are
-            not needed. By default True.
-        save_likelihood_maps : bool, optional
-            Whether to save the full log-likelihood maps at each E-step. These are large
-            arrays (T x N_bins) and are usually not needed. By default False.
         verbose : bool, optional
             Whether to print progress information (data summary, epoch summaries, warnings)
             during ``fit()``. By default True.
@@ -165,8 +155,6 @@ class SIMPL:
         self.test_frac = test_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
-        self.evaluate_each_epoch = evaluate_each_epoch
-        self.save_likelihood_maps = save_likelihood_maps
         self.verbose = verbose
 
         # Fitted flag
@@ -181,6 +169,7 @@ class SIMPL:
         trial_boundaries: np.ndarray | None = None,
         align_to_behaviour: bool = True,
         resume: bool = False,
+        save_full_history: bool = False,
         verbose: bool | None = None,
     ) -> "SIMPL":
         """Fit the SIMPL model to data.
@@ -234,6 +223,15 @@ class SIMPL:
             ``Y``, ``Xb``, and ``time`` arguments are ignored when resuming — training
             continues on the original data. Useful when the model has not yet converged.
             By default False.
+        save_full_history : bool, optional
+            Whether to store large per-timestep arrays (``FX`` and ``logPYXF_maps``)
+            for every epoch in ``results_``. When False (the default), these arrays
+            are excluded from intermediate epochs to keep memory manageable over long
+            runs — ``FX`` is still included for the final epoch, and the latest
+            values are always accessible via ``self.M_["FX"]``. Metrics, receptive
+            fields, decoded trajectories, and Kalman outputs are unaffected and
+            stored for every epoch regardless. Set to True only if you need to
+            inspect ``FX`` or ``logPYXF_maps`` across all epochs. By default False.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -262,6 +260,7 @@ class SIMPL:
         >>> model.fit(Y, Xb, time, n_epochs=3, resume=True)
         """
         verbose = self.verbose if verbose is None else verbose
+        self.save_full_history_ = save_full_history
 
         if resume:
             if not self.is_fitted_:
@@ -373,6 +372,11 @@ class SIMPL:
 
         # ── Train for n_epochs ──
         self._train_N_epochs(n_epochs, verbose=verbose)
+
+        # ── Attach FX for the final epoch when not saving full history ──
+        if not self.save_full_history_:
+            FX_ds = self._dict_to_dataset({"FX": self.M_["FX"]}).expand_dims({"epoch": [self.epoch_]})
+            self.results_["FX"] = FX_ds["FX"]
 
         # ── Set convenience attributes ──
         self.X_ = self.E_["X"]
@@ -498,8 +502,7 @@ class SIMPL:
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
         # ── Evaluate and save results ──
-        if self.evaluate_each_epoch or self.epoch_ == 0:
-            self.evaluate_epoch()
+        self.evaluate_epoch()
         ll_data = self.get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
         loglikelihoods = self._dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch_]})
         self.loglikelihoods_ = xr.concat(
@@ -536,7 +539,12 @@ class SIMPL:
             Ft=self.Ft_,
             PX=self.M_["PX"],
         )
-        results = self._dict_to_dataset({**self.M_, **self.E_, **evals}).expand_dims({"epoch": [self.epoch_]})
+        epoch_data = {**self.M_, **self.E_, **evals}
+        if not self.save_full_history_:
+            # remove memory intensive arrays
+            epoch_data.pop("FX", None)
+            epoch_data.pop("logPYXF_maps", None)
+        results = self._dict_to_dataset(epoch_data).expand_dims({"epoch": [self.epoch_]})
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
     def add_baselines_to_results(
@@ -642,7 +650,11 @@ class SIMPL:
             Ft=self.Ft_,
             PX=M_best["PX"],
         )
-        results = self._dict_to_dataset({**M_best, **E_best, **evals_best}).expand_dims({"epoch": [-1]})
+        best_data = {**M_best, **E_best, **evals_best}
+        if not self.save_full_history_:
+            best_data.pop("FX", None)
+            best_data.pop("logPYXF_maps", None)
+        results = self._dict_to_dataset(best_data).expand_dims({"epoch": [-1]})
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
         if self.Ft_ is not None:
@@ -666,7 +678,11 @@ class SIMPL:
                 Ft=self.Ft_,
                 PX=M_exact["PX"],
             )
-            results = self._dict_to_dataset({**M_exact, **E_exact, **evals_exact}).expand_dims({"epoch": [-2]})
+            exact_data = {**M_exact, **E_exact, **evals_exact}
+            if not self.save_full_history_:
+                exact_data.pop("FX", None)
+                exact_data.pop("logPYXF_maps", None)
+            results = self._dict_to_dataset(exact_data).expand_dims({"epoch": [-2]})
             self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
             self.results_ = self.results_.sortby("epoch")
         else:
@@ -1023,7 +1039,7 @@ class SIMPL:
             "logPYF": logPYF,
             "logPYF_test": logPYF_test,
         }
-        if self.save_likelihood_maps:
+        if self.save_full_history_:
             E["logPYXF_maps"] = logPYXF_maps
 
         return E
@@ -1111,8 +1127,6 @@ class SIMPL:
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch_} epochs.")
                 break
-        if not self.evaluate_each_epoch:
-            self.evaluate_epoch()
 
     def _run_epoch_zero(self, verbose: bool) -> None:
         """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
