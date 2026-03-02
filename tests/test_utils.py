@@ -217,7 +217,7 @@ class TestSaveAndLoadResults:
 
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
