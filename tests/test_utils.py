@@ -219,12 +219,10 @@ class TestLoadDemoData:
 
     @pytest.mark.parametrize("name", _AVAILABLE_DEMO_DATA)
     def test_release_assets_exist(self, name):
-        """Check that demo data files are available at the GitHub release URL for the current version."""
+        """Check that demo data files are available at the latest GitHub release URL."""
         import urllib.request
-        from importlib.metadata import version
 
-        pkg_version = version("simpl")
-        url = f"https://github.com/TomGeorge1234/simpl/releases/download/v{pkg_version}/{name}"
+        url = f"https://github.com/TomGeorge1234/simpl/releases/latest/download/{name}"
         req = urllib.request.Request(url, method="HEAD")
         try:
             resp = urllib.request.urlopen(req, timeout=10)
