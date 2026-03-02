@@ -465,85 +465,6 @@ class SIMPL:
 
         return X_decoded
 
-    def _fit_epoch(self) -> None:
-        """Run a single epoch of the EM algorithm (E-step then M-step).
-
-        This is the low-level method for manual epoch control. It increments the epoch
-        counter, runs the E-step (Kalman decoding — skipped at epoch 0), then the M-step
-        (KDE receptive field fitting), and stores the results. The convenience attributes
-        ``self.X_`` and ``self.F_`` are updated after each call.
-
-        Must be called after ``fit()`` has been called at least once (at minimum with
-        ``n_epochs=0`` to set up all internal state).
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been initialised via ``fit()`` yet.
-        """
-        if not hasattr(self, "Y_"):
-            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
-
-        # ── Increment epoch ──
-        self.epoch_ += 1
-
-        # ── E-step ──
-        if self.epoch_ == 0:
-            self.E_ = {"X": self.Xb_}
-        else:
-            assert self.lastF_ is not None
-            self.E_ = self._E_step(Y=self.Y_, F=self.lastF_)
-
-        # ── M-step ──
-        X = self.E_["X"]
-        self.M_ = self._M_step(Y=self.Y_, X=X)
-
-        # ── Evaluate and save results ──
-        self._evaluate_epoch()
-        ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
-        loglikelihoods = self._dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch_]})
-        self.loglikelihoods_ = xr.concat(
-            [self.loglikelihoods_, loglikelihoods],
-            dim="epoch",
-            data_vars="minimal",
-        )
-
-        # ── Store for next epoch ──
-        self.lastF_ = self.M_["F"]
-        self.lastX_ = self.E_["X"]
-
-        # ── Update convenience attributes ──
-        self.X_ = self.E_["X"]
-        self.F_ = self.M_["F"]
-
-    def _evaluate_epoch(self) -> None:
-        """Evaluate the current epoch's metrics and append to the results Dataset.
-
-        Computes log-likelihoods, spatial information, stability, place field analysis,
-        and (if ground truth is available) R², trajectory error, and field error. The
-        results are stored under the current epoch in ``self.results_``.
-        """
-        evals = self._get_metrics(
-            X=self.E_["X"],
-            F=self.M_["F"],
-            Y=self.Y_,
-            FX=self.M_["FX"],
-            F_odd_mins=self.M_["F_odd_minutes"],
-            F_even_mins=self.M_["F_even_minutes"],
-            X_prev=self.lastX_,
-            F_prev=self.lastF_,
-            Xt=self.Xt_,
-            Ft=self.Ft_,
-            PX=self.M_["PX"],
-        )
-        epoch_data = {**self.M_, **self.E_, **evals}
-        if not self.save_full_history_:
-            # remove memory intensive arrays
-            epoch_data.pop("FX", None)
-            epoch_data.pop("logPYXF_maps", None)
-        results = self._dict_to_dataset(epoch_data).expand_dims({"epoch": [self.epoch_]})
-        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
-
     def add_baselines_to_results(
         self,
         Xt: np.ndarray,
@@ -684,6 +605,102 @@ class SIMPL:
             self.results_ = self.results_.sortby("epoch")
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
+
+    def save_results(self, path: str) -> None:
+        """Save the results Dataset to a netCDF file.
+
+        The saved file can be loaded back with ``simpl.load_results(path)``, which returns
+        an ``xarray.Dataset`` with all epochs, metrics, and fitted variables.
+
+        Parameters
+        ----------
+        path : str
+            File path to save to (typically ending in ``.nc``).
+        """
+        save_results_to_netcdf(self.results_, path)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Private methods
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _fit_epoch(self) -> None:
+        """Run a single epoch of the EM algorithm (E-step then M-step).
+
+        This is the low-level method for manual epoch control. It increments the epoch
+        counter, runs the E-step (Kalman decoding — skipped at epoch 0), then the M-step
+        (KDE receptive field fitting), and stores the results. The convenience attributes
+        ``self.X_`` and ``self.F_`` are updated after each call.
+
+        Must be called after ``fit()`` has been called at least once (at minimum with
+        ``n_epochs=0`` to set up all internal state).
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been initialised via ``fit()`` yet.
+        """
+        if not hasattr(self, "Y_"):
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+
+        # ── Increment epoch ──
+        self.epoch_ += 1
+
+        # ── E-step ──
+        if self.epoch_ == 0:
+            self.E_ = {"X": self.Xb_}
+        else:
+            assert self.lastF_ is not None
+            self.E_ = self._E_step(Y=self.Y_, F=self.lastF_)
+
+        # ── M-step ──
+        X = self.E_["X"]
+        self.M_ = self._M_step(Y=self.Y_, X=X)
+
+        # ── Evaluate and save results ──
+        self._evaluate_epoch()
+        ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
+        loglikelihoods = self._dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch_]})
+        self.loglikelihoods_ = xr.concat(
+            [self.loglikelihoods_, loglikelihoods],
+            dim="epoch",
+            data_vars="minimal",
+        )
+
+        # ── Store for next epoch ──
+        self.lastF_ = self.M_["F"]
+        self.lastX_ = self.E_["X"]
+
+        # ── Update convenience attributes ──
+        self.X_ = self.E_["X"]
+        self.F_ = self.M_["F"]
+
+    def _evaluate_epoch(self) -> None:
+        """Evaluate the current epoch's metrics and append to the results Dataset.
+
+        Computes log-likelihoods, spatial information, stability, place field analysis,
+        and (if ground truth is available) R², trajectory error, and field error. The
+        results are stored under the current epoch in ``self.results_``.
+        """
+        evals = self._get_metrics(
+            X=self.E_["X"],
+            F=self.M_["F"],
+            Y=self.Y_,
+            FX=self.M_["FX"],
+            F_odd_mins=self.M_["F_odd_minutes"],
+            F_even_mins=self.M_["F_even_minutes"],
+            X_prev=self.lastX_,
+            F_prev=self.lastF_,
+            Xt=self.Xt_,
+            Ft=self.Ft_,
+            PX=self.M_["PX"],
+        )
+        epoch_data = {**self.M_, **self.E_, **evals}
+        if not self.save_full_history_:
+            # remove memory intensive arrays
+            epoch_data.pop("FX", None)
+            epoch_data.pop("logPYXF_maps", None)
+        results = self._dict_to_dataset(epoch_data).expand_dims({"epoch": [self.epoch_]})
+        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
     def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """Predict firing rates at arbitrary positions by interpolating the discretised fields.
@@ -844,23 +861,6 @@ class SIMPL:
             metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
-
-    def save_results(self, path: str) -> None:
-        """Save the results Dataset to a netCDF file.
-
-        The saved file can be loaded back with ``simpl.load_results(path)``, which returns
-        an ``xarray.Dataset`` with all epochs, metrics, and fitted variables.
-
-        Parameters
-        ----------
-        path : str
-            File path to save to (typically ending in ``.nc``).
-        """
-        save_results_to_netcdf(self.results_, path)
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # Private methods
-    # ──────────────────────────────────────────────────────────────────────────
 
     def _init_kalman_filter(self) -> None:
         """Set up the Kalman filter from prior parameters."""
