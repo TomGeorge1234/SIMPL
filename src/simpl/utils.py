@@ -482,7 +482,7 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
     1. **Local source tree** — ``examples/data/`` relative to the package root
        (available in editable / development installs).
     2. **User cache** — ``~/.simpl/data/``.
-    3. **Download** — fetched from the matching GitHub release and saved to the
+    3. **Download** — fetched from the latest GitHub release and saved to the
        user cache for next time.
 
     Parameters
@@ -520,10 +520,8 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
         # 3. Download from GitHub release
         import sys
         import urllib.request
-        from importlib.metadata import version
 
-        pkg_version = version("simpl")
-        url = f"https://github.com/TomGeorge1234/simpl/releases/download/v{pkg_version}/{name}"
+        url = f"https://github.com/TomGeorge1234/simpl/releases/latest/download/{name}"
         print(f"Downloading {name} from {url} ...", file=sys.stderr)
 
         def _reporthook(block_num, block_size, total_size):
