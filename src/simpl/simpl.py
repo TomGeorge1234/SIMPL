@@ -279,8 +279,8 @@ class SIMPL:
         # Store without epoch dim so xarray doesn't NaN-fill all other epochs.
         if not self.save_full_history_:
             self.results_["FX_latest"] = dict_to_dataset(
-                {"FX": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-            )["FX"]
+                {"FX_latest": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+            )["FX_latest"]
 
         # ── Set convenience attributes ──
         self.X_ = self.E_["X"]
