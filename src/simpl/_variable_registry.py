@@ -556,4 +556,13 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "formula": r"$\textrm{mask}(t, n)$",
         },
     }
+    # FX_latest: same as FX but only for the final epoch (not stored per epoch to save memory)
+    variable_info_dict["FX_latest"] = {
+        **variable_info_dict["FX"],
+        "name": "Smoothed firing rates (final epoch)",
+        "description": (
+            variable_info_dict["FX"]["description"]
+            + " Only stored for the final epoch to save memory (see save_full_history)."
+        ),
+    }
     return variable_info_dict
