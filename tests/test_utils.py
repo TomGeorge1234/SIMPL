@@ -25,6 +25,7 @@ from simpl.utils import (
     load_results,
     log_gaussian_pdf,
     print_data_summary,
+    save_results_to_netcdf,
 )
 
 
@@ -230,6 +231,46 @@ class TestSaveAndLoadResults:
         loaded = load_results(path)
         assert "Y" in loaded
         assert "F" in loaded
+
+
+class TestSaveResultsSham:
+    """Test save_results_to_netcdf with a hand-built sham Dataset."""
+
+    def test_sham_results_save(self, tmp_path):
+        T, N = 20, 3
+        ds = xr.Dataset(
+            {
+                "Y": xr.DataArray(np.random.poisson(1, (T, N)), dims=["time", "neuron"]),
+                "spike_mask": xr.DataArray(np.ones((T, N), dtype=bool), dims=["time", "neuron"]),
+                "F": xr.DataArray(
+                    np.random.rand(N, 10),
+                    dims=["neuron", "x"],
+                    attrs={"reshape": True},
+                ),
+            },
+            attrs={"trial_slices": [slice(0, T)]},
+        )
+        path = str(tmp_path / "sham.nc")
+        save_results_to_netcdf(ds, path)
+        loaded = load_results(path)
+        assert "Y" in loaded
+        assert "F" in loaded
+        assert "spike_mask" in loaded
+
+    def test_sham_results_save_already_serialized_slices(self, tmp_path):
+        """trial_slices that are already a numpy array should not crash."""
+        T, N = 20, 3
+        ds = xr.Dataset(
+            {
+                "Y": xr.DataArray(np.random.poisson(1, (T, N)), dims=["time", "neuron"]),
+                "spike_mask": xr.DataArray(np.ones((T, N), dtype=bool), dims=["time", "neuron"]),
+            },
+            attrs={"trial_slices": np.array([0, T], dtype=np.int64)},
+        )
+        path = str(tmp_path / "sham_pre_serialized.nc")
+        save_results_to_netcdf(ds, path)
+        loaded = load_results(path)
+        assert "Y" in loaded
 
 
 class TestCalculateSpatialInformation:
