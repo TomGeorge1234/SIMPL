@@ -140,7 +140,8 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 "An estimate of the firing rate of the "
                 "neurons at each time step based on the "
                 "latest position estimates and their "
-                "receptive fields."
+                "receptive fields. Only stored for the last "
+                "epoch unless save_full_history is True."
             ),
             "dims": ["time", "neuron"],
             "axis_title": r"Firing rate",
@@ -203,7 +204,8 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         "logPYXF_maps": {
             "name": "Log-likelihoods",
             "description": (
-                "The log-likelihood maps of the spikes, as a function of position, is calculated for each time step."
+                "The log-likelihood maps of the spikes, as a function of position, calculated for each time step. "
+                "Only saved when save_full_history is True, and even then only for the last epoch due to its size."
             ),
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
@@ -556,11 +558,4 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "formula": r"$\textrm{mask}(t, n)$",
         },
     }
-    # FX_latest: same as FX but only for the final epoch (not stored per epoch to save memory)
-    variable_info_dict["FX_latest"] = {**variable_info_dict["FX"]}
-    variable_info_dict["FX_latest"]["name"] = "Firing rates trajectories (final epoch)"
-    variable_info_dict["FX_latest"]["description"] = (
-        variable_info_dict["FX"]["description"]
-        + " Only stored for the final epoch to save memory (see save_full_history)."
-    )
     return variable_info_dict

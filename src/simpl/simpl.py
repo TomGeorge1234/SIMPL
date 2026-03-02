@@ -222,14 +222,12 @@ class SIMPL:
             continues on the original data. Useful when the model has not yet converged.
             By default False.
         save_full_history : bool, optional
-            Whether to store large per-timestep arrays (``FX`` and ``logPYXF_maps``)
-            for every epoch in ``results_``. When False (the default), these arrays
-            are excluded from intermediate epochs to keep memory manageable over long
-            runs — ``FX`` is still included for the final epoch, and the latest
-            values are always accessible via ``self.M_["FX"]``. Metrics, receptive
-            fields, decoded trajectories, and Kalman outputs are unaffected and
-            stored for every epoch regardless. Set to True only if you need to
-            inspect ``FX`` or ``logPYXF_maps`` across all epochs. By default False.
+            Controls storage of large per-timestep arrays. When False (the default),
+            ``FX`` is only stored for the final epoch and ``logPYXF_maps`` is not
+            stored at all. When True, ``FX`` is stored for every epoch and
+            ``logPYXF_maps`` is stored for the last epoch only (due to its huge size).
+            Metrics, receptive fields, decoded trajectories, and Kalman outputs are
+            unaffected and stored for every epoch regardless. By default False.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -278,9 +276,15 @@ class SIMPL:
         # ── Attach FX for the final epoch when not saving full history ──
         # Store without epoch dim so xarray doesn't NaN-fill all other epochs.
         if not self.save_full_history_:
-            self.results_["FX_latest"] = dict_to_dataset(
-                {"FX_latest": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-            )["FX_latest"]
+            self.results_["FX"] = dict_to_dataset(
+                {"FX": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+            )["FX"]
+
+        # ── Attach logPYXF_maps for the final epoch only (too large to store per epoch) ──
+        if self.save_full_history_:
+            self.results_["logPYXF_maps"] = dict_to_dataset(
+                {"logPYXF_maps": self.E_["logPYXF_maps"]}, self.variable_info_dict_, self.coordinates_dict_
+            )["logPYXF_maps"]
 
         # ── Set convenience attributes ──
         self.X_ = self.E_["X"]
@@ -687,8 +691,7 @@ class SIMPL:
             "logPYF": logPYF,
             "logPYF_test": logPYF_test,
         }
-        if self.save_full_history_:
-            E["logPYXF_maps"] = logPYXF_maps
+        E["logPYXF_maps"] = logPYXF_maps
 
         return E
 
@@ -771,9 +774,8 @@ class SIMPL:
         )
         epoch_data = {**self.M_, **self.E_, **evals}
         if not self.save_full_history_:
-            # remove memory intensive arrays
             epoch_data.pop("FX", None)
-            epoch_data.pop("logPYXF_maps", None)
+        epoch_data.pop("logPYXF_maps", None)
         results = dict_to_dataset(epoch_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"epoch": [self.epoch_]}
         )
@@ -860,7 +862,7 @@ class SIMPL:
         data = {**M, **E, **evals}
         if not self.save_full_history_:
             data.pop("FX", None)
-            data.pop("logPYXF_maps", None)
+        data.pop("logPYXF_maps", None)
         results = dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"epoch": [epoch_id]}
         )
