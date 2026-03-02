@@ -1,5 +1,54 @@
 """Variable metadata registry for the SIMPL results dataset."""
 
+import warnings
+
+import xarray as xr
+
+
+def dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.Dataset:
+    """Convert a dictionary to an xarray Dataset, appending metadata from variable_info_dict where available.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary of variable_name -> array.
+    variable_info_dict : dict
+        Variable metadata dictionary (from :func:`build_variable_info_dict`).
+    coords : dict
+        Coordinate arrays.
+
+    Returns
+    -------
+    xr.Dataset
+    """
+    dataset = xr.Dataset()
+    for variable_name in data.keys():
+        if variable_name in variable_info_dict:
+            variable_info = variable_info_dict[variable_name]
+            variable_coords = {k: coords[k] for k in variable_info["dims"]}
+            intended_variable_shape = tuple([len(variable_coords[c]) for c in variable_info["dims"]])
+            if "reshape" in variable_info and variable_info["reshape"]:
+                variable_data = data[variable_name].reshape(intended_variable_shape)
+            else:
+                variable_data = data[variable_name]
+            dataarray = xr.DataArray(
+                variable_data,
+                dims=variable_info["dims"],
+                coords=variable_coords,
+                attrs=variable_info,
+            )
+        else:
+            warnings.warn(
+                f"Variable {variable_name} not recognised, "
+                f"it will be saved without coordinate or "
+                f"dimension info unless you add it to the "
+                f"variable_info_dict in "
+                f"_variable_registry.py."
+            )
+            dataarray = xr.DataArray(data[variable_name])
+        dataset[variable_name] = dataarray
+    return dataset
+
 
 def build_variable_info_dict(dim: list[str]) -> dict:
     """Build the dictionary describing every variable stored in SIMPL results.
