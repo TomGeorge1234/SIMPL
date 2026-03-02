@@ -7,6 +7,7 @@ import pytest
 import xarray as xr
 
 from simpl.utils import (
+    _AVAILABLE_DEMO_DATA,
     _bin_indices_minuspi_pi,
     _circular_conv_fft_1d,
     _wrap_minuspi_pi,
@@ -215,6 +216,21 @@ class TestLoadDemoData:
     def test_rejects_unknown_file(self):
         with pytest.raises(ValueError, match="Unknown demo data file"):
             load_demo_data("nonexistent.npz")
+
+    @pytest.mark.parametrize("name", _AVAILABLE_DEMO_DATA)
+    def test_release_assets_exist(self, name):
+        """Check that demo data files are available at the GitHub release URL for the current version."""
+        import urllib.request
+        from importlib.metadata import version
+
+        pkg_version = version("simpl")
+        url = f"https://github.com/TomGeorge1234/simpl/releases/download/v{pkg_version}/{name}"
+        req = urllib.request.Request(url, method="HEAD")
+        try:
+            resp = urllib.request.urlopen(req, timeout=10)
+            assert resp.status == 200, f"{url} returned {resp.status}"
+        except urllib.error.URLError as exc:
+            pytest.fail(f"Demo data not reachable at {url}: {exc}")
 
 
 class TestSaveAndLoadResults:
