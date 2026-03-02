@@ -24,7 +24,7 @@ class TestSIMPLInit:
     def test_use_kalman_smoothing_argument(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(use_kalman_smoothing=False, speed_prior=0.1, verbose=False)
+        model = SIMPL(use_kalman_smoothing=False, speed_prior=0.1)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -39,7 +39,7 @@ class TestSIMPLFit:
     def test_fit_returns_self(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         result = model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -64,7 +64,7 @@ class TestSIMPLFit:
     def test_fit_creates_environment_internally(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(bin_size=0.03, env_pad=0.05, verbose=False)
+        model = SIMPL(bin_size=0.03, env_pad=0.05)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -77,8 +77,8 @@ class TestSIMPLFit:
     def test_fit_with_custom_environment(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        env = Environment(demo_data["Xb"][:N], bin_size=0.04, verbose=False)
-        model = SIMPL(environment=env, verbose=False)
+        env = Environment(demo_data["Xb"][:N], bin_size=0.04)
+        model = SIMPL(environment=env)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -88,7 +88,7 @@ class TestSIMPLFit:
         assert model.environment_ is env
 
     def test_fit_validates_shapes(self):
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         with pytest.raises(ValueError, match="same number of time bins"):
             model.fit(
                 Y=np.zeros((100, 5)),
@@ -98,7 +98,7 @@ class TestSIMPLFit:
             )
 
     def test_fit_validates_time_length(self):
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         with pytest.raises(ValueError, match="same length"):
             model.fit(
                 Y=np.zeros((100, 5)),
@@ -112,7 +112,7 @@ class TestSIMPLFitResume:
     def test_resume_continues_training(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -131,7 +131,7 @@ class TestSIMPLFitResume:
         assert model.epoch_ == epoch_after_first + 3
 
     def test_resume_before_fit_raises(self):
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         with pytest.raises(RuntimeError, match="not been fitted"):
             model.fit(
                 Y=np.zeros((100, 5)),
@@ -162,7 +162,7 @@ class TestSIMPLTrainImprovesLikelihood:
     def test_likelihood_increases(self, demo_data):
         N = 2000
         N_neurons = min(10, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -186,7 +186,7 @@ class TestSIMPLWithGroundTruth:
     def test_baselines_computed(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -207,7 +207,7 @@ class TestSIMPLWithoutGroundTruth:
     def test_works_without_Xt_Ft(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -223,7 +223,7 @@ class TestSIMPLTrialBoundaries:
         N = 2000
         N_neurons = min(5, demo_data["Y"].shape[1])
         boundaries = np.array([0, N // 2])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -239,7 +239,7 @@ class TestSIMPLSaveLoadResults:
     def test_round_trip(self, tmp_path, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -278,7 +278,7 @@ class TestSIMPLSeeding:
     def _make_model(self, demo_data, random_seed=0):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(random_seed=random_seed, verbose=False)
+        model = SIMPL(random_seed=random_seed)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -332,7 +332,7 @@ class TestSIMPLEpochZeroInFit:
     def test_epoch_starts_at_zero(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -342,26 +342,13 @@ class TestSIMPLEpochZeroInFit:
         assert model.epoch_ == 0
         assert "F" in model.results_
 
-    def test_verbose_false_suppresses_output(self, demo_data, capsys):
-        N = 500
-        N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
-        model.fit(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            n_epochs=0,
-        )
-        captured = capsys.readouterr().out
-        assert "DATA SUMMARY" not in captured
-        assert "Spatial info" not in captured
 
 
 class TestSIMPLAddBaselines:
     def _make_model(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -401,7 +388,7 @@ class TestSIMPLAddBaselines:
         assert -1 in model.results_.epoch.values
 
     def test_requires_fitted(self):
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         with pytest.raises(RuntimeError, match="not been fitted"):
             model.add_baselines_to_results(Xt=np.zeros((100, 2)))
 
@@ -410,7 +397,7 @@ class TestSIMPLManifoldAlignment:
     def _make_model(self, demo_data, align_to_behaviour=True):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -443,7 +430,7 @@ class TestSIMPLPredict:
     def test_predict_returns_correct_shape(self, demo_data):
         N = 2000
         N_neurons = min(10, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -461,7 +448,7 @@ class TestSIMPLPredict:
     def test_predict_stores_prediction_results(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -483,7 +470,7 @@ class TestSIMPLPredict:
     def test_predict_with_trial_boundaries(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -499,14 +486,14 @@ class TestSIMPLPredict:
         assert X_decoded.shape == (N_pred, model.D_)
 
     def test_predict_requires_fitted(self):
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         with pytest.raises(RuntimeError, match="not been fitted"):
             model.predict(Y=np.zeros((100, 5)))
 
     def test_predict_validates_neuron_count(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -521,7 +508,7 @@ class TestSIMPLSaveFullHistory:
     def test_FX_only_on_last_epoch_by_default(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -538,7 +525,7 @@ class TestSIMPLSaveFullHistory:
     def test_save_full_history_stores_FX_all_epochs(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -553,7 +540,7 @@ class TestSIMPLSaveFullHistory:
     def test_logPYXF_maps_excluded_by_default(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -565,7 +552,7 @@ class TestSIMPLSaveFullHistory:
     def test_save_full_history_stores_logPYXF_maps(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -580,7 +567,7 @@ class TestSIMPLConvenienceAttrs:
     def test_X_and_F_match_last_epoch(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(verbose=False)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
