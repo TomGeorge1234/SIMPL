@@ -205,7 +205,7 @@ class SIMPL:
             step ``dt`` is inferred as ``time[1] - time[0]``.
         n_epochs : int, optional
             Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
-            M-step (useful for manual epoch control via ``train_epoch()``). By default 5.
+            M-step (useful for manual epoch control via ``_fit_epoch()``). By default 5.
         trial_boundaries : np.ndarray or None, optional
             Array of indices where new trials start, e.g. ``[0, 1000, 2000]``. The first
             element must be 0. The Kalman filter runs independently within each trial to
@@ -262,7 +262,7 @@ class SIMPL:
         if resume:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
-            self._train_N_epochs(n_epochs, verbose=verbose)
+            self._fit_N_epochs(n_epochs, verbose=verbose)
             self.X_ = self.E_["X"]
             self.F_ = self.M_["F"]
             return self
@@ -368,7 +368,7 @@ class SIMPL:
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
-        self._train_N_epochs(n_epochs, verbose=verbose)
+        self._fit_N_epochs(n_epochs, verbose=verbose)
 
         # ── Attach FX for the final epoch when not saving full history ──
         if not self.save_full_history_:
@@ -465,7 +465,7 @@ class SIMPL:
 
         return X_decoded
 
-    def train_epoch(self) -> None:
+    def _fit_epoch(self) -> None:
         """Run a single epoch of the EM algorithm (E-step then M-step).
 
         This is the low-level method for manual epoch control. It increments the epoch
@@ -499,8 +499,8 @@ class SIMPL:
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
         # ── Evaluate and save results ──
-        self.evaluate_epoch()
-        ll_data = self.get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
+        self._evaluate_epoch()
+        ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
         loglikelihoods = self._dict_to_dataset(ll_data).expand_dims({"epoch": [self.epoch_]})
         self.loglikelihoods_ = xr.concat(
             [self.loglikelihoods_, loglikelihoods],
@@ -516,14 +516,14 @@ class SIMPL:
         self.X_ = self.E_["X"]
         self.F_ = self.M_["F"]
 
-    def evaluate_epoch(self) -> None:
+    def _evaluate_epoch(self) -> None:
         """Evaluate the current epoch's metrics and append to the results Dataset.
 
         Computes log-likelihoods, spatial information, stability, place field analysis,
         and (if ground truth is available) R², trajectory error, and field error. The
         results are stored under the current epoch in ``self.results_``.
         """
-        evals = self.get_metrics(
+        evals = self._get_metrics(
             X=self.E_["X"],
             F=self.M_["F"],
             Y=self.Y_,
@@ -634,7 +634,7 @@ class SIMPL:
         # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
         M_best = self._M_step(self.Y_, self.Xt_)
         E_best = self._E_step(self.Y_, M_best["F"])
-        evals_best = self.get_metrics(
+        evals_best = self._get_metrics(
             X=E_best["X"],
             F=M_best["F"],
             Y=self.Y_,
@@ -658,11 +658,11 @@ class SIMPL:
             # EXACT MODEL: Ft (use the exact receptive fields)
             M_exact = {
                 "F": self.Ft_,
-                "FX": self.interpolate_firing_rates(self.Xt_, self.Ft_),
+                "FX": self._interpolate_firing_rates(self.Xt_, self.Ft_),
                 "PX": M_best["PX"],
             }
             E_exact = self._E_step(self.Y_, self.Ft_)
-            evals_exact = self.get_metrics(
+            evals_exact = self._get_metrics(
                 X=E_exact["X"],
                 F=self.Ft_,
                 Y=self.Y_,
@@ -685,7 +685,7 @@ class SIMPL:
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
 
-    def interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
+    def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """Predict firing rates at arbitrary positions by interpolating the discretised fields.
 
         Given a set of latent positions ``X`` and receptive fields ``F`` (discretised on
@@ -713,7 +713,7 @@ class SIMPL:
         FX = data.F.sel(**coord_args, method="nearest").T
         return FX.data
 
-    def get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
+    def _get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
         """Calculate log-likelihoods of spikes given firing rates.
 
         Parameters
@@ -737,7 +737,7 @@ class SIMPL:
         LLs["logPYXF_test"] = logPYXF_test
         return LLs
 
-    def get_metrics(
+    def _get_metrics(
         self,
         X: jax.Array | None = None,
         F: jax.Array | None = None,
@@ -789,7 +789,7 @@ class SIMPL:
         metrics = {}
 
         if Y is not None and FX is not None:
-            LLs = self.get_loglikelihoods(Y, FX)
+            LLs = self._get_loglikelihoods(Y, FX)
             metrics.update(LLs)
 
         if X is not None and Xt is not None:
@@ -1107,18 +1107,18 @@ class SIMPL:
         all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
         PX = all_PX[0]
-        FX = self.interpolate_firing_rates(X, F)
+        FX = self._interpolate_firing_rates(X, F)
         M = {"F": F, "F_odd_minutes": F_odd_minutes, "F_even_minutes": F_even_minutes, "FX": FX, "PX": PX}
         return M
 
-    def _train_N_epochs(self, N: int, verbose: bool = True) -> None:
+    def _fit_N_epochs(self, N: int, verbose: bool = True) -> None:
         """Train for N epochs with KeyboardInterrupt support."""
         if N <= 0:
             return
         self._print_epoch_summary()
         for _ in range(N):
             try:
-                self.train_epoch()
+                self._fit_epoch()
                 if verbose:
                     self._print_epoch_summary()
             except KeyboardInterrupt:
@@ -1135,7 +1135,7 @@ class SIMPL:
 
         _timer = threading.Thread(target=_delayed_message, daemon=True)
         _timer.start()
-        self.train_epoch()
+        self._fit_epoch()
         _epoch0_done.set()
 
         if verbose:
