@@ -352,7 +352,7 @@ class SIMPL:
             trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
         )
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
-        self.results_ = xr.merge([self.results_, self._dict_to_dataset(data_dict)])
+        self.results_ = xr.merge([self.results_, self._dict_to_dataset(data_dict)], compat="override")
         self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
 
         # ── Ground truth (not stored — use add_baselines_to_results) ──
@@ -609,7 +609,7 @@ class SIMPL:
         self.ground_truth_available_ = True
 
         # Store Xt in results
-        self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Xt": Xt_jax})])
+        self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Xt": Xt_jax})], compat="override")
 
         # Interpolate Ft onto environment grid if provided
         if Ft is not None and Ft_coords_dict is not None:
@@ -629,7 +629,7 @@ class SIMPL:
             Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
             self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
             self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
-            self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Ft": self.Ft_})])
+            self.results_ = xr.merge([self.results_, self._dict_to_dataset({"Ft": self.Ft_})], compat="override")
 
         # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
         M_best = self._M_step(self.Y_, self.Xt_)

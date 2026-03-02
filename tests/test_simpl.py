@@ -343,7 +343,6 @@ class TestSIMPLEpochZeroInFit:
         assert "F" in model.results_
 
 
-
 class TestSIMPLAddBaselines:
     def _make_model(self, demo_data):
         N = 1000
