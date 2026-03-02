@@ -553,11 +553,14 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     # Format: [start0, stop0, start1, stop1, ...] with -1 for None
     if "trial_slices" in results.attrs:
         slices = results.attrs["trial_slices"]
-        flat = []
-        for s in slices:
-            flat.append(s.start if s.start is not None else -1)
-            flat.append(s.stop if s.stop is not None else -1)
-        results.attrs["trial_slices"] = np.array(flat, dtype=np.int64)
+        if isinstance(slices, np.ndarray):
+            pass  # already serialized
+        else:
+            flat = []
+            for s in slices:
+                flat.append(s.start if s.start is not None else -1)
+                flat.append(s.stop if s.stop is not None else -1)
+            results.attrs["trial_slices"] = np.array(flat, dtype=np.int64)
     results.to_netcdf(path)
 
 
