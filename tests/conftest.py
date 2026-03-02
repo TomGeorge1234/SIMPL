@@ -7,8 +7,8 @@ from simpl.utils import load_datafile
 
 @pytest.fixture(scope="session")
 def demo_data():
-    """Load the bundled gridcelldata.npz."""
-    return load_datafile("gridcelldata.npz")
+    """Load the bundled gridcells_synthetic.npz."""
+    return load_datafile("gridcells_synthetic.npz")
 
 
 @pytest.fixture(scope="session")
