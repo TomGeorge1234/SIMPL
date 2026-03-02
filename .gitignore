@@ -8,7 +8,6 @@ dist/
 venv/
 .venv/
 *.ipynb_checkpoints/
-_*
 .ruff_cache/
 .pytest_cache/
 .coverage
