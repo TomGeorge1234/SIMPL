@@ -33,8 +33,8 @@ class SIMPL:
         speed_prior: float = 0.1,
         use_kalman_smoothing: bool = True,
         behaviour_prior: float | None = None,
-        is_circular: bool = False,
         # Environment parameters
+        is_circular: bool = False,
         bin_size: float = 0.02,
         env_pad: float = 0.1,
         env_lims: tuple | None = None,
@@ -43,7 +43,6 @@ class SIMPL:
         test_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
-        verbose: bool = True,
     ) -> None:
         """Initialise the SIMPL model with hyperparameters only (no data, no computation).
 
@@ -155,7 +154,6 @@ class SIMPL:
         self.test_frac = test_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
-        self.verbose = verbose
 
         # Fitted flag
         self.is_fitted_ = False
@@ -170,7 +168,7 @@ class SIMPL:
         align_to_behaviour: bool = True,
         resume: bool = False,
         save_full_history: bool = False,
-        verbose: bool | None = None,
+        verbose: bool = True,
     ) -> "SIMPL":
         """Fit the SIMPL model to data.
 
@@ -259,7 +257,6 @@ class SIMPL:
 
         >>> model.fit(Y, Xb, time, n_epochs=3, resume=True)
         """
-        verbose = self.verbose if verbose is None else verbose
         self.save_full_history_ = save_full_history
 
         if resume:
