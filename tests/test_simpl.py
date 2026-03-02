@@ -260,14 +260,14 @@ class TestSIMPLInterpolateFiringRates:
         model = small_simpl_model
         F = model.M_["F"]
         X = model.E_["X"]
-        FX = model.interpolate_firing_rates(X, F)
+        FX = model._interpolate_firing_rates(X, F)
         assert FX.shape == (model.T_, model.N_neurons_)
 
 
 class TestSIMPLGetLoglikelihoods:
     def test_expected_keys(self, small_simpl_model):
         model = small_simpl_model
-        lls = model.get_loglikelihoods(model.Y_, model.M_["FX"])
+        lls = model._get_loglikelihoods(model.Y_, model.M_["FX"])
         assert "logPYXF" in lls
         assert "logPYXF_test" in lls
 
@@ -300,8 +300,8 @@ class TestSIMPLSeeding:
     def test_mask_unchanged_across_epochs(self, demo_data):
         model = self._make_model(demo_data, random_seed=0)
         mask_init = np.array(model.spike_mask_)
-        model.train_epoch()
-        model.train_epoch()
+        model._fit_epoch()
+        model._fit_epoch()
         assert np.array_equal(mask_init, np.array(model.spike_mask_))
 
 
@@ -409,8 +409,8 @@ class TestSIMPLManifoldAlignment:
     def test_cca_runs(self, small_simpl_model):
         model = small_simpl_model
         if model.epoch_ < 1:
-            model.train_epoch()
-            model.train_epoch()
+            model._fit_epoch()
+            model._fit_epoch()
         assert model.epoch_ >= 1
         assert "X" in model.E_
 
