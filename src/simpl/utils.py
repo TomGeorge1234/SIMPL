@@ -337,16 +337,12 @@ def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
+def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
     """Causal rolling sum of spikes over a backward-looking window.
 
     Each time bin accumulates spikes from the current and previous
     ``window - 1`` bins. This is equivalent to smoothing the spikes with
-    a causal rectangular kernel. Unlike ``coarsen_dt``, this increases
-    the spike density without affecting the time bin size.
-
-    Only ``Y`` is modified; all other variables (``Xb``, ``Xt``, etc.)
-    are left unchanged.
+    a causal rectangular kernel.
 
     .. warning::
 
@@ -359,42 +355,73 @@ def accumulate_spikes(dataset: xr.Dataset, window: int) -> xr.Dataset:
 
     Parameters
     ----------
-    dataset : xr.Dataset
-        Dataset as returned by ``prepare_data``, must contain ``Y``.
+    Y : np.ndarray, shape (T, N_neurons)
+        Spike counts.
     window : int
         Number of bins to sum over (looking backwards). For example,
         ``window=5`` sums the current bin and the 4 preceding bins.
 
     Returns
     -------
-    dataset : xr.Dataset
-        A copy of the dataset with ``Y`` replaced by the rolling sum.
+    Y_accumulated : np.ndarray, shape (T, N_neurons)
+        Spike counts after causal rolling sum.
     """
-    dataset = dataset.copy()
-    dataset["Y"] = dataset["Y"].rolling(time=window, min_periods=1).sum().astype(dataset["Y"].dtype)
-    return dataset
+    Y_out = np.zeros_like(Y)
+    for i in range(Y.shape[0]):
+        start = max(0, i - window + 1)
+        Y_out[i] = Y[start : i + 1].sum(axis=0)
+    return Y_out
 
 
-def coarsen_dt(dataset: xr.Dataset, dt_multiplier: int) -> xr.Dataset:
-    """Takes the dataset and reinterpolates the data onto a new time grid dt_new.
+def coarsen_dt(
+    Y: np.ndarray,
+    Xb: np.ndarray,
+    time: np.ndarray,
+    dt_multiplier: int,
+    Xt: np.ndarray | None = None,
+) -> tuple:
+    """Coarsen data by averaging over groups of ``dt_multiplier`` time bins.
+
+    Spikes are summed (not averaged) so that spike counts remain integers.
+    Positions and time are averaged.
 
     Parameters
     ----------
-    dataset : xr.Dataset
-        The dataset to be coarsened
+    Y : np.ndarray, shape (T, N_neurons)
+        Spike counts.
+    Xb : np.ndarray, shape (T, D)
+        Behavioural positions.
+    time : np.ndarray, shape (T,)
+        Time stamps.
     dt_multiplier : int
-        The factor by which to coarsen the data
+        Factor by which to coarsen the data.
+    Xt : np.ndarray or None, shape (T, D), optional
+        Ground truth positions.
 
     Returns
     -------
-    dataset : xr.Dataset
-        The coarsened dataset"""
-    dataset = dataset.coarsen(dim={"time": dt_multiplier}).mean()
-    pos_vars = ["X", "Xb", "Xt"]
-    for X in pos_vars:
-        if X in dataset.keys():
-            dataset[X] = dataset[X] * dt_multiplier
-    return dataset
+    Y_coarse : np.ndarray
+        Coarsened spike counts (summed).
+    Xb_coarse : np.ndarray
+        Coarsened behavioural positions (averaged).
+    time_coarse : np.ndarray
+        Coarsened time stamps (averaged).
+    Xt_coarse : np.ndarray (only if Xt was provided)
+        Coarsened ground truth positions (averaged).
+    """
+    T = Y.shape[0]
+    T_new = T // dt_multiplier
+    T_trim = T_new * dt_multiplier
+
+    Y_coarse = Y[:T_trim].reshape(T_new, dt_multiplier, -1).sum(axis=1)
+    Xb_coarse = Xb[:T_trim].reshape(T_new, dt_multiplier, -1).mean(axis=1)
+    time_coarse = time[:T_trim].reshape(T_new, dt_multiplier).mean(axis=1)
+
+    if Xt is not None:
+        Xt_coarse = Xt[:T_trim].reshape(T_new, dt_multiplier, -1).mean(axis=1)
+        return Y_coarse, Xb_coarse, time_coarse, Xt_coarse
+
+    return Y_coarse, Xb_coarse, time_coarse
 
 
 def create_speckled_mask(
@@ -450,103 +477,6 @@ def load_datafile(name: str = "gridcelldata.npz") -> np.lib.npyio.NpzFile:
     return data_npz
 
 
-def prepare_data(
-    Y: np.ndarray,
-    Xb: np.ndarray,
-    time: np.ndarray,
-    dims: np.ndarray | None = None,
-    neurons: np.ndarray | None = None,
-    Xt: np.ndarray | None = None,
-    Ft: np.ndarray | None = None,
-    Ft_coords_dict: dict | None = None,
-    trial_boundaries: np.ndarray | None = None,
-) -> xr.Dataset:
-    """
-    Prepare data for simpl model fitting.
-
-    Parameters
-    ----------
-    Y : np.ndarray
-        Spike data, shape (T, N), where T is number of time points and N is number of neurons.
-    Xb : np.ndarray
-        Initialisation for the latent variables, shape (T, D), where D is number of dimensions.
-    time : np.ndarray
-        Time stamps for each time point, shape (T,).
-    dims : np.ndarray, optional
-        Dimension names, shape (D,).
-    neurons : np.ndarray, optional
-        Neuron IDs, shape (N,). If not provided, neuron IDs are assumed to be [0, 1, ..., N-1].
-    Xt : np.ndarray, optional
-        Ground truth latent variables, shape (T, D).
-    Ft : np.ndarray, optional
-        Tuning curves, shape (N, *Ft_coords_dict.values()).
-    Ft_coords_dict : dict, optional
-        Dictionary of coordinates for the tuning curves. For example if D=2,
-        Ft_coords_dict = {'x': xbins, 'y': ybins} where xbins and ybins are
-        the coordinates for the centres of the tuning curve bins.
-    trial_boundaries : np.ndarray, optional
-        Array of indices where trials start. If provided, each trial will be
-        processed independently by the Kalman filter. Shape should be
-        (N_trials,) with first element typically 0. For example,
-        [0, 1000, 2000] means trials are [0:1000, 1000:2000, 2000:end].
-        If None, all data is treated as a single continuous trial, so
-        trial_boundaries will be set to [0].
-
-    Returns
-    -------
-    xr.Dataset
-        Data for simpl model fitting. If trial_boundaries was provided,
-        stores validated boundaries in trial_boundaries and trial_slices
-        for SIMPL to use.
-    """
-
-    if Y.shape[0] != Xb.shape[0]:
-        raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
-    if Y.shape[0] != len(time):
-        raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
-    if Xt is not None and Y.shape[0] != Xt.shape[0]:
-        raise ValueError(f"Y and Xt must have the same number of time bins (got {Y.shape[0]} and {Xt.shape[0]})")
-
-    T = Y.shape[0]
-
-    if neurons is None:
-        neurons = np.arange(Y.shape[1])
-    if dims is None:
-        dims = np.arange(Xb.shape[1])
-
-    Y = xr.DataArray(Y, dims=["time", "neuron"], coords={"time": time, "neuron": neurons})
-    Xb = xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time, "dim": dims})
-    if Xt is not None:
-        Xt = xr.DataArray(Xt, dims=["time", "dim"], coords={"time": time, "dim": dims})
-    if Ft is not None:
-        Ft = xr.DataArray(Ft, dims=["neuron", *Ft_coords_dict.keys()], coords={"neuron": neurons, **Ft_coords_dict})
-
-    data = xr.Dataset({"Y": Y, "Xb": Xb})
-    if Xt is not None:
-        data["Xt"] = Xt
-    if Ft is not None:
-        data["Ft"] = Ft
-
-    # Trial boundary handling: validate and store for SIMPL
-    if trial_boundaries is None:
-        trial_boundaries = [0]  # This makes the whole data a single "trial"
-
-    trial_boundaries = np.array(trial_boundaries)
-    if trial_boundaries[0] != 0:
-        raise ValueError("First trial boundary must be 0")
-    if trial_boundaries[-1] >= T:
-        raise ValueError(f"Last trial boundary must be < T (got {trial_boundaries[-1]} with T={T})")
-    if not np.all(np.diff(trial_boundaries) > 0):
-        raise ValueError("Trial boundaries must be strictly increasing")
-    data["trial_boundaries"] = trial_boundaries
-
-    trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
-    trial_slices.append(slice(trial_boundaries[-1], T))
-    data["trial_slices"] = trial_slices
-
-    return data
-
-
 def print_data_summary(data: xr.Dataset) -> None:
     """Print a concise summary of the dataset."""
     Y = data.Y.values
@@ -591,7 +521,7 @@ def print_data_summary(data: xr.Dataset) -> None:
     print("DATA SUMMARY:")
     print(f"  Neurons:    {N_neurons}")
     print(f"  Dimensions: {D}")
-    print(f"  dt:         {dt} s")
+    print(f"  dt:         {dt:.4f} s")
     print(f"  Duration:   {duration:.1f} s ({T} bins)")
     print(f"  Trials:     {n_trials}")
     print(
