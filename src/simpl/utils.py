@@ -468,7 +468,7 @@ def create_speckled_mask(
     return jnp.array(mask)
 
 
-def load_datafile(name: str = "gridcelldata.npz") -> np.lib.npyio.NpzFile:
+def load_datafile(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFile:
     # Use pkg_resources.files to get a pathlib.Path object
     import importlib.resources as pkg_resources
 

@@ -1,8 +1,8 @@
-# SIMPL 
+# SIMPL
 
 <img src="simpl.gif" width=850>
 
-## Installation and Usage
+## Installation
 This repository contains code for the ICLR 2025 paper "_SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour_" ([ICLR](https://openreview.net/forum?id=9kFaNwX6rv)). Specifically:
 
 * Source code in `src/simpl/` for the SIMPL algorithm.
@@ -14,19 +14,6 @@ To run the example you will need to install `simpl` by
 2. _(Recommended)_ Create a virtual environment (e.g. `python -m venv simpl_env` and `source simpl_env/bin/activate`).
 3. **Install**: `pip install .[demos]`. This will install the `simpl` package and its dependencies.
 4. **Run the demo**: `jupyter notebook examples/simpl_demo.ipynb` !
-
-## Package Structure
-
-```
-src/simpl/
-├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
-├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
-├── environment.py     # Environment class (spatial discretisation)
-├── utils.py           # Gaussian helpers, CCA, data prep, I/O
-├── kalman.py          # KalmanFilter class + Kalman functions
-├── kde.py             # KDE, Poisson log-likelihood, gaussian_kernel
-└── data/              # Bundled demo data
-```
 
 ## API
 
@@ -49,7 +36,7 @@ model.fit(Y, Xb, time, n_epochs=5)
 # 3. Access results
 model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, N_bins)
-model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across epochs. 
+model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across epochs.
 
 # Resume training if not yet converged
 model.fit(Y, Xb, time, n_epochs=5, resume=True)
@@ -82,6 +69,28 @@ Y_coarse, Xb_coarse, time_coarse = coarsen_dt(Y, Xb, time, dt_multiplier=2)
 
 # Accumulate spikes with a causal sliding window
 Y_accum = accumulate_spikes(Y, window=3)
+```
+
+## Examples
+
+The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow in two parts:
+
+1. **Synthetic grid cells** — fits SIMPL on artificial grid cell data with known ground truth, demonstrating decoded trajectories, receptive field recovery, log-likelihood improvements, and prediction on held-out data.
+2. **Real place cells** — fits SIMPL on real hippocampal place cell recordings from [Tanni et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/), where no ground truth is available.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
+
+## Package Structure
+
+```
+src/simpl/
+├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
+├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
+├── environment.py     # Environment class (spatial discretisation)
+├── utils.py           # Gaussian helpers, CCA, data prep, I/O
+├── kalman.py          # KalmanFilter class + Kalman functions
+├── kde.py             # KDE, Poisson log-likelihood, gaussian_kernel
+└── data/              # Bundled demo data
 ```
 
 ## Development
