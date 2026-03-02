@@ -18,7 +18,7 @@ def small_simpl_model(demo_data):
 
     N = 2000  # small subset
     N_neurons = min(10, demo_data["Y"].shape[1])
-    model = SIMPL(evaluate_each_epoch=True, verbose=False)
+    model = SIMPL(verbose=False)
     model.fit(
         Y=demo_data["Y"][:N, :N_neurons],
         Xb=demo_data["Xb"][:N],
