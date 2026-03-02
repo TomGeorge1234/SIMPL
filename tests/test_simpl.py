@@ -517,6 +517,65 @@ class TestSIMPLPredict:
             model.predict(Y=np.zeros((100, N_neurons + 3)))
 
 
+class TestSIMPLSaveFullHistory:
+    def test_FX_only_on_last_epoch_by_default(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(verbose=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_epochs=2,
+        )
+        last_epoch = model.epoch_
+        # FX should be present for the final epoch
+        assert "FX" in model.results_
+        FX_epochs = model.results_.FX.dropna("epoch", how="all").epoch.values
+        assert len(FX_epochs) == 1
+        assert FX_epochs[0] == last_epoch
+
+    def test_save_full_history_stores_FX_all_epochs(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(verbose=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_epochs=2,
+            save_full_history=True,
+        )
+        # FX should be present for every epoch (0, 1, 2)
+        FX_epochs = model.results_.FX.dropna("epoch", how="all").epoch.values
+        assert len(FX_epochs) == model.epoch_ + 1
+
+    def test_logPYXF_maps_excluded_by_default(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(verbose=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_epochs=1,
+        )
+        assert "logPYXF_maps" not in model.results_
+
+    def test_save_full_history_stores_logPYXF_maps(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(verbose=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_epochs=1,
+            save_full_history=True,
+        )
+        assert "logPYXF_maps" in model.results_
+
+
 class TestSIMPLConvenienceAttrs:
     def test_X_and_F_match_last_epoch(self, demo_data):
         N = 1000
