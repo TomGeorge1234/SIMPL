@@ -59,6 +59,18 @@ If you have ground truth positions (and optionally ground truth receptive fields
 model.add_baselines_to_results(Xt=Xt, Ft=Ft, Ft_coords_dict={"x": xbins, "y": ybins})
 ```
 
+### Saving results
+
+Save the full results (all epochs, metrics, fitted variables) to a netCDF file:
+
+```python
+model.save_results("results.nc")
+
+# Load back later
+from simpl import load_results
+results = load_results("results.nc")
+```
+
 ### Data preprocessing utilities
 
 ```python
