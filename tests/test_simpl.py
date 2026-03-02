@@ -514,12 +514,10 @@ class TestSIMPLSaveFullHistory:
             time=demo_data["time"][:N],
             n_epochs=2,
         )
-        last_epoch = model.epoch_
-        # FX should be present for the final epoch
+        # FX should be present without epoch dim (avoids NaN bloat)
         assert "FX" in model.results_
-        FX_epochs = model.results_.FX.dropna("epoch", how="all").epoch.values
-        assert len(FX_epochs) == 1
-        assert FX_epochs[0] == last_epoch
+        assert "epoch" not in model.results_.FX.dims
+        assert model.results_.FX.dims == ("time", "neuron")
 
     def test_save_full_history_stores_FX_all_epochs(self, demo_data):
         N = 1000
@@ -560,6 +558,7 @@ class TestSIMPLSaveFullHistory:
             save_full_history=True,
         )
         assert "logPYXF_maps" in model.results_
+        assert "epoch" not in model.results_.logPYXF_maps.dims
 
 
 class TestSIMPLConvenienceAttrs:
