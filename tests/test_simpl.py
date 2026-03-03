@@ -239,7 +239,19 @@ class TestSIMPLSaveLoadResults:
     def test_round_trip(self, tmp_path, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL()
+        model = SIMPL(
+            kernel_bandwidth=0.03,
+            speed_prior=0.2,
+            use_kalman_smoothing=False,
+            behaviour_prior=0.4,
+            is_circular=False,
+            bin_size=0.05,
+            env_pad=0.0,
+            env_lims=((0.0, 0.0), (1.0, 1.0)),
+            test_frac=0.2,
+            speckle_block_size_seconds=2.0,
+            random_seed=7,
+        )
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -247,12 +259,28 @@ class TestSIMPLSaveLoadResults:
             n_epochs=1,
         )
 
+        assert model.results_.attrs["init_kernel_bandwidth"] == 0.03
+        assert model.results_.attrs["init_speed_prior"] == 0.2
+        assert model.results_.attrs["init_use_kalman_smoothing"] == 0
+        assert model.results_.attrs["init_behaviour_prior"] == 0.4
+        assert model.results_.attrs["init_is_circular"] == 0
+        assert model.results_.attrs["init_bin_size"] == 0.05
+        assert model.results_.attrs["init_env_pad"] == 0.0
+        np.testing.assert_allclose(model.results_.attrs["init_env_lims"], np.array([0.0, 0.0, 1.0, 1.0]))
+        assert model.results_.attrs["init_environment_provided"] == 0
+        assert model.results_.attrs["init_test_frac"] == 0.2
+        assert model.results_.attrs["init_speckle_block_size_seconds"] == 2.0
+        assert model.results_.attrs["init_random_seed"] == 7
+
         path = str(tmp_path / "test_results.nc")
         model.save_results(path)
         loaded = load_results(path)
         assert "Y" in loaded
         assert "F" in loaded
         assert loaded.F.shape == model.results_.F.shape
+        assert loaded.attrs["init_kernel_bandwidth"] == 0.03
+        assert loaded.attrs["init_use_kalman_smoothing"] == 0
+        np.testing.assert_allclose(loaded.attrs["init_env_lims"], np.array([0.0, 0.0, 1.0, 1.0]))
 
 
 class TestSIMPLInterpolateFiringRates:
