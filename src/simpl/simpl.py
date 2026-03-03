@@ -1229,8 +1229,7 @@ class SIMPL:
         trial_slices.append(slice(trial_boundaries[-1], T))
         return trial_boundaries, trial_slices
 
-    @staticmethod
-    def _build_dataset_attrs(environment, trial_boundaries, trial_slices) -> dict:
+    def _build_dataset_attrs(self, environment, trial_boundaries, trial_slices) -> dict:
         """Build the standard attrs dict for results datasets."""
         return {
             "env_extent": environment.extent,
@@ -1238,6 +1237,18 @@ class SIMPL:
             "env_bin_size": environment.bin_size,
             "trial_boundaries": trial_boundaries,
             "trial_slices": trial_slices,
+            "init_kernel_bandwidth": self.kernel_bandwidth,
+            "init_speed_prior": self.speed_prior,
+            "init_use_kalman_smoothing": int(self.use_kalman_smoothing),
+            "init_behaviour_prior": np.nan if self.behaviour_prior is None else self.behaviour_prior,
+            "init_is_circular": int(self.is_circular),
+            "init_bin_size": self.bin_size,
+            "init_env_pad": self.env_pad,
+            "init_env_lims": np.array([], dtype=float) if self.env_lims is None else np.asarray(self.env_lims).ravel(),
+            "init_environment_provided": int(self._environment_override is not None),
+            "init_test_frac": self.test_frac,
+            "init_speckle_block_size_seconds": self.speckle_block_size_seconds,
+            "init_random_seed": self.random_seed,
         }
 
 
