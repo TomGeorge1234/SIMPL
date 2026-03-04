@@ -121,7 +121,7 @@ class TestPlotReceptiveFields:
         plt.close("all")
 
     def test_single_neuron_no_behaviour(self, results):
-        axes = plot_receptive_fields(results, neurons=[0], include_behaviour=False)
+        axes = plot_receptive_fields(results, neurons=[0], epoch=1, include_behaviour=False)
         assert axes.shape == (1, 1)
         import matplotlib.pyplot as plt
 

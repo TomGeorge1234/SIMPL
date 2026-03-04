@@ -612,11 +612,11 @@ class SIMPL:
 
     def plot_receptive_fields(
         self,
-        epoch: int | None = None,
+        epoch: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
         include_behaviour: bool = True,
         include_baselines: bool = False,
-        ncols: int = 8,
+        ncols: int = 4,
         cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -624,8 +624,9 @@ class SIMPL:
 
         Parameters
         ----------
-        epoch : int, optional
-            Which epoch to show.  Default: last non-negative epoch.
+        epoch : int or tuple of int, optional
+            Which epoch(s) to show.  ``None`` shows the first (0) and last
+            non-negative epochs.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
         include_behaviour : bool
