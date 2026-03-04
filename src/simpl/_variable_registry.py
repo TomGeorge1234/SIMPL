@@ -140,8 +140,9 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 "An estimate of the firing rate of the "
                 "neurons at each time step based on the "
                 "latest position estimates and their "
-                "receptive fields. Only stored for the last "
-                "epoch unless save_full_history is True."
+                "receptive fields. Only stored when "
+                "save_full_history is True. See also "
+                "FX_firstepoch and FX_lastepoch."
             ),
             "dims": ["time", "neuron"],
             "axis_title": r"Firing rate",
@@ -558,4 +559,13 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "formula": r"$\textrm{mask}(t, n)$",
         },
     }
+
+    # FX_firstepoch and FX_lastepoch: same as FX but for a single epoch (no epoch dim)
+    for suffix, label in [("firstepoch", "first epoch (Xb)"), ("lastepoch", "last epoch")]:
+        variable_info_dict[f"FX_{suffix}"] = {
+            **variable_info_dict["FX"],
+            "name": variable_info_dict["FX"]["name"] + f" ({suffix})",
+            "description": variable_info_dict["FX"]["description"] + f" This is for the {label} only.",
+        }
+
     return variable_info_dict
