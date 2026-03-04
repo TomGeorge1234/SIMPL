@@ -53,10 +53,34 @@ model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-li
 
 ### Ground truth baselines
 
-If you have ground truth positions (and optionally ground truth receptive fields), you can compute baseline metrics for comparison:
+If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each epoch:
 
 ```python
-model.add_baselines_to_results(Xt=Xt, Ft=Ft, Ft_coords_dict={"x": xbins, "y": ybins})
+model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
+model.fit(Y, Xb, time, n_epochs=5)  # baselines computed automatically
+```
+
+### Plotting
+
+Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
+
+```python
+# Log-likelihood and spatial information across epochs
+model.plot_fitting_summary()
+
+# Decoded trajectory (all epochs by default)
+model.plot_latent_trajectory()
+model.plot_latent_trajectory(time_range=(0, 60), epoch=(1, 5))  # zoom in, specific epochs
+
+# Receptive fields (epoch 0 + last by default)
+model.plot_receptive_fields(neurons=[0, 5, 10], include_baselines=True)
+
+# Auto-discover and plot all per-epoch metrics
+model.plot_all_metrics(show_neurons=False)
+
+# Prediction on held-out data
+model.predict(Y_test)
+model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 ```
 
 ### Saving results
@@ -98,6 +122,7 @@ The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks thro
 src/simpl/
 ├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
 ├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
+├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
 ├── environment.py     # Environment class (spatial discretisation)
 ├── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ├── kalman.py          # KalmanFilter class + Kalman functions
