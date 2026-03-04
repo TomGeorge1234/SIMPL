@@ -295,6 +295,10 @@ class SIMPL:
         self.F_ = self.M_["F"]
         self.is_fitted_ = True
 
+        # ── Compute baseline epochs if ground truth was registered before fit ──
+        if self.ground_truth_available_:
+            self._apply_baselines_to_results()
+
         return self
 
     def predict(
@@ -381,69 +385,90 @@ class SIMPL:
 
         return X_decoded
 
+    def add_baselines(
+        self,
+        Xt: np.ndarray,
+        Ft: np.ndarray | None = None,
+        Ft_coords_dict: dict | None = None,
+    ) -> "SIMPL":
+        """Register ground truth data for baseline comparison.
+
+        Can be called **before** or **after** ``fit()``:
+
+        - **Before fit** — ground truth positions ``Xt`` are stored so that per-epoch
+          metrics like ``X_R2`` and ``X_err`` are computed during training. Baseline
+          epochs (-1, -2) are computed automatically at the end of ``fit()``.
+        - **After fit** — baseline epochs are computed immediately and appended to
+          ``self.results_``.
+
+        Two special baseline epochs are created:
+
+        - **Epoch -1 ("best")** — Receptive fields fit via KDE to the *true* positions
+          ``Xt``, representing the best KDE model given perfect position knowledge.
+        - **Epoch -2 ("exact")** — The exact ground truth fields ``Ft`` are used directly
+          (only if provided).
+
+        Parameters
+        ----------
+        Xt : np.ndarray, shape (T, D)
+            Ground truth latent positions. Must have the same number of time bins as the
+            training data (if already fitted).
+        Ft : np.ndarray or None, optional
+            Ground truth receptive fields, shape ``(N_neurons, *spatial_dims)``. These
+            are interpolated onto the model's environment grid. By default None.
+        Ft_coords_dict : dict or None, optional
+            Coordinate arrays for ``Ft``, mapping dimension names to bin centres. Required
+            if ``Ft`` is provided. By default None.
+
+        Returns
+        -------
+        self : SIMPL
+            The model instance (for chaining).
+
+        Examples
+        --------
+        Call before fit to get ground truth metrics during training:
+
+        >>> model = SIMPL()
+        >>> model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"x": xbins, "y": ybins})
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> print(model.results_.X_R2)  # R² vs ground truth, per epoch
+
+        Or call after fit (baseline epochs computed immediately):
+
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.add_baselines(Xt=Xt)
+        """
+        # Store raw arrays (processed later in _apply_baselines_to_results)
+        self._Xt_raw = np.asarray(Xt)
+        self._Ft_raw = Ft
+        self._Ft_coords_dict_raw = Ft_coords_dict
+        self.ground_truth_available_ = True
+
+        if self.is_fitted_:
+            # Model already fitted — apply immediately
+            self._apply_baselines_to_results()
+
+        return self
+
     def add_baselines_to_results(
         self,
         Xt: np.ndarray,
         Ft: np.ndarray | None = None,
         Ft_coords_dict: dict | None = None,
     ) -> None:
-        """Compute baseline models from ground truth and append to the results Dataset.
+        """Deprecated: use :meth:`add_baselines` instead."""
+        warnings.warn("add_baselines_to_results is deprecated, use add_baselines instead.", DeprecationWarning)
+        self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
 
-        This method computes two special baseline epochs that serve as upper bounds on
-        model performance. These are useful for evaluating how close the learned model is
-        to the best achievable:
-
-        - **Epoch -1 ("best")** — Receptive fields are fit via KDE to the *true* latent
-          positions ``Xt`` (rather than the decoded trajectory). This represents the best
-          possible KDE-based model given perfect position knowledge. The E-step is then
-          run using these fields to decode positions.
-        - **Epoch -2 ("exact")** — The exact ground truth receptive fields ``Ft`` are used
-          directly (if provided). This represents the best possible model given both perfect
-          fields and perfect decoding. Only computed if ``Ft`` is provided.
-
-        After calling this method, the baseline epochs are appended to ``self.results_``
-        and metrics like ``X_R2``, ``X_err``, and ``F_err`` become available across all
-        epochs (including baselines) for comparison.
-
-        Parameters
-        ----------
-        Xt : np.ndarray, shape (T, D)
-            Ground truth latent positions. Must have the same number of time bins as the
-            training data.
-        Ft : np.ndarray or None, optional
-            Ground truth receptive fields, shape ``(N_neurons, *spatial_dims)``. For example,
-            for 2D data with 100x100 bins, shape would be ``(N_neurons, 100, 100)``. These
-            are interpolated onto the model's environment grid. By default None.
-        Ft_coords_dict : dict or None, optional
-            Coordinate arrays for ``Ft``, mapping dimension names to bin centres. For example:
-            ``{"x": np.linspace(0, 1, 100), "y": np.linspace(0, 1, 100)}``. Required if
-            ``Ft`` is provided. By default None.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fitted yet.
-        ValueError
-            If ``Xt`` has a different number of time bins than the training data.
-
-        Examples
-        --------
-        >>> model.fit(Y, Xb, time, n_epochs=5)
-        >>> model.add_baselines_to_results(
-        ...     Xt=Xt,
-        ...     Ft=Ft,
-        ...     Ft_coords_dict={"x": xbins, "y": ybins},
-        ... )
-        >>> print(model.results_.X_R2)  # R² vs ground truth, per epoch
-        """
-        if not self.is_fitted_:
-            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+    def _apply_baselines_to_results(self) -> None:
+        """Process stored ground truth and compute baseline epochs."""
+        Xt = self._Xt_raw
         if Xt.shape[0] != self.T_:
             raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
 
         Xt_jax = jnp.array(Xt)
         self.Xt_ = Xt_jax
-        self.ground_truth_available_ = True
 
         # Store Xt in results
         self.results_ = xr.merge(
@@ -452,6 +477,8 @@ class SIMPL:
         )
 
         # Interpolate Ft onto environment grid if provided
+        Ft = self._Ft_raw
+        Ft_coords_dict = self._Ft_coords_dict_raw
         if Ft is not None and Ft_coords_dict is not None:
             Ft_da = xr.DataArray(
                 Ft,
@@ -504,6 +531,205 @@ class SIMPL:
             File path to save to (typically ending in ``.nc``).
         """
         save_results_to_netcdf(self.results_, path)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Plotting
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _check_fitted(self):
+        if not self.is_fitted_:
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+
+    def plot_fitting_summary(
+        self,
+        show_neurons: bool = True,
+        cmap: str | None = None,
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Two-panel summary: log-likelihood (left) and spatial information (right).
+
+        Parameters
+        ----------
+        show_neurons : bool
+            Show individual neuron dots for per-neuron metrics.
+        cmap : str
+            Colormap for epoch colouring.
+        **plot_kwargs
+            Forwarded to the main scatter calls.
+
+        Returns
+        -------
+        axes : np.ndarray of Axes, shape (2,)
+        """
+        from simpl.plotting import plot_fitting_summary
+
+        self._check_fitted()
+        return plot_fitting_summary(self.results_, show_neurons=show_neurons, cmap=cmap, **plot_kwargs)
+
+    def plot_latent_trajectory(
+        self,
+        time_range: tuple[float, float] | None = None,
+        epoch: int | tuple[int, ...] | None = None,
+        include_behaviour: bool = True,
+        include_ground_truth: bool = True,
+        cmap: str | None = None,
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Plot decoded latent trajectory (one subplot per spatial dimension).
+
+        Parameters
+        ----------
+        time_range : tuple, optional
+            ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+        epoch : int or tuple of ints, optional
+            Which epoch(s) to show.  A single int plots one epoch; a tuple
+            plots multiple.  Default: last non-negative epoch.
+        include_behaviour : bool
+            Show the behavioural initialisation (epoch 0) alongside.
+        include_ground_truth : bool
+            Show ``Xt`` as ``"k--"`` if present.
+        cmap : str
+            Colormap for epoch colouring.
+        **plot_kwargs
+            Forwarded to ``ax.plot``.
+
+        Returns
+        -------
+        axes : np.ndarray of Axes, shape (D,)
+        """
+        from simpl.plotting import plot_latent_trajectory
+
+        self._check_fitted()
+        return plot_latent_trajectory(
+            self.results_,
+            time_range=time_range,
+            epoch=epoch,
+            include_behaviour=include_behaviour,
+            include_ground_truth=include_ground_truth,
+            cmap=cmap,
+            **plot_kwargs,
+        )
+
+    def plot_receptive_fields(
+        self,
+        epoch: int | tuple[int, ...] | None = None,
+        neurons: list[int] | np.ndarray | None = None,
+        include_behaviour: bool = True,
+        include_baselines: bool = False,
+        ncols: int = 4,
+        cmap: str | None = None,
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Plot receptive fields for selected neurons.
+
+        Parameters
+        ----------
+        epoch : int or tuple of int, optional
+            Which epoch(s) to show.  ``None`` shows the first (0) and last
+            non-negative epochs.
+        neurons : array-like, optional
+            Subset of neuron indices.  Default: all neurons.
+        include_behaviour : bool
+            Show epoch-0 (behaviour) fields alongside.
+        include_baselines : bool
+            Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
+        ncols : int
+            Maximum number of neuron-columns in the grid.
+        cmap : str
+            Colormap for receptive field heatmaps.
+        **plot_kwargs
+            Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
+
+        Returns
+        -------
+        axes : np.ndarray of Axes
+        """
+        from simpl.plotting import plot_receptive_fields
+
+        self._check_fitted()
+        extent = getattr(self, "environment_", None)
+        if extent is not None:
+            extent = self.environment_.extent
+        return plot_receptive_fields(
+            self.results_,
+            extent=extent,
+            epoch=epoch,
+            neurons=neurons,
+            include_behaviour=include_behaviour,
+            include_baselines=include_baselines,
+            ncols=ncols,
+            cmap=cmap,
+            **plot_kwargs,
+        )
+
+    def plot_all_metrics(
+        self,
+        show_neurons: bool = True,
+        cmap: str | None = None,
+        ncols: int = 3,
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Auto-discover and plot all per-epoch metrics.
+
+        Parameters
+        ----------
+        show_neurons : bool
+            Show individual neuron dots for per-neuron metrics.
+        cmap : str
+            Colormap for epoch colouring.
+        ncols : int
+            Number of columns in the grid.
+        **plot_kwargs
+            Forwarded to line/scatter calls.
+
+        Returns
+        -------
+        axes : np.ndarray of Axes
+        """
+        from simpl.plotting import plot_all_metrics
+
+        self._check_fitted()
+        return plot_all_metrics(self.results_, show_neurons=show_neurons, cmap=cmap, ncols=ncols, **plot_kwargs)
+
+    def plot_prediction(
+        self,
+        Xb: np.ndarray | None = None,
+        Xt: np.ndarray | None = None,
+        time_range: tuple[float, float] | None = None,
+        cmap: str | None = None,
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Plot predicted trajectory from the most recent ``predict()`` call.
+
+        Parameters
+        ----------
+        Xb : np.ndarray, optional
+            Behavioural positions for the prediction window, shape ``(T, D)``.
+        Xt : np.ndarray, optional
+            Ground truth positions for the prediction window, shape ``(T, D)``.
+        time_range : tuple, optional
+            ``(t_start, t_end)`` in seconds.  Default: full prediction range.
+        cmap : str
+            Colormap for trajectory colouring.
+        **plot_kwargs
+            Forwarded to ``ax.plot``.
+
+        Returns
+        -------
+        axes : np.ndarray of Axes, shape (D,)
+        """
+        from simpl.plotting import plot_prediction
+
+        if not hasattr(self, "prediction_results_"):
+            raise RuntimeError("No prediction results. Call predict() first.")
+        return plot_prediction(
+            self.prediction_results_,
+            Xb=Xb,
+            Xt=Xt,
+            time_range=time_range,
+            cmap=cmap,
+            **plot_kwargs,
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Core algorithm
@@ -958,9 +1184,15 @@ class SIMPL:
         )
         self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
 
-        self.Xt_ = None
-        self.Ft_ = None
-        self.ground_truth_available_ = False
+        # Preserve ground truth if add_baselines was called before fit
+        if not getattr(self, "ground_truth_available_", False):
+            self.Xt_ = None
+            self.Ft_ = None
+            self.ground_truth_available_ = False
+        else:
+            # Xt_ will be set from raw data in _apply_baselines_to_results after fit
+            self.Xt_ = jnp.array(self._Xt_raw)
+            self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
 
         if verbose:
             self._print_data_summary()
