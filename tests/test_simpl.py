@@ -504,7 +504,7 @@ class TestSIMPLPredict:
 
 
 class TestSIMPLSaveFullHistory:
-    def test_FX_only_on_last_epoch_by_default(self, demo_data):
+    def test_FX_firstepoch_and_lastepoch_always_stored(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
         model = SIMPL()
@@ -514,10 +514,13 @@ class TestSIMPLSaveFullHistory:
             time=demo_data["time"][:N],
             n_epochs=2,
         )
-        # FX should be present without epoch dim (avoids NaN bloat)
-        assert "FX" in model.results_
-        assert "epoch" not in model.results_.FX.dims
-        assert model.results_.FX.dims == ("time", "neuron")
+        # FX_firstepoch and FX_lastepoch should always be present without epoch dim
+        assert "FX_firstepoch" in model.results_
+        assert "FX_lastepoch" in model.results_
+        assert model.results_.FX_firstepoch.dims == ("time", "neuron")
+        assert model.results_.FX_lastepoch.dims == ("time", "neuron")
+        # Per-epoch FX should NOT be stored by default
+        assert "FX" not in model.results_
 
     def test_save_full_history_stores_FX_all_epochs(self, demo_data):
         N = 1000
