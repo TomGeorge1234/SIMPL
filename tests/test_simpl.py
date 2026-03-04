@@ -386,10 +386,11 @@ class TestSIMPLAddBaselines:
             assert any("Exact place fields" in str(warning.message) for warning in w)
         assert -1 in model.results_.epoch.values
 
-    def test_requires_fitted(self):
+    def test_stores_before_fit(self):
         model = SIMPL()
-        with pytest.raises(RuntimeError, match="not been fitted"):
-            model.add_baselines_to_results(Xt=np.zeros((100, 2)))
+        model.add_baselines(Xt=np.zeros((100, 2)))
+        assert model.ground_truth_available_
+        assert model._Xt_raw is not None
 
 
 class TestSIMPLManifoldAlignment:
