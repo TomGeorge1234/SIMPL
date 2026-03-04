@@ -575,9 +575,11 @@ def plot_all_metrics(
                 if show_neurons:
                     jitter = np.random.default_rng(int(e)).uniform(-0.3, 0.3, size=len(v))
                     ax.scatter(e + jitter, v, color=c, alpha=0.15, s=5, linewidths=0)
-                mean_val = float(np.nanmean(v))
-                means.append(mean_val)
-                ax.scatter(e, mean_val, color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
+                if np.all(np.isnan(v)):
+                    means.append(np.nan)
+                else:
+                    means.append(float(np.nanmean(v)))
+                ax.scatter(e, means[-1], color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
             for j in range(len(epochs) - 1):
                 c = _epoch_color(epochs[j + 1], last_epoch, cmap)
                 ax.plot(epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
