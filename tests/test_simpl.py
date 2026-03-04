@@ -193,7 +193,7 @@ class TestSIMPLWithGroundTruth:
             time=demo_data["time"][:N],
             n_epochs=1,
         )
-        model.add_baselines_to_results(
+        model.add_baselines(
             Xt=demo_data["Xt"][:N],
             Ft=demo_data["Ft"][:N_neurons],
             Ft_coords_dict={"x": demo_data["x"], "y": demo_data["y"]},
@@ -358,7 +358,7 @@ class TestSIMPLAddBaselines:
 
     def test_populates_best_and_exact_epochs(self, demo_data):
         model, N, N_neurons = self._make_model(demo_data)
-        model.add_baselines_to_results(
+        model.add_baselines(
             Xt=demo_data["Xt"][:N],
             Ft=demo_data["Ft"][:N_neurons],
             Ft_coords_dict={"x": demo_data["x"], "y": demo_data["y"]},
@@ -368,7 +368,7 @@ class TestSIMPLAddBaselines:
 
     def test_baseline_results_have_metrics(self, demo_data):
         model, N, N_neurons = self._make_model(demo_data)
-        model.add_baselines_to_results(
+        model.add_baselines(
             Xt=demo_data["Xt"][:N],
             Ft=demo_data["Ft"][:N_neurons],
             Ft_coords_dict={"x": demo_data["x"], "y": demo_data["y"]},
@@ -382,7 +382,7 @@ class TestSIMPLAddBaselines:
         model, N, _ = self._make_model(demo_data)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            model.add_baselines_to_results(Xt=demo_data["Xt"][:N])
+            model.add_baselines(Xt=demo_data["Xt"][:N])
             assert any("Exact place fields" in str(warning.message) for warning in w)
         assert -1 in model.results_.epoch.values
 
