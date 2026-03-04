@@ -1,6 +1,7 @@
 """Tests for simpl.plotting functions."""
 
 import matplotlib
+import numpy as np
 import pytest
 
 matplotlib.use("Agg")  # non-interactive backend for CI
@@ -9,6 +10,7 @@ from simpl.plotting import (
     plot_all_metrics,
     plot_fitting_summary,
     plot_latent_trajectory,
+    plot_prediction,
     plot_receptive_fields,
 )
 from simpl.simpl import SIMPL
@@ -54,6 +56,13 @@ class TestPlotFittingSummary:
 
         plt.close("all")
 
+    def test_show_neurons_false(self, results):
+        axes = plot_fitting_summary(results, show_neurons=False)
+        assert len(axes) == 2
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
 
 class TestPlotLatentTrajectory:
     def test_returns_D_axes(self, results):
@@ -79,11 +88,25 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
+    def test_single_epoch_int(self, results):
+        axes = plot_latent_trajectory(results, epoch=1)
+        assert len(axes) == len(results.dim.values)
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+    def test_epoch_tuple(self, results):
+        axes = plot_latent_trajectory(results, epoch=(0, 1))
+        assert len(axes) == len(results.dim.values)
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
 
 class TestPlotReceptiveFields:
     def test_returns_axes_grid(self, results):
         axes = plot_receptive_fields(results, neurons=[0, 1])
-        assert axes.shape[0] == 1  # 2 neurons, ncols=8 -> 1 row
+        assert axes.shape[0] == 1  # 2 neurons, ncols=4 -> 1 row
         import matplotlib.pyplot as plt
 
         plt.close("all")
@@ -96,6 +119,7 @@ class TestPlotReceptiveFields:
 
         plt.close("all")
 
+    @pytest.mark.filterwarnings("ignore:Exact place fields not provided")
     def test_include_baselines_fallback_epoch_minus1(self, demo_data):
         """When Ft is absent but epoch -1 exists, should show 'Best' column from F.sel(epoch=-1)."""
         import matplotlib.pyplot as plt
@@ -116,7 +140,7 @@ class TestPlotReceptiveFields:
 
         # include_baselines=True should use the F.sel(epoch=-1) fallback
         axes = plot_receptive_fields(res, neurons=[0], include_baselines=True)
-        # 3 columns: Behaviour + Epoch 1 + Best
+        # 3 columns: Ep 0 + Ep 1 + Best
         assert axes.shape == (1, 3)
         plt.close("all")
 
@@ -127,6 +151,47 @@ class TestPlotReceptiveFields:
 
         plt.close("all")
 
+    def test_single_epoch_int(self, results):
+        """Single int epoch should show one epoch column per neuron."""
+        axes = plot_receptive_fields(results, neurons=[0], epoch=1)
+        # columns: Beh + Ep 1 = 2 (since epoch=1, include_behaviour adds Beh)
+        import matplotlib.pyplot as plt
+
+        assert axes.ndim == 2
+        plt.close("all")
+
+    def test_epoch_tuple(self, results):
+        """Tuple of epochs should show one column per epoch per neuron."""
+        axes = plot_receptive_fields(results, neurons=[0], epoch=(0, 1))
+        # columns: Ep 0 (behaviour) + Ep 1 = 2 (0 is in epochs, so no extra Beh col)
+        import matplotlib.pyplot as plt
+
+        assert axes.ndim == 2
+        plt.close("all")
+
+    def test_epoch_none_shows_first_and_last(self, results):
+        """Default epoch=None should show epoch 0 and last."""
+        axes = plot_receptive_fields(results, neurons=[0])
+        # epoch=None -> (0, 1), no extra Beh col since 0 in epochs -> 2 data cols
+        import matplotlib.pyplot as plt
+
+        assert axes.ndim == 2
+        plt.close("all")
+
+    def test_spacer_and_unused_axes_off(self, results):
+        """With multiple neuron groups, spacer and trailing axes should be turned off."""
+        axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, epoch=1)
+        # 2 neuron cols + 1 spacer = 5 total cols (2*2 data + 1 spacer), 2 rows
+        import matplotlib.pyplot as plt
+
+        # spacer column should be off
+        assert not axes[0, 2].axison  # spacer
+        # trailing unused axes on row 2 should be off
+        assert not axes[1, 2].axison
+        assert not axes[1, 3].axison
+        assert not axes[1, 4].axison
+        plt.close("all")
+
 
 class TestPlotAllMetrics:
     def test_returns_axes(self, results):
@@ -134,6 +199,82 @@ class TestPlotAllMetrics:
         assert axes.size > 0
         import matplotlib.pyplot as plt
 
+        plt.close("all")
+
+    def test_show_neurons_false(self, results):
+        axes = plot_all_metrics(results, show_neurons=False)
+        assert axes.size > 0
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+    def test_custom_ncols(self, results):
+        axes = plot_all_metrics(results, ncols=5)
+        assert axes.shape[1] == 5
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+
+class TestPlotPrediction:
+    def test_returns_D_axes(self, fitted_model, demo_data):
+        import matplotlib.pyplot as plt
+
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        fitted_model.predict(Y_test)
+        axes = plot_prediction(fitted_model.prediction_results_)
+        assert len(axes) == len(fitted_model.results_.dim.values)
+        plt.close("all")
+
+    def test_with_xb_and_xt(self, fitted_model, demo_data):
+        import matplotlib.pyplot as plt
+
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        Xb_test = demo_data["Xb"][-N_test:]
+        Xt_test = demo_data["Xb"][-N_test:]  # use Xb as fake Xt
+        fitted_model.predict(Y_test)
+        axes = plot_prediction(fitted_model.prediction_results_, Xb=Xb_test, Xt=Xt_test)
+        assert len(axes) == len(fitted_model.results_.dim.values)
+        plt.close("all")
+
+    def test_shape_mismatch_raises(self, fitted_model, demo_data):
+        import matplotlib.pyplot as plt
+
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        fitted_model.predict(Y_test)
+        # Xb with wrong length should raise
+        with pytest.raises(AssertionError, match="Xb length"):
+            plot_prediction(fitted_model.prediction_results_, Xb=np.zeros((N_test + 10, 2)))
+        plt.close("all")
+
+    def test_with_time_range(self, fitted_model, demo_data):
+        import matplotlib.pyplot as plt
+
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        fitted_model.predict(Y_test)
+        pred = fitted_model.prediction_results_
+        t0 = float(pred.time.values[0])
+        axes = plot_prediction(pred, time_range=(t0, t0 + 5))
+        assert len(axes) == len(fitted_model.results_.dim.values)
+        plt.close("all")
+
+    def test_wrapper_unfitted_raises(self):
+        model = SIMPL()
+        with pytest.raises(RuntimeError, match="No prediction results"):
+            model.plot_prediction()
+
+    def test_wrapper_returns_axes(self, fitted_model, demo_data):
+        import matplotlib.pyplot as plt
+
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        fitted_model.predict(Y_test)
+        axes = fitted_model.plot_prediction()
+        assert len(axes) == len(fitted_model.results_.dim.values)
         plt.close("all")
 
 
