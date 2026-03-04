@@ -222,9 +222,9 @@ class SIMPL:
             continues on the original data. Useful when the model has not yet converged.
             By default False.
         save_full_history : bool, optional
-            Controls storage of large per-timestep arrays. When False (the default),
-            ``FX`` is only stored for the final epoch and ``logPYXF_maps`` is not
-            stored at all. When True, ``FX`` is stored for every epoch and
+            Controls storage of large per-timestep arrays. When False
+            (the default), the per-epoch firing rate trajectories ``FX`` are not stored and ``logPYXF_maps`` is
+            not stored at all. When True, ``FX`` is stored for every epoch and
             ``logPYXF_maps`` is stored for the last epoch only (due to its huge size).
             Metrics, receptive fields, decoded trajectories, and Kalman outputs are
             unaffected and stored for every epoch regardless. By default False.
@@ -261,6 +261,9 @@ class SIMPL:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
             self._fit_N_epochs(n_epochs, verbose=verbose)
+            self.results_["FX_lastepoch"] = dict_to_dataset(
+                {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+            )["FX_lastepoch"]
             self.X_ = self.E_["X"]
             self.F_ = self.M_["F"]
             return self
@@ -273,12 +276,13 @@ class SIMPL:
         # ── Train for n_epochs ──
         self._fit_N_epochs(n_epochs, verbose=verbose)
 
-        # ── Attach FX for the final epoch when not saving full history ──
-        # Store without epoch dim so xarray doesn't NaN-fill all other epochs.
-        if not self.save_full_history_:
-            self.results_["FX"] = dict_to_dataset(
-                {"FX": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-            )["FX"]
+        # ── Attach FX_firstepoch and FX_lastepoch (always, without epoch dim) ──
+        self.results_["FX_firstepoch"] = dict_to_dataset(
+            {"FX_firstepoch": self.FX_firstepoch_}, self.variable_info_dict_, self.coordinates_dict_
+        )["FX_firstepoch"]
+        self.results_["FX_lastepoch"] = dict_to_dataset(
+            {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+        )["FX_lastepoch"]
 
         # ── Attach logPYXF_maps for the final epoch only (too large to store per epoch) ──
         if self.save_full_history_:
@@ -806,6 +810,7 @@ class SIMPL:
         _timer = threading.Thread(target=_delayed_message, daemon=True)
         _timer.start()
         self._fit_epoch()
+        self.FX_firstepoch_ = self.M_["FX"]
         _epoch0_done.set()
 
         if verbose:
