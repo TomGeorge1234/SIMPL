@@ -12,3 +12,4 @@ venv/
 .pytest_cache/
 .coverage
 .vscode
+uv.lock
