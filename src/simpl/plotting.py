@@ -17,36 +17,8 @@ import xarray as xr
 EPOCH_CMAP = "cividis"
 FIELD_CMAP = "inferno"
 
-# Variables that are *not* metrics (skip in plot_all_metrics)
-_DATA_VARS = {
-    "X",
-    "F",
-    "Y",
-    "Xb",
-    "Xt",
-    "Ft",
-    "FX",
-    "FX_firstepoch",
-    "FX_lastepoch",
-    "PX",
-    "spike_mask",
-    "mu_l",
-    "sigma_l",
-    "mode_l",
-    "mu_f",
-    "sigma_f",
-    "mu_s",
-    "sigma_s",
-    "coef",
-    "intercept",
-    "logPYXF_maps",
-    "F_odd_minutes",
-    "F_even_minutes",
-    "place_field_outlines",
-    "place_field_position",
-    "place_field_covariance",
-    "trajectory_change",
-}
+# ── Default figure width (inches) ───────────────────────────────────────────
+FIG_WIDTH = 10
 
 
 # ── Low-level helpers ────────────────────────────────────────────────────────
@@ -118,7 +90,7 @@ def plot_fitting_summary(
     epochs = _non_negative_epochs(results)
     last_epoch = int(epochs[-1])
 
-    fig, axes = plt.subplots(1, 2, figsize=(7, 3))
+    fig, axes = plt.subplots(1, 2, figsize=(FIG_WIDTH * 0.7, FIG_WIDTH * 0.3))
     ax_ll, ax_si = axes
 
     ll_train, ll_test, si_means = [], [], []
@@ -210,7 +182,7 @@ def plot_latent_trajectory(
     tslice = slice(*time_range)
     t = results.time.sel(time=tslice).values
 
-    fig, axes = plt.subplots(D, 1, figsize=(10, 2 * D), sharex=True, squeeze=False)
+    fig, axes = plt.subplots(D, 1, figsize=(FIG_WIDTH, FIG_WIDTH * 0.2 * D), sharex=True, squeeze=False)
     axes = axes[:, 0]
 
     last_epoch = _last_non_negative_epoch(results)
@@ -292,7 +264,7 @@ def plot_prediction(
     t = prediction_results.time.sel(time=tslice).values
     X_pred = prediction_results.mu_s.sel(time=tslice).values
 
-    fig, axes = plt.subplots(D, 1, figsize=(10, 2 * D), sharex=True, squeeze=False)
+    fig, axes = plt.subplots(D, 1, figsize=(FIG_WIDTH, FIG_WIDTH * 0.2 * D), sharex=True, squeeze=False)
     axes = axes[:, 0]
 
     for i, d in enumerate(dim_names):
@@ -322,11 +294,11 @@ def plot_prediction(
 def plot_receptive_fields(
     results: xr.Dataset,
     extent: tuple | None = None,
-    epoch: int | None = None,
+    epoch: int | tuple[int, ...] | None = None,
     neurons: list[int] | np.ndarray | None = None,
     include_behaviour: bool = True,
     include_baselines: bool = False,
-    ncols: int = 8,
+    ncols: int = 4,
     cmap: str | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
@@ -337,12 +309,15 @@ def plot_receptive_fields(
     results : xr.Dataset
     extent : tuple, optional
         Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``.  Used for 2-D imshow.
-    epoch : int, optional
-        Which epoch to show.  Default: last non-negative epoch.
+    epoch : int or tuple of int, optional
+        Which epoch(s) to show.  ``None`` shows the first (0) and last
+        non-negative epochs.  An ``int`` shows a single epoch; a ``tuple``
+        shows multiple.
     neurons : array-like, optional
         Subset of neuron indices.  Default: all neurons.
     include_behaviour : bool
-        Show epoch-0 (behaviour) fields alongside.
+        Show epoch-0 (behaviour) fields alongside.  Only adds a column when
+        epoch 0 is not already in the requested epochs.
     include_baselines : bool
         Show ground-truth fields (``Ft``) if present.
     ncols : int
@@ -363,8 +338,15 @@ def plot_receptive_fields(
     if D > 2:
         raise ValueError(f"plot_receptive_fields only supports 1-D and 2-D environments, got {D}-D.")
 
+    # Resolve epoch(s) to a tuple
     if epoch is None:
-        epoch = _last_non_negative_epoch(results)
+        last = _last_non_negative_epoch(results)
+        epochs = (0, last) if last != 0 else (0,)
+    elif isinstance(epoch, int):
+        epochs = (epoch,)
+    else:
+        epochs = tuple(epoch)
+
     if neurons is None:
         neurons = results.neuron.values
     neurons = np.asarray(neurons)
@@ -383,30 +365,49 @@ def plot_receptive_fields(
             has_baselines = True
             baseline_label = "Best"
 
-    # Determine columns per neuron
-    n_cols_per_neuron = 1
-    col_labels = [f"Epoch {epoch}"]
-    if include_behaviour and epoch != 0:
-        n_cols_per_neuron += 1
-        col_labels = ["Behaviour"] + col_labels
+    # Build column labels per neuron
+    col_labels = []
+    # Behaviour column if requested and not already in epochs
+    show_beh_col = include_behaviour and 0 not in epochs
+    if show_beh_col:
+        col_labels.append("Beh")
+    for ep in epochs:
+        col_labels.append(f"Ep {ep}" if ep != 0 else "Ep 0 (behaviour)")
     if has_baselines:
-        n_cols_per_neuron += 1
         col_labels.append(baseline_label)
+    n_cols_per_neuron = len(col_labels)
 
-    # Layout: neurons along rows (grouped by ncols neuron-groups)
+    # Layout: neurons along rows, with a spacer column between neuron groups
     n_neurons = len(neurons)
     n_neuron_cols = min(n_neurons, ncols)
     n_neuron_rows = int(np.ceil(n_neurons / n_neuron_cols))
 
-    total_cols = n_neuron_cols * n_cols_per_neuron
+    # Each neuron group gets n_cols_per_neuron + 1 spacer, except the last group
+    total_cols = n_neuron_cols * n_cols_per_neuron + (n_neuron_cols - 1)
     total_rows = n_neuron_rows
+
+    # Width ratios: data columns are 1, spacer columns are 0.3
+    width_ratios = []
+    for g in range(n_neuron_cols):
+        width_ratios.extend([1] * n_cols_per_neuron)
+        if g < n_neuron_cols - 1:
+            width_ratios.append(0.3)
 
     fig, axes = plt.subplots(
         total_rows,
         total_cols,
-        figsize=(1.8 * total_cols, 1.8 * total_rows),
+        figsize=(FIG_WIDTH / 6 * n_neuron_cols * n_cols_per_neuron, FIG_WIDTH / 6 * total_rows),
         squeeze=False,
+        gridspec_kw={"width_ratios": width_ratios},
     )
+
+    # Pre-compute the starting column index for each neuron group (skipping spacers)
+    group_col_starts = []
+    for g in range(n_neuron_cols):
+        group_col_starts.append(g * (n_cols_per_neuron + 1))
+
+    # Track which axes are used for plotting
+    used_axes = set()
 
     # build extent for imshow
     if D == 2 and extent is not None:
@@ -427,12 +428,15 @@ def plot_receptive_fields(
 
     for idx, n in enumerate(neurons):
         row = idx // n_neuron_cols
-        col_base = (idx % n_neuron_cols) * n_cols_per_neuron
+        group = idx % n_neuron_cols
+        col_base = group_col_starts[group]
 
         col_offset = 0
-        # behaviour column
-        if include_behaviour and epoch != 0:
+
+        # behaviour column (only when 0 not in epochs)
+        if show_beh_col:
             ax = axes[row, col_base + col_offset]
+            used_axes.add((row, col_base + col_offset))
             F_beh = results.F.sel(epoch=0, neuron=n)
             if D == 2:
                 ax.imshow(F_beh.values.T, **imkw)
@@ -442,20 +446,24 @@ def plot_receptive_fields(
                 ax.set_title("Beh", fontsize=8)
             col_offset += 1
 
-        # main epoch column
-        ax = axes[row, col_base + col_offset]
-        F_ep = results.F.sel(epoch=epoch, neuron=n)
-        if D == 2:
-            ax.imshow(F_ep.values.T, **imkw)
-        else:
-            ax.plot(results[dim_names[0]].values, F_ep.values, **plot_kwargs)
-        if row == 0:
-            ax.set_title(f"Ep {epoch}", fontsize=8)
-        col_offset += 1
+        # epoch columns
+        for ep in epochs:
+            ax = axes[row, col_base + col_offset]
+            used_axes.add((row, col_base + col_offset))
+            F_ep = results.F.sel(epoch=ep, neuron=n)
+            if D == 2:
+                ax.imshow(F_ep.values.T, **imkw)
+            else:
+                ax.plot(results[dim_names[0]].values, F_ep.values, **plot_kwargs)
+            if row == 0:
+                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behaviour)"
+                ax.set_title(label, fontsize=8)
+            col_offset += 1
 
         # baseline column (Ft if available, else F at epoch -1)
         if has_baselines:
             ax = axes[row, col_base + col_offset]
+            used_axes.add((row, col_base + col_offset))
             if "Ft" in results:
                 F_base = results.Ft.sel(neuron=n)
             else:
@@ -470,10 +478,15 @@ def plot_receptive_fields(
         # label
         axes[row, col_base].set_ylabel(f"N{n}", fontsize=7, rotation=0, labelpad=15)
 
-    # clean up unused axes
-    for ax in axes.flat:
-        ax.set_xticks([])
-        ax.set_yticks([])
+    # Clean up: remove ticks from used axes, turn off unused/spacer axes entirely
+    for r in range(total_rows):
+        for c in range(total_cols):
+            ax = axes[r, c]
+            if (r, c) in used_axes:
+                ax.set_xticks([])
+                ax.set_yticks([])
+            else:
+                ax.axis("off")
 
     fig.tight_layout()
     return axes
@@ -510,17 +523,14 @@ def plot_all_metrics(
     last_epoch = int(epochs[-1])
     baselines = _baseline_epochs(results)
 
-    # discover metric variables
+    # discover metric variables: anything with epoch dim and only neuron/place_field remaining
     metric_names = []
     for var_name in results.data_vars:
-        if var_name in _DATA_VARS:
-            continue
         da = results[var_name]
         if "epoch" not in da.dims:
             continue
-        other_dims = [d for d in da.dims if d != "epoch"]
-        # accept scalar, per-neuron, or per-neuron-per-place_field
-        if set(other_dims) <= {"neuron", "place_field"}:
+        other_dims = set(da.dims) - {"epoch"}
+        if other_dims <= {"neuron", "place_field"}:
             metric_names.append(var_name)
 
     n_metrics = len(metric_names)
@@ -529,7 +539,7 @@ def plot_all_metrics(
         return np.array([])
 
     nrows = int(np.ceil(n_metrics / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 3 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(FIG_WIDTH / 3 * ncols, FIG_WIDTH / 4 * nrows), squeeze=False)
 
     for i, var_name in enumerate(metric_names):
         ax = axes.flat[i]
