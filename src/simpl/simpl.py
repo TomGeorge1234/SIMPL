@@ -378,7 +378,6 @@ class SIMPL:
         pred_coords = {**self.coordinates_dict_, "time": pred_time}
         self.prediction_results_ = dict_to_dataset(E, self.variable_info_dict_, pred_coords)
         self.prediction_results_.attrs = self._build_dataset_attrs(
-            self.environment_,
             trial_boundaries=trial_boundaries if trial_boundaries is not None else [0],
             trial_slices=trial_slices,
         )
@@ -1175,7 +1174,7 @@ class SIMPL:
         # ── Initialise empty results datasets ──
         self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
         self.results_.attrs = self._build_dataset_attrs(
-            self.environment_, trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
+            trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
         )
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
@@ -1466,15 +1465,23 @@ class SIMPL:
         trial_slices.append(slice(trial_boundaries[-1], T))
         return trial_boundaries, trial_slices
 
-    @staticmethod
-    def _build_dataset_attrs(environment, trial_boundaries, trial_slices) -> dict:
+    def _build_dataset_attrs(self, trial_boundaries, trial_slices) -> dict:
         """Build the standard attrs dict for results datasets."""
         return {
-            "env_extent": environment.extent,
-            "env_pad": environment.pad,
-            "env_bin_size": environment.bin_size,
+            "env_extent": self.environment_.extent,
+            "env_pad": self.environment_.pad,
+            "bin_size": self.environment_.bin_size,
             "trial_boundaries": trial_boundaries,
             "trial_slices": trial_slices,
+            "kernel_bandwidth": self.kernel_bandwidth,
+            "speed_prior": self.speed_prior,
+            "use_kalman_smoothing": int(self.use_kalman_smoothing),
+            "behaviour_prior": np.nan if self.behaviour_prior is None else self.behaviour_prior,
+            "is_circular": int(self.is_circular),
+            "environment_provided": int(self._environment_override is not None),
+            "test_frac": self.test_frac,
+            "speckle_block_size_seconds": self.speckle_block_size_seconds,
+            "random_seed": self.random_seed,
         }
 
 
