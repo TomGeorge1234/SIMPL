@@ -778,9 +778,9 @@ class SIMPL:
 
         if source is not None:
             if self.is_circular:
-                angle, _ = cca_angular(source, target)
-                E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
-                align_dict = {"angle": angle}
+                intercept, _ = cca_angular(source, target)
+                E["X"] = _wrap_minuspi_pi(E["mu_s"] + intercept)
+                align_dict = {"intercept": intercept}
             else:
                 coef, intercept = cca(source, target)
                 E["X"] = E["mu_s"] @ coef.T + intercept
