@@ -259,18 +259,18 @@ class TestSIMPLSaveLoadResults:
             n_epochs=1,
         )
 
-        assert model.results_.attrs["init_kernel_bandwidth"] == 0.03
-        assert model.results_.attrs["init_speed_prior"] == 0.2
-        assert model.results_.attrs["init_use_kalman_smoothing"] == 0
-        assert model.results_.attrs["init_behaviour_prior"] == 0.4
-        assert model.results_.attrs["init_is_circular"] == 0
-        assert model.results_.attrs["init_bin_size"] == 0.05
-        assert model.results_.attrs["init_env_pad"] == 0.0
-        np.testing.assert_allclose(model.results_.attrs["init_env_lims"], np.array([0.0, 0.0, 1.0, 1.0]))
-        assert model.results_.attrs["init_environment_provided"] == 0
-        assert model.results_.attrs["init_test_frac"] == 0.2
-        assert model.results_.attrs["init_speckle_block_size_seconds"] == 2.0
-        assert model.results_.attrs["init_random_seed"] == 7
+        assert model.results_.attrs["kernel_bandwidth"] == 0.03
+        assert model.results_.attrs["speed_prior"] == 0.2
+        assert model.results_.attrs["use_kalman_smoothing"] == 0
+        assert model.results_.attrs["behaviour_prior"] == 0.4
+        assert model.results_.attrs["is_circular"] == 0
+        assert model.results_.attrs["bin_size"] == 0.05
+        assert model.results_.attrs["env_pad"] == 0.0
+        np.testing.assert_allclose(model.results_.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
+        assert model.results_.attrs["environment_provided"] == 0
+        assert model.results_.attrs["test_frac"] == 0.2
+        assert model.results_.attrs["speckle_block_size_seconds"] == 2.0
+        assert model.results_.attrs["random_seed"] == 7
 
         path = str(tmp_path / "test_results.nc")
         model.save_results(path)
@@ -278,9 +278,9 @@ class TestSIMPLSaveLoadResults:
         assert "Y" in loaded
         assert "F" in loaded
         assert loaded.F.shape == model.results_.F.shape
-        assert loaded.attrs["init_kernel_bandwidth"] == 0.03
-        assert loaded.attrs["init_use_kalman_smoothing"] == 0
-        np.testing.assert_allclose(loaded.attrs["init_env_lims"], np.array([0.0, 0.0, 1.0, 1.0]))
+        assert loaded.attrs["kernel_bandwidth"] == 0.03
+        assert loaded.attrs["use_kalman_smoothing"] == 0
+        np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
 
 
 class TestSIMPLInterpolateFiringRates:
