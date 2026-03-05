@@ -257,6 +257,9 @@ class SIMPL:
         """
         self.save_full_history_ = save_full_history
 
+        if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
+            Xb = Xb[:, np.newaxis]
+
         if resume:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
