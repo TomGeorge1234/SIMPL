@@ -14,12 +14,15 @@ from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
+    _wrap_minuspi_pi,
     analyse_place_fields,
     calculate_spatial_information,
     cca,
+    cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
+    get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
 )
@@ -165,7 +168,7 @@ class SIMPL:
         time: np.ndarray,
         n_epochs: int = 5,
         trial_boundaries: np.ndarray | None = None,
-        align_to_behaviour: bool = True,
+        align_to_behaviour: bool | str = "trajectory",
         resume: bool = False,
         save_full_history: bool = False,
         verbose: bool = True,
@@ -211,11 +214,17 @@ class SIMPL:
             element must be 0. The Kalman filter runs independently within each trial to
             prevent smoothing across trial boundaries (e.g. between separate recording
             sessions). If None, all data is treated as a single trial. By default None.
-        align_to_behaviour : bool, optional
-            Whether to linearly align (via CCA) the decoded latent positions to the
-            behavioural trajectory ``Xb`` after each E-step. This keeps the latent space in
-            a coordinate system consistent with the behaviour, which is important for
-            interpretable receptive fields. By default True.
+        align_to_behaviour : bool or str, optional
+            How to linearly align (via CCA) the decoded latent positions to the behavioural
+            coordinate system after each E-step. Options:
+
+            - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
+              to ``Xb``.
+            - ``"fields"`` — align based on peak positions of receptive fields. More robust
+              than trajectory alignment, especially in 1D where the latent position
+              distribution can be bimodal.
+            - ``True`` — alias for ``"trajectory"``.
+            - ``False`` — no alignment.
         resume : bool, optional
             If True, continue training from the current state without re-initialising. The
             ``Y``, ``Xb``, and ``time`` arguments are ignored when resuming — training
@@ -759,10 +768,23 @@ class SIMPL:
 
         # Manifold alignment (fit-time only)
         align_dict = {}
-        if self.Xalign_ is not None:
-            coef, intercept = cca(E["mu_s"], self.Xalign_)
-            E["X"] = E["mu_s"] @ coef.T + intercept
-            align_dict = {"coef": coef, "intercept": intercept}
+        if self.align_mode_ == "fields":
+            current_peaks = get_field_peaks(F, self.xF_)
+            source, target = current_peaks, self.Falign_peaks_
+        elif self.align_mode_ == "trajectory":
+            source, target = E["mu_s"], self.Xalign_
+        else:
+            source, target = None, None
+
+        if source is not None:
+            if self.is_circular:
+                angle, _ = cca_angular(source, target)
+                E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
+                align_dict = {"angle": angle}
+            else:
+                coef, intercept = cca(source, target)
+                E["X"] = E["mu_s"] @ coef.T + intercept
+                align_dict = {"coef": coef, "intercept": intercept}
         else:
             E["X"] = E["mu_s"]
 
@@ -1036,6 +1058,8 @@ class SIMPL:
         _timer.start()
         self._fit_epoch()
         self.FX_firstepoch_ = self.M_["FX"]
+        if self.align_mode_ == "fields":
+            self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
         _epoch0_done.set()
 
         if verbose:
@@ -1155,7 +1179,14 @@ class SIMPL:
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_
 
-        self.Xalign_ = self.Xb_ if align_to_behaviour else None
+        if align_to_behaviour is True:
+            align_to_behaviour = "trajectory"
+        if align_to_behaviour and align_to_behaviour not in ("trajectory", "fields"):
+            raise ValueError(
+                f"align_to_behaviour must be True, False, 'trajectory', or 'fields', got {align_to_behaviour!r}"
+            )
+        self.align_mode_ = align_to_behaviour if align_to_behaviour else None
+        self.Xalign_ = self.Xb_ if self.align_mode_ else None
         self._kde = kde_angular if self.is_circular else kde
 
         self.lastF_, self.lastX_ = None, None
