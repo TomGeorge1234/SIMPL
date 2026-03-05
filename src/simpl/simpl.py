@@ -942,7 +942,8 @@ class SIMPL:
 
         # ── Initialise empty results datasets ──
         self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
-        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
+        self.results_.attrs = self._build_dataset_attrs(
+            trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
         )
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
