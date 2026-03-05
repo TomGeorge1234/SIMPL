@@ -243,7 +243,7 @@ class TestSIMPLSaveLoadResults:
             kernel_bandwidth=0.03,
             speed_prior=0.2,
             use_kalman_smoothing=False,
-            behaviour_prior=0.4,
+            behavior_prior=0.4,
             is_circular=False,
             bin_size=0.05,
             env_pad=0.0,
@@ -262,7 +262,7 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["kernel_bandwidth"] == 0.03
         assert model.results_.attrs["speed_prior"] == 0.2
         assert model.results_.attrs["use_kalman_smoothing"] == 0
-        assert model.results_.attrs["behaviour_prior"] == 0.4
+        assert model.results_.attrs["behavior_prior"] == 0.4
         assert model.results_.attrs["is_circular"] == 0
         assert model.results_.attrs["bin_size"] == 0.05
         assert model.results_.attrs["env_pad"] == 0.0
@@ -422,7 +422,7 @@ class TestSIMPLAddBaselines:
 
 
 class TestSIMPLManifoldAlignment:
-    def _make_model(self, demo_data, align_to_behaviour=True):
+    def _make_model(self, demo_data, align_to_behavior=True):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
         model = SIMPL()
@@ -431,7 +431,7 @@ class TestSIMPLManifoldAlignment:
             Xb=demo_data["Xb"][:N],
             time=demo_data["time"][:N],
             n_epochs=1,
-            align_to_behaviour=align_to_behaviour,
+            align_to_behavior=align_to_behavior,
         )
         return model
 
@@ -443,25 +443,25 @@ class TestSIMPLManifoldAlignment:
         assert model.epoch_ >= 1
         assert "X" in model.E_
 
-    def test_align_to_behaviour(self, demo_data):
-        model = self._make_model(demo_data, align_to_behaviour=True)
+    def test_align_to_behavior(self, demo_data):
+        model = self._make_model(demo_data, align_to_behavior=True)
         assert model.Xalign_ is not None
         assert "X" in model.E_
 
     def test_no_alignment(self, demo_data):
-        model = self._make_model(demo_data, align_to_behaviour=False)
+        model = self._make_model(demo_data, align_to_behavior=False)
         assert model.Xalign_ is None
         assert "X" in model.E_
 
     def test_align_trajectory_mode(self, demo_data):
-        model = self._make_model(demo_data, align_to_behaviour="trajectory")
+        model = self._make_model(demo_data, align_to_behavior="trajectory")
         assert model.align_mode_ == "trajectory"
         assert model.Xalign_ is not None
         assert "coef" in model.E_
         assert "intercept" in model.E_
 
     def test_align_fields_mode(self, demo_data):
-        model = self._make_model(demo_data, align_to_behaviour="fields")
+        model = self._make_model(demo_data, align_to_behavior="fields")
         assert model.align_mode_ == "fields"
         assert hasattr(model, "Falign_peaks_")
         assert model.Falign_peaks_.shape == (model.N_neurons_, model.D_)
@@ -469,8 +469,8 @@ class TestSIMPLManifoldAlignment:
         assert "intercept" in model.E_
 
     def test_align_invalid_mode_raises(self, demo_data):
-        with pytest.raises(ValueError, match="align_to_behaviour"):
-            self._make_model(demo_data, align_to_behaviour="invalid")
+        with pytest.raises(ValueError, match="align_to_behavior"):
+            self._make_model(demo_data, align_to_behavior="invalid")
 
     def test_align_angular(self):
         """Field-based angular alignment uses rotation, not CCA."""
@@ -484,7 +484,7 @@ class TestSIMPLManifoldAlignment:
         Y = rng.poisson(rates * 0.02)
 
         model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
-        model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="fields")
+        model.fit(Y, Xb, time, n_epochs=1, align_to_behavior="fields")
         assert model.align_mode_ == "fields"
         assert "intercept" in model.E_
         # X should be wrapped to [-pi, pi)
@@ -502,7 +502,7 @@ class TestSIMPLManifoldAlignment:
         Y = rng.poisson(rates * 0.02)
 
         model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
-        model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="trajectory")
+        model.fit(Y, Xb, time, n_epochs=1, align_to_behavior="trajectory")
         assert model.align_mode_ == "trajectory"
         assert "intercept" in model.E_
         assert "coef" not in model.E_

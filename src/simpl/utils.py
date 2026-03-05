@@ -429,7 +429,7 @@ def coarsen_dt(
     Y : np.ndarray, shape (T, N_neurons)
         Spike counts.
     Xb : np.ndarray, shape (T, D)
-        Behavioural positions.
+        Behavioral positions.
     time : np.ndarray, shape (T,)
         Time stamps.
     dt_multiplier : int
@@ -442,7 +442,7 @@ def coarsen_dt(
     Y_coarse : np.ndarray
         Coarsened spike counts (summed).
     Xb_coarse : np.ndarray
-        Coarsened behavioural positions (averaged).
+        Coarsened behavioral positions (averaged).
     time_coarse : np.ndarray
         Coarsened time stamps (averaged).
     Xt_coarse : np.ndarray (only if Xt was provided)

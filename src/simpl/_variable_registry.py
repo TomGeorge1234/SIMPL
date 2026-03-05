@@ -88,9 +88,9 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 "The latent positions of the agent at each "
                 "time step. This is (typically) the smoothed "
                 "output of the Kalman filter, scaled to "
-                "correlate maximally with behaviour "
+                "correlate maximally with behavior "
                 "(X <-- mu_s, X <-- X @ coef.T + intercept). "
-                "For epoch 0, X == the behaviour."
+                "For epoch 0, X == the behavior."
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position",
@@ -164,17 +164,17 @@ def build_variable_info_dict(dim: list[str]) -> dict:
         },
         # Ground truth data variables
         "Xb": {
-            "name": "Position (behaviour)",
+            "name": "Position (behavior)",
             "description": (
                 "The position of the agent (i.e. not "
                 'necessarily the "true" latent position which '
                 "generated the spikes) at each time step. "
-                "This is the behaviour of the agent and acts "
+                "This is the behavior of the agent and acts "
                 "as the starting conditions for the algorithm "
                 "X[epoch=0] == Xb."
             ),
             "dims": ["time", "dim"],
-            "axis_title": "Position (behaviour)",
+            "axis_title": "Position (behavior)",
             "formula": r"$x_{\textrm{beh}}(t)$",
         },
         "Xt": {
@@ -268,7 +268,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "description": (
                 "The linear scaling matrix coefficients "
                 "applied, wlog, to the latent positions to "
-                "maximally correlate it with the behaviour."
+                "maximally correlate it with the behavior."
             ),
             "dims": ["dim", "dim_"],
             "axis title": "Linear scaling coefficients",
@@ -279,7 +279,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "description": (
                 "The linear scaling intercept vector applied, "
                 "wlog, to the latent positions to maximally "
-                "correlate with the behaviour."
+                "correlate with the behavior."
             ),
             "dims": ["dim"],
             "axis title": "Linear scaling intercept",
