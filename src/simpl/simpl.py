@@ -1105,6 +1105,8 @@ class SIMPL:
     def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behaviour, verbose) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
+        if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
+            Xb = Xb[:, np.newaxis]
         if Y.shape[0] != Xb.shape[0]:
             raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
         if Y.shape[0] != len(time):
