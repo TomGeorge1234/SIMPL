@@ -9,7 +9,7 @@ class Environment:
     Key attributes are
     - lims: the limits of the environment, a tuple of two tuples ((min_dim1, ..., min_dimD),(max_dim1, ..., max_dimD))
     - extent : like lims but more matplotlib friendly, (min_dim1, max_dim1, min_dim2, max_dim2, ...)
-    - pad : how much the environment is padded, in m, outside the bounds of the behaviour
+    - pad : how much the environment is padded, in m, outside the bounds of the behavior
     - bin_size: the size of the bins in the environment
     - D: the dimensionality of the environment
     - dim : the names of the dimensions of the environment. Originating from the
@@ -56,7 +56,7 @@ class Environment:
     X : np.ndarray (T, D)
         A sample of the latent variable, used to scale how big the environment is so it fits the data.
     pad : float, optional
-        How much the environment is padded outside the bounds of the behaviour. Default is 0.1 m.
+        How much the environment is padded outside the bounds of the behavior. Default is 0.1 m.
     bin_size : float, optional
         The size of the bins in the environment. Default is 0.02 m.
     force_lims : tuple, optional
