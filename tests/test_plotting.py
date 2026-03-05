@@ -81,8 +81,8 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
-    def test_no_behaviour(self, results):
-        axes = plot_latent_trajectory(results, include_behaviour=False)
+    def test_no_behavior(self, results):
+        axes = plot_latent_trajectory(results, include_behavior=False)
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
@@ -144,8 +144,8 @@ class TestPlotReceptiveFields:
         assert axes.shape == (1, 3)
         plt.close("all")
 
-    def test_single_neuron_no_behaviour(self, results):
-        axes = plot_receptive_fields(results, neurons=[0], epoch=1, include_behaviour=False)
+    def test_single_neuron_no_behavior(self, results):
+        axes = plot_receptive_fields(results, neurons=[0], epoch=1, include_behavior=False)
         assert axes.shape == (1, 1)
         import matplotlib.pyplot as plt
 
@@ -154,7 +154,7 @@ class TestPlotReceptiveFields:
     def test_single_epoch_int(self, results):
         """Single int epoch should show one epoch column per neuron."""
         axes = plot_receptive_fields(results, neurons=[0], epoch=1)
-        # columns: Beh + Ep 1 = 2 (since epoch=1, include_behaviour adds Beh)
+        # columns: Beh + Ep 1 = 2 (since epoch=1, include_behavior adds Beh)
         import matplotlib.pyplot as plt
 
         assert axes.ndim == 2
@@ -163,7 +163,7 @@ class TestPlotReceptiveFields:
     def test_epoch_tuple(self, results):
         """Tuple of epochs should show one column per epoch per neuron."""
         axes = plot_receptive_fields(results, neurons=[0], epoch=(0, 1))
-        # columns: Ep 0 (behaviour) + Ep 1 = 2 (0 is in epochs, so no extra Beh col)
+        # columns: Ep 0 (behavior) + Ep 1 = 2 (0 is in epochs, so no extra Beh col)
         import matplotlib.pyplot as plt
 
         assert axes.ndim == 2

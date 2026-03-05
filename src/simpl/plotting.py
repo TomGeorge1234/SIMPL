@@ -135,7 +135,7 @@ def plot_latent_trajectory(
     results: xr.Dataset,
     time_range: tuple[float, float] | None = None,
     epoch: int | tuple[int, ...] | None = None,
-    include_behaviour: bool = True,
+    include_behavior: bool = True,
     include_ground_truth: bool = True,
     cmap: str | None = None,
     **plot_kwargs,
@@ -150,8 +150,8 @@ def plot_latent_trajectory(
     epoch : int or tuple of ints, optional
         Which epoch(s) to show.  A single int plots one epoch; a tuple
         plots multiple.  Default: all non-negative epochs.
-    include_behaviour : bool
-        Show the behavioural initialisation (epoch 0) alongside.
+    include_behavior : bool
+        Show the behavioral initialisation (epoch 0) alongside.
     include_ground_truth : bool
         Show ``Xt`` as ``"k--"`` if present.
     cmap : str
@@ -189,15 +189,15 @@ def plot_latent_trajectory(
 
     for i, d in enumerate(dim_names):
         ax = axes[i]
-        if include_behaviour and 0 not in epochs_to_plot:
+        if include_behavior and 0 not in epochs_to_plot:
             X_beh = results.X.sel(epoch=0, time=tslice).values[:, i]
             c0 = _epoch_color(0, last_epoch, cmap)
-            ax.plot(t, X_beh, color=c0, alpha=0.5, label="Behaviour (epoch 0)", **plot_kwargs)
+            ax.plot(t, X_beh, color=c0, alpha=0.5, label="Behavior (epoch 0)", **plot_kwargs)
 
         for ep in epochs_to_plot:
             X_ep = results.X.sel(epoch=ep, time=tslice).values[:, i]
             c_ep = _epoch_color(ep, last_epoch, cmap)
-            ep_label = f"Epoch {ep} (behaviour)" if ep == 0 else f"Epoch {ep}"
+            ep_label = f"Epoch {ep} (behavior)" if ep == 0 else f"Epoch {ep}"
             ax.plot(t, X_ep, color=c_ep, alpha=0.7, label=ep_label, **plot_kwargs)
 
         if include_ground_truth and "Xt" in results:
@@ -229,7 +229,7 @@ def plot_prediction(
     prediction_results : xr.Dataset
         The ``prediction_results_`` Dataset from :meth:`SIMPL.predict`.
     Xb : np.ndarray, optional
-        Behavioural positions for the prediction window, shape ``(T, D)``.
+        Behavioral positions for the prediction window, shape ``(T, D)``.
     Xt : np.ndarray, optional
         Ground truth positions for the prediction window, shape ``(T, D)``.
     time_range : tuple, optional
@@ -272,7 +272,7 @@ def plot_prediction(
 
         if Xb is not None:
             c_beh = _epoch_color(0, 1, cmap)
-            ax.plot(t, Xb[mask, i], color=c_beh, alpha=0.5, label="Behaviour", **plot_kwargs)
+            ax.plot(t, Xb[mask, i], color=c_beh, alpha=0.5, label="Behavior", **plot_kwargs)
 
         c_pred = _epoch_color(1, 1, cmap)
         ax.plot(t, X_pred[:, i], color=c_pred, alpha=0.7, label="Predicted", **plot_kwargs)
@@ -296,7 +296,7 @@ def plot_receptive_fields(
     extent: tuple | None = None,
     epoch: int | tuple[int, ...] | None = None,
     neurons: list[int] | np.ndarray | None = None,
-    include_behaviour: bool = True,
+    include_behavior: bool = True,
     include_baselines: bool = False,
     ncols: int = 4,
     cmap: str | None = None,
@@ -315,8 +315,8 @@ def plot_receptive_fields(
         shows multiple.
     neurons : array-like, optional
         Subset of neuron indices.  Default: all neurons.
-    include_behaviour : bool
-        Show epoch-0 (behaviour) fields alongside.  Only adds a column when
+    include_behavior : bool
+        Show epoch-0 (behavior) fields alongside.  Only adds a column when
         epoch 0 is not already in the requested epochs.
     include_baselines : bool
         Show ground-truth fields (``Ft``) if present.
@@ -367,12 +367,12 @@ def plot_receptive_fields(
 
     # Build column labels per neuron
     col_labels = []
-    # Behaviour column if requested and not already in epochs
-    show_beh_col = include_behaviour and 0 not in epochs
+    # Behavior column if requested and not already in epochs
+    show_beh_col = include_behavior and 0 not in epochs
     if show_beh_col:
         col_labels.append("Beh")
     for ep in epochs:
-        col_labels.append(f"Ep {ep}" if ep != 0 else "Ep 0 (behaviour)")
+        col_labels.append(f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)")
     if has_baselines:
         col_labels.append(baseline_label)
     n_cols_per_neuron = len(col_labels)
@@ -433,7 +433,7 @@ def plot_receptive_fields(
 
         col_offset = 0
 
-        # behaviour column (only when 0 not in epochs)
+        # behavior column (only when 0 not in epochs)
         if show_beh_col:
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
@@ -456,7 +456,7 @@ def plot_receptive_fields(
             else:
                 ax.plot(results[dim_names[0]].values, F_ep.values, **plot_kwargs)
             if row == 0:
-                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behaviour)"
+                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)"
                 ax.set_title(label, fontsize=8)
             col_offset += 1
 
