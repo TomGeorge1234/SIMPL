@@ -14,12 +14,15 @@ from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
+    _wrap_minuspi_pi,
     analyse_place_fields,
     calculate_spatial_information,
     cca,
+    cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
     fit_gaussian,
+    get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
 )
@@ -32,7 +35,7 @@ class SIMPL:
         kernel_bandwidth: float = 0.02,
         speed_prior: float = 0.1,
         use_kalman_smoothing: bool = True,
-        behaviour_prior: float | None = None,
+        behavior_prior: float | None = None,
         # Environment parameters
         is_circular: bool = False,
         bin_size: float = 0.02,
@@ -50,7 +53,7 @@ class SIMPL:
         receptive fields, metrics and other diagnostics can be found in ``self.results_``
         (an ``xarray.Dataset``). Quick access to the final decoded latent and receptive fields
         is available via ``self.X_`` and ``self.F_``. The ``predict()`` method can decode a
-        new set of spikes using the fitted receptive fields, without needing behavioural input.
+        new set of spikes using the fitted receptive fields, without needing behavioral input.
 
         Overview
         --------
@@ -65,14 +68,14 @@ class SIMPL:
 
         This procedure is reminiscent of (indeed, theoretically equivalent to, see paper) the
         EM algorithm for latent variable optimisation. Epoch 0 runs the M-step only on the
-        behavioural initialisation trajectory ``Xb``. Subsequent epochs alternate E-step and
+        behavioral initialisation trajectory ``Xb``. Subsequent epochs alternate E-step and
         M-step.
 
         Terminology
         -----------
         - **Y** : Spike counts, shape (T, N_neurons). Can be binary (0/1) or integer counts (0/1/2/3...).
-        - **Xb** : Behavioural initialisation, shape (T, D). The starting estimate of latent positions,
-          typically derived from tracked behaviour (e.g. animal position).
+        - **Xb** : Behavioral initialisation, shape (T, D). The starting estimate of latent positions,
+          typically derived from tracked behavior (e.g. animal position).
         - **Xt** : Ground truth latent positions (if available), shape (T, D). Used for evaluation only.
         - **F** : Receptive fields (place fields), shape (N_neurons, N_bins) — the estimated firing rate of each neuron
           as a function of position, discretised on the environment grid.
@@ -93,8 +96,8 @@ class SIMPL:
             Whether to use Kalman smoothing dynamics in the E-step. If False, the speed prior
             is set very high, effectively disabling temporal smoothing and letting the
             trajectory follow the per-bin maximum-likelihood estimate. By default True.
-        behaviour_prior : float or None, optional
-            Prior on how far the latent positions can deviate from the behavioural positions,
+        behavior_prior : float or None, optional
+            Prior on how far the latent positions can deviate from the behavioral positions,
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
             towards ``Xb``. None means no prior (the latent is free to move anywhere).
             By default None.
@@ -141,7 +144,7 @@ class SIMPL:
         self.kernel_bandwidth = kernel_bandwidth
         self.speed_prior = speed_prior
         self.use_kalman_smoothing = use_kalman_smoothing
-        self.behaviour_prior = behaviour_prior
+        self.behavior_prior = behavior_prior
         self.is_circular = is_circular
 
         # Environment config
@@ -165,7 +168,7 @@ class SIMPL:
         time: np.ndarray,
         n_epochs: int = 5,
         trial_boundaries: np.ndarray | None = None,
-        align_to_behaviour: bool = True,
+        align_to_behavior: bool | str = "trajectory",
         resume: bool = False,
         save_full_history: bool = False,
         verbose: bool = True,
@@ -176,7 +179,7 @@ class SIMPL:
 
         1. **Setup** — validates inputs, creates the ``Environment`` (spatial discretisation
            grid), sets up the Kalman filter, and builds the speckled test mask.
-        2. **Epoch 0** — runs the M-step only on the behavioural trajectory ``Xb`` to produce
+        2. **Epoch 0** — runs the M-step only on the behavioral trajectory ``Xb`` to produce
            the initial receptive fields. Prints a data summary and spatial information
            diagnostics (if ``verbose=True``).
         3. **Epochs 1..n_epochs** — alternates E-step (Kalman decoding using current receptive
@@ -197,7 +200,7 @@ class SIMPL:
             Spike counts. Can be binary (0/1) or integer-valued. Each row is one time bin,
             each column is one neuron.
         Xb : np.ndarray, shape (T, D)
-            Behavioural initialisation positions. This is the starting estimate of the latent
+            Behavioral initialisation positions. This is the starting estimate of the latent
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
         time : np.ndarray, shape (T,)
@@ -211,11 +214,17 @@ class SIMPL:
             element must be 0. The Kalman filter runs independently within each trial to
             prevent smoothing across trial boundaries (e.g. between separate recording
             sessions). If None, all data is treated as a single trial. By default None.
-        align_to_behaviour : bool, optional
-            Whether to linearly align (via CCA) the decoded latent positions to the
-            behavioural trajectory ``Xb`` after each E-step. This keeps the latent space in
-            a coordinate system consistent with the behaviour, which is important for
-            interpretable receptive fields. By default True.
+        align_to_behavior : bool or str, optional
+            How to linearly align (via CCA) the decoded latent positions to the behavioral
+            coordinate system after each E-step. Options:
+
+            - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
+              to ``Xb``.
+            - ``"fields"`` — align based on peak positions of receptive fields. More robust
+              than trajectory alignment, especially in 1D where the latent position
+              distribution can be bimodal.
+            - ``True`` — alias for ``"trajectory"``.
+            - ``False`` — no alignment.
         resume : bool, optional
             If True, continue training from the current state without re-initialising. The
             ``Y``, ``Xb``, and ``time`` arguments are ignored when resuming — training
@@ -268,9 +277,9 @@ class SIMPL:
             self.F_ = self.M_["F"]
             return self
 
-        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behaviour, verbose)
+        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior, verbose)
 
-        # ── Run epoch 0 (M-step on behavioural trajectory) ──
+        # ── Run epoch 0 (M-step on behavioral trajectory) ──
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
@@ -310,7 +319,7 @@ class SIMPL:
 
         This method uses the receptive fields learned during ``fit()`` (stored in
         ``self.F_``) and a Kalman smoother to decode latent positions from a new set of
-        spike observations. No behavioural input is required — the Kalman filter runs with
+        spike observations. No behavioral input is required — the Kalman filter runs with
         zero control input (``U=0``), acting as a pure random-walk smoother constrained
         only by the spike likelihoods and the speed prior.
 
@@ -364,7 +373,7 @@ class SIMPL:
 
         _, trial_slices = self._validate_trial_boundaries(trial_boundaries, T_new)
 
-        # Decode using fitted receptive fields, no behaviour input (mask=None → all spikes)
+        # Decode using fitted receptive fields, no behavior input (mask=None → all spikes)
         E = self._decode(
             Y=Y_jax,
             F=self.F_,
@@ -569,7 +578,7 @@ class SIMPL:
         self,
         time_range: tuple[float, float] | None = None,
         epoch: int | tuple[int, ...] | None = None,
-        include_behaviour: bool = True,
+        include_behavior: bool = True,
         include_ground_truth: bool = True,
         cmap: str | None = None,
         **plot_kwargs,
@@ -583,8 +592,8 @@ class SIMPL:
         epoch : int or tuple of ints, optional
             Which epoch(s) to show.  A single int plots one epoch; a tuple
             plots multiple.  Default: last non-negative epoch.
-        include_behaviour : bool
-            Show the behavioural initialisation (epoch 0) alongside.
+        include_behavior : bool
+            Show the behavioral initialisation (epoch 0) alongside.
         include_ground_truth : bool
             Show ``Xt`` as ``"k--"`` if present.
         cmap : str
@@ -603,7 +612,7 @@ class SIMPL:
             self.results_,
             time_range=time_range,
             epoch=epoch,
-            include_behaviour=include_behaviour,
+            include_behavior=include_behavior,
             include_ground_truth=include_ground_truth,
             cmap=cmap,
             **plot_kwargs,
@@ -613,7 +622,7 @@ class SIMPL:
         self,
         epoch: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
-        include_behaviour: bool = True,
+        include_behavior: bool = True,
         include_baselines: bool = False,
         ncols: int = 4,
         cmap: str | None = None,
@@ -628,8 +637,8 @@ class SIMPL:
             non-negative epochs.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
-        include_behaviour : bool
-            Show epoch-0 (behaviour) fields alongside.
+        include_behavior : bool
+            Show epoch-0 (behavior) fields alongside.
         include_baselines : bool
             Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
         ncols : int
@@ -654,7 +663,7 @@ class SIMPL:
             extent=extent,
             epoch=epoch,
             neurons=neurons,
-            include_behaviour=include_behaviour,
+            include_behavior=include_behavior,
             include_baselines=include_baselines,
             ncols=ncols,
             cmap=cmap,
@@ -703,7 +712,7 @@ class SIMPL:
         Parameters
         ----------
         Xb : np.ndarray, optional
-            Behavioural positions for the prediction window, shape ``(T, D)``.
+            Behavioral positions for the prediction window, shape ``(T, D)``.
         Xt : np.ndarray, optional
             Ground truth positions for the prediction window, shape ``(T, D)``.
         time_range : tuple, optional
@@ -735,7 +744,7 @@ class SIMPL:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
-        """E-step: decode latent positions and optionally align to behaviour.
+        """E-step: decode latent positions and optionally align to behavior.
 
         Parameters
         ----------
@@ -759,10 +768,23 @@ class SIMPL:
 
         # Manifold alignment (fit-time only)
         align_dict = {}
-        if self.Xalign_ is not None:
-            coef, intercept = cca(E["mu_s"], self.Xalign_)
-            E["X"] = E["mu_s"] @ coef.T + intercept
-            align_dict = {"coef": coef, "intercept": intercept}
+        if self.align_mode_ == "fields":
+            current_peaks = get_field_peaks(F, self.xF_)
+            source, target = current_peaks, self.Falign_peaks_
+        elif self.align_mode_ == "trajectory":
+            source, target = E["mu_s"], self.Xalign_
+        else:
+            source, target = None, None
+
+        if source is not None:
+            if self.is_circular:
+                angle, _ = cca_angular(source, target)
+                E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
+                align_dict = {"intercept": jnp.atleast_1d(angle)}
+            else:
+                coef, intercept = cca(source, target)
+                E["X"] = E["mu_s"] @ coef.T + intercept
+                align_dict = {"coef": coef, "intercept": intercept}
         else:
             E["X"] = E["mu_s"]
 
@@ -827,7 +849,7 @@ class SIMPL:
         mask : jnp.ndarray or None, shape (T, N_neurons)
             Boolean mask (True = use for likelihood). If None, all spikes are used.
         Xb : jnp.ndarray or None, shape (T, D)
-            Behavioural positions. If None, Kalman runs with U=0 (pure smoother).
+            Behavioral positions. If None, Kalman runs with U=0 (pure smoother).
 
         Returns
         -------
@@ -863,7 +885,7 @@ class SIMPL:
             _mask = mask[trial_slice]
             T_trial = _mode_l.shape[0]
 
-            # Control input: behaviour if available, zeros otherwise
+            # Control input: behavior if available, zeros otherwise
             if Xb is not None:
                 _U = Xb[trial_slice]
                 _mu0 = _U.mean(axis=0)
@@ -1025,7 +1047,7 @@ class SIMPL:
                 break
 
     def _run_epoch_zero(self, verbose: bool) -> None:
-        """Run epoch 0 (M-step on behavioural trajectory) and print diagnostics."""
+        """Run epoch 0 (M-step on behavioral trajectory) and print diagnostics."""
         _epoch0_done = threading.Event()
 
         def _delayed_message():
@@ -1036,6 +1058,8 @@ class SIMPL:
         _timer.start()
         self._fit_epoch()
         self.FX_firstepoch_ = self.M_["FX"]
+        if self.align_mode_ == "fields":
+            self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
         _epoch0_done.set()
 
         if verbose:
@@ -1102,7 +1126,7 @@ class SIMPL:
     # Initialisation
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behaviour, verbose) -> None:
+    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, verbose) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
         if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
@@ -1155,7 +1179,14 @@ class SIMPL:
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_
 
-        self.Xalign_ = self.Xb_ if align_to_behaviour else None
+        if align_to_behavior is True:
+            align_to_behavior = "trajectory"
+        if align_to_behavior and align_to_behavior not in ("trajectory", "fields"):
+            raise ValueError(
+                f"align_to_behavior must be True, False, 'trajectory', or 'fields', got {align_to_behavior!r}"
+            )
+        self.align_mode_ = align_to_behavior if align_to_behavior else None
+        self.Xalign_ = self.Xb_ if self.align_mode_ else None
         self._kde = kde_angular if self.is_circular else kde
 
         self.lastF_, self.lastX_ = None, None
@@ -1211,9 +1242,9 @@ class SIMPL:
         self.speed_prior_effective_ = speed_prior_effective
         speed_sigma = speed_prior_effective * self.dt_
 
-        behaviour_sigma = self.behaviour_prior if self.behaviour_prior is not None else 1e6
-        lam = behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
-        sigma_eff_square = speed_sigma**2 * behaviour_sigma**2 / (speed_sigma**2 + behaviour_sigma**2)
+        behavior_sigma = self.behavior_prior if self.behavior_prior is not None else 1e6
+        lam = behavior_sigma**2 / (speed_sigma**2 + behavior_sigma**2)
+        sigma_eff_square = speed_sigma**2 * behavior_sigma**2 / (speed_sigma**2 + behavior_sigma**2)
 
         F = lam * jnp.eye(self.D_)
         B = (1 - lam) * jnp.eye(self.D_)
@@ -1478,7 +1509,7 @@ class SIMPL:
             "kernel_bandwidth": self.kernel_bandwidth,
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),
-            "behaviour_prior": np.nan if self.behaviour_prior is None else self.behaviour_prior,
+            "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_circular": int(self.is_circular),
             "environment_provided": int(self._environment_override is not None),
             "test_frac": self.test_frac,

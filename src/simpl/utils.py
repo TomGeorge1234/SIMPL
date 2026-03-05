@@ -301,6 +301,45 @@ def cca(X: jax.Array, Y: jax.Array) -> tuple[np.ndarray, np.ndarray]:
     return coef, intercept
 
 
+def cca_angular(
+    X: jax.Array,
+    Y: jax.Array,
+    n_angles: int = 360,
+) -> tuple[jax.Array, jax.Array]:
+    """Align 1D circular trajectories by a pure rotation (no scaling).
+
+    Searches rotation angles in [-pi, pi) and returns the angle that minimises
+    mean squared wrapped angular error. Unlike ``cca``, this only performs a rotation
+    (no shift or scaling), which is the correct transform for angular data.
+
+    Parameters
+    ----------
+    X : jnp.ndarray, shape (N, 1) or (N,)
+        Source trajectory in radians.
+    Y : jnp.ndarray, shape (N, 1) or (N,)
+        Target trajectory in radians.
+    n_angles : int, optional
+        Number of candidate angles in [-pi, pi), by default 360.
+
+    Returns
+    -------
+    best_angle : jnp.ndarray, shape ()
+        Rotation angle (radians) that minimises circular error.
+    best_error : jnp.ndarray, shape ()
+        Minimum mean squared wrapped angular error.
+    """
+    X = jnp.asarray(X).reshape(-1)
+    Y = jnp.asarray(Y).reshape(-1)
+    assert X.shape == Y.shape, "The predicted and target circular trajectories must have the same shape."
+
+    angles = jnp.linspace(-jnp.pi, jnp.pi, n_angles, endpoint=False)
+    diffs = _wrap_minuspi_pi(X[:, None] + angles[None, :] - Y[:, None])
+    errs = jnp.mean(diffs**2, axis=0)
+    idx = jnp.argmin(errs)
+    best_angle = angles[idx]
+    return best_angle, errs[idx]
+
+
 def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
     """Calculates the correlation between X1 and X2[lag:].
 
@@ -390,7 +429,7 @@ def coarsen_dt(
     Y : np.ndarray, shape (T, N_neurons)
         Spike counts.
     Xb : np.ndarray, shape (T, D)
-        Behavioural positions.
+        Behavioral positions.
     time : np.ndarray, shape (T,)
         Time stamps.
     dt_multiplier : int
@@ -403,7 +442,7 @@ def coarsen_dt(
     Y_coarse : np.ndarray
         Coarsened spike counts (summed).
     Xb_coarse : np.ndarray
-        Coarsened behavioural positions (averaged).
+        Coarsened behavioral positions (averaged).
     time_coarse : np.ndarray
         Coarsened time stamps (averaged).
     Xt_coarse : np.ndarray (only if Xt was provided)
@@ -670,6 +709,25 @@ def load_results(path: str) -> xr.Dataset:
 # ──────────────────────────────────────────────────────────────────────────────
 # Place-field analysis
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def get_field_peaks(F: jax.Array, coords: jax.Array) -> jax.Array:
+    """Get argmax spatial position for each neuron's receptive field.
+
+    Parameters
+    ----------
+    F : jnp.ndarray, shape (N_neurons, N_bins)
+        Receptive fields.
+    coords : jnp.ndarray, shape (N_bins, D)
+        Spatial coordinates for each bin (e.g. ``environment.flattened_discretised_coords``).
+
+    Returns
+    -------
+    jnp.ndarray, shape (N_neurons, D)
+        Peak spatial position for each neuron.
+    """
+    argmax_bins = np.argmax(F, axis=1)
+    return coords[argmax_bins]
 
 
 def analyse_place_fields(
