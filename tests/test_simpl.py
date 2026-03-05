@@ -483,10 +483,10 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_circular=True, bin_size=0.1, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="fields")
         assert model.align_mode_ == "fields"
-        assert "angle" in model.E_
+        assert "intercept" in model.E_
         # X should be wrapped to [-pi, pi)
         assert np.all(model.X_ >= -np.pi)
         assert np.all(model.X_ < np.pi)
@@ -501,10 +501,10 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_circular=True, bin_size=0.1, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="trajectory")
         assert model.align_mode_ == "trajectory"
-        assert "angle" in model.E_
+        assert "intercept" in model.E_
         assert "coef" not in model.E_
 
 
