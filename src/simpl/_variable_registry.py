@@ -380,7 +380,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 "is not strictly the likelihood of the spikes."
             ),
             "dims": [],
-            "axis title": "Data log-likelihood",
+            "axis title": "Kalman posterior predictive",
             "formula": r"$\log P(Y|Y_{\textrm{train}})$",
         },
         "logPYF_test": {
@@ -397,7 +397,7 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 'test spikes?"'
             ),
             "dims": [],
-            "axis title": "Data log-likelihood (test)",
+            "axis title": "Kalman posterior predictive (test)",
             "formula": r"$\log P(Y_{\textrm{test}}|Y_{\textrm{train}})$",
         },
         "logPYXF": {
