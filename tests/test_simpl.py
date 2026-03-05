@@ -453,6 +453,60 @@ class TestSIMPLManifoldAlignment:
         assert model.Xalign_ is None
         assert "X" in model.E_
 
+    def test_align_trajectory_mode(self, demo_data):
+        model = self._make_model(demo_data, align_to_behaviour="trajectory")
+        assert model.align_mode_ == "trajectory"
+        assert model.Xalign_ is not None
+        assert "coef" in model.E_
+        assert "intercept" in model.E_
+
+    def test_align_fields_mode(self, demo_data):
+        model = self._make_model(demo_data, align_to_behaviour="fields")
+        assert model.align_mode_ == "fields"
+        assert hasattr(model, "Falign_peaks_")
+        assert model.Falign_peaks_.shape == (model.N_neurons_, model.D_)
+        assert "coef" in model.E_
+        assert "intercept" in model.E_
+
+    def test_align_invalid_mode_raises(self, demo_data):
+        with pytest.raises(ValueError, match="align_to_behaviour"):
+            self._make_model(demo_data, align_to_behaviour="invalid")
+
+    def test_align_angular(self):
+        """Field-based angular alignment uses rotation, not CCA."""
+        rng = np.random.default_rng(42)
+        T, N_neurons = 2000, 15
+        time = np.arange(T) * 0.02
+        Xb = np.linspace(-np.pi, np.pi, T, endpoint=False)[:, None]
+        # Simulate spikes with angular tuning
+        preferred = np.linspace(-np.pi, np.pi, N_neurons, endpoint=False)
+        rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
+        Y = rng.poisson(rates * 0.02)
+
+        model = SIMPL(is_circular=True, bin_size=0.1, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="fields")
+        assert model.align_mode_ == "fields"
+        assert "angle" in model.E_
+        # X should be wrapped to [-pi, pi)
+        assert np.all(model.X_ >= -np.pi)
+        assert np.all(model.X_ < np.pi)
+
+    def test_align_angular_trajectory_mode(self):
+        """Trajectory-based angular alignment also uses rotation."""
+        rng = np.random.default_rng(42)
+        T, N_neurons = 2000, 15
+        time = np.arange(T) * 0.02
+        Xb = np.linspace(-np.pi, np.pi, T, endpoint=False)[:, None]
+        preferred = np.linspace(-np.pi, np.pi, N_neurons, endpoint=False)
+        rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
+        Y = rng.poisson(rates * 0.02)
+
+        model = SIMPL(is_circular=True, bin_size=0.1, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model.fit(Y, Xb, time, n_epochs=1, align_to_behaviour="trajectory")
+        assert model.align_mode_ == "trajectory"
+        assert "angle" in model.E_
+        assert "coef" not in model.E_
+
 
 class TestSIMPLPredict:
     def test_predict_returns_correct_shape(self, demo_data):
