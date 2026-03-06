@@ -220,8 +220,8 @@ class SIMPL:
 
             - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
               to ``Xb``.
-            - ``"fields"`` — align based on peak positions of receptive fields. CAn be useful 
-            in 1D where the latent position distribution can be bimodal. Unstable / not 
+            - ``"fields"`` — align based on peak positions of receptive fields. CAn be useful
+            in 1D where the latent position distribution can be bimodal. Unstable / not
             recommended if fields are likely to have multiple peaks
             - ``True`` — alias for ``"trajectory"``.
             - ``False`` — no alignment.

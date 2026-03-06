@@ -21,6 +21,7 @@ from matplotlib.colors import LinearSegmentedColormap
 _STYLE_PATH = str(importlib.resources.files("simpl").joinpath("simpl.mplstyle"))
 plt.style.use(_STYLE_PATH)
 
+
 # ── Register "flare" colormap (seaborn's flare, bundled to avoid the dependency) ──
 def _register_cmap(name, stops):
     if name not in matplotlib.colormaps:
@@ -29,35 +30,41 @@ def _register_cmap(name, stops):
         matplotlib.colormaps.register(cmap.reversed(), name=f"{name}_r")
 
 
-_register_cmap("flare", [
-    (0.0000, (0.9291, 0.6888, 0.5041)),
-    (0.0902, (0.9212, 0.6018, 0.4505)),
-    (0.1804, (0.9104, 0.5134, 0.3993)),
-    (0.2706, (0.8926, 0.4238, 0.3653)),
-    (0.3608, (0.8595, 0.3391, 0.3630)),
-    (0.4510, (0.8019, 0.2755, 0.3893)),
-    (0.5451, (0.7184, 0.2410, 0.4186)),
-    (0.6353, (0.6333, 0.2182, 0.4356)),
-    (0.7255, (0.5495, 0.1956, 0.4423)),
-    (0.8157, (0.4645, 0.1772, 0.4349)),
-    (0.9059, (0.3793, 0.1605, 0.4127)),
-    (1.0000, (0.2941, 0.1372, 0.3844)),
-])
+_register_cmap(
+    "flare",
+    [
+        (0.0000, (0.9291, 0.6888, 0.5041)),
+        (0.0902, (0.9212, 0.6018, 0.4505)),
+        (0.1804, (0.9104, 0.5134, 0.3993)),
+        (0.2706, (0.8926, 0.4238, 0.3653)),
+        (0.3608, (0.8595, 0.3391, 0.3630)),
+        (0.4510, (0.8019, 0.2755, 0.3893)),
+        (0.5451, (0.7184, 0.2410, 0.4186)),
+        (0.6353, (0.6333, 0.2182, 0.4356)),
+        (0.7255, (0.5495, 0.1956, 0.4423)),
+        (0.8157, (0.4645, 0.1772, 0.4349)),
+        (0.9059, (0.3793, 0.1605, 0.4127)),
+        (1.0000, (0.2941, 0.1372, 0.3844)),
+    ],
+)
 
-_register_cmap("crest", [
-    (0.0000, (0.6468, 0.8029, 0.5659)),
-    (0.0902, (0.5466, 0.7550, 0.5693)),
-    (0.1804, (0.4471, 0.7078, 0.5664)),
-    (0.2706, (0.3619, 0.6574, 0.5654)),
-    (0.3608, (0.2932, 0.6045, 0.5626)),
-    (0.4510, (0.2341, 0.5509, 0.5570)),
-    (0.5451, (0.1731, 0.4954, 0.5504)),
-    (0.6353, (0.1238, 0.4412, 0.5437)),
-    (0.7255, (0.1123, 0.3839, 0.5323)),
-    (0.8157, (0.1327, 0.3234, 0.5122)),
-    (0.9059, (0.1586, 0.2605, 0.4801)),
-    (1.0000, (0.1736, 0.1908, 0.4455)),
-])
+_register_cmap(
+    "crest",
+    [
+        (0.0000, (0.6468, 0.8029, 0.5659)),
+        (0.0902, (0.5466, 0.7550, 0.5693)),
+        (0.1804, (0.4471, 0.7078, 0.5664)),
+        (0.2706, (0.3619, 0.6574, 0.5654)),
+        (0.3608, (0.2932, 0.6045, 0.5626)),
+        (0.4510, (0.2341, 0.5509, 0.5570)),
+        (0.5451, (0.1731, 0.4954, 0.5504)),
+        (0.6353, (0.1238, 0.4412, 0.5437)),
+        (0.7255, (0.1123, 0.3839, 0.5323)),
+        (0.8157, (0.1327, 0.3234, 0.5122)),
+        (0.9059, (0.1586, 0.2605, 0.4801)),
+        (1.0000, (0.1736, 0.1908, 0.4455)),
+    ],
+)
 
 # ── Default colormaps ────────────────────────────────────────────────────────
 EPOCH_CMAP = "crest"
@@ -270,16 +277,20 @@ def plot_latent_trajectory(
 
     traces = []
     if include_behavior and 0 not in epochs_to_plot:
-        traces.append((
-            results.X.sel(epoch=0, time=tslice).values,
-            dict(color=_epoch_color(0, last_epoch, cmap), alpha=0.8, label="Behavior (epoch 0)"),
-        ))
+        traces.append(
+            (
+                results.X.sel(epoch=0, time=tslice).values,
+                dict(color=_epoch_color(0, last_epoch, cmap), alpha=0.8, label="Behavior (epoch 0)"),
+            )
+        )
     for ep in epochs_to_plot:
         label = f"Epoch {ep} (behavior)" if ep == 0 else f"Epoch {ep}"
-        traces.append((
-            results.X.sel(epoch=ep, time=tslice).values,
-            dict(color=_epoch_color(ep, last_epoch, cmap), alpha=0.8, label=label),
-        ))
+        traces.append(
+            (
+                results.X.sel(epoch=ep, time=tslice).values,
+                dict(color=_epoch_color(ep, last_epoch, cmap), alpha=0.8, label=label),
+            )
+        )
 
     Xt = results.Xt.sel(time=tslice).values if (include_ground_truth and "Xt" in results) else None
     return _plot_trajectory_panel(t, traces, Xt, dim_names, **plot_kwargs)
@@ -333,10 +344,12 @@ def plot_prediction(
     traces = []
     if Xb is not None:
         traces.append((Xb[mask], dict(color=_epoch_color(0, 1, cmap), alpha=0.8, label="Behavior")))
-    traces.append((
-        prediction_results.mu_s.sel(time=tslice).values,
-        dict(color=_epoch_color(1, 1, cmap), alpha=0.8, label="Predicted"),
-    ))
+    traces.append(
+        (
+            prediction_results.mu_s.sel(time=tslice).values,
+            dict(color=_epoch_color(1, 1, cmap), alpha=0.8, label="Predicted"),
+        )
+    )
 
     Xt_sliced = Xt[mask] if Xt is not None else None
     return _plot_trajectory_panel(t, traces, Xt_sliced, dim_names, title="Prediction on held-out data", **plot_kwargs)
