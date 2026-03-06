@@ -81,22 +81,15 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
-    def test_no_behavior(self, results):
-        axes = plot_latent_trajectory(results, include_behavior=False)
-        assert len(axes) == len(results.dim.values)
-        import matplotlib.pyplot as plt
-
-        plt.close("all")
-
-    def test_single_epoch_int(self, results):
-        axes = plot_latent_trajectory(results, epoch=1)
+    def test_single_epoch(self, results):
+        axes = plot_latent_trajectory(results, epochs=1)
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
         plt.close("all")
 
     def test_epoch_tuple(self, results):
-        axes = plot_latent_trajectory(results, epoch=(0, 1))
+        axes = plot_latent_trajectory(results, epochs=(0, 1))
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 

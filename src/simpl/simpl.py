@@ -588,8 +588,7 @@ class SIMPL:
     def plot_latent_trajectory(
         self,
         time_range: tuple[float, float] | None = None,
-        epoch: int | tuple[int, ...] | None = None,
-        include_behavior: bool = True,
+        epochs: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
         cmap: str | None = None,
         **plot_kwargs,
@@ -600,11 +599,9 @@ class SIMPL:
         ----------
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-        epoch : int or tuple of ints, optional
-            Which epoch(s) to show.  A single int plots one epoch; a tuple
-            plots multiple.  Default: last non-negative epoch.
-        include_behavior : bool
-            Show the behavioral initialisation (epoch 0) alongside.
+        epochs : int or tuple of ints, optional
+            Which epoch(s) to show.  Negative values index from the end
+            (``-1`` = last epoch).  Default: ``(0, -1)``.
         include_ground_truth : bool
             Show ``Xt`` as ``"k--"`` if present.
         cmap : str
@@ -622,8 +619,7 @@ class SIMPL:
         return plot_latent_trajectory(
             self.results_,
             time_range=time_range,
-            epoch=epoch,
-            include_behavior=include_behavior,
+            epochs=epochs,
             include_ground_truth=include_ground_truth,
             cmap=cmap,
             **plot_kwargs,
@@ -631,9 +627,8 @@ class SIMPL:
 
     def plot_receptive_fields(
         self,
-        epoch: int | tuple[int, ...] | None = None,
+        epochs: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
-        include_behavior: bool = True,
         include_baselines: bool = False,
         ncols: int = 4,
         cmap: str | None = None,
@@ -643,13 +638,11 @@ class SIMPL:
 
         Parameters
         ----------
-        epoch : int or tuple of int, optional
-            Which epoch(s) to show.  ``None`` shows the first (0) and last
-            non-negative epochs.
+        epochs : int or tuple of int, optional
+            Which epoch(s) to show.  Negative values index from the end
+            (``-1`` = last epoch).  Default: ``(0, -1)``.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
-        include_behavior : bool
-            Show epoch-0 (behavior) fields alongside.
         include_baselines : bool
             Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
         ncols : int
@@ -672,9 +665,8 @@ class SIMPL:
         return plot_receptive_fields(
             self.results_,
             extent=extent,
-            epoch=epoch,
+            epochs=epochs,
             neurons=neurons,
-            include_behavior=include_behavior,
             include_baselines=include_baselines,
             ncols=ncols,
             cmap=cmap,
