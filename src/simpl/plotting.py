@@ -83,6 +83,40 @@ def outset_axes(ax, offset_mm: float = 2) -> None:
     ax.spines["left"].set_position(("outward", offset_mm * 72 / 25.4))
 
 
+def _resolve_epochs(
+    epochs: int | tuple[int, ...] | None,
+    results: xr.Dataset,
+    default: tuple[int, ...] = (0, -1),
+) -> tuple[int, ...]:
+    """Normalise an *epochs* argument to a tuple of concrete epoch values.
+
+    Supports negative indexing: ``-1`` maps to the last non-negative epoch,
+    ``-2`` to the second-last, etc.
+    """
+    nn = _non_negative_epochs(results)
+    if epochs is None:
+        raw = default
+    elif isinstance(epochs, int):
+        raw = (epochs,)
+    else:
+        raw = tuple(epochs)
+    resolved = []
+    for e in raw:
+        if e < 0:
+            idx = e  # -1 → last, -2 → second-last, etc.
+            resolved.append(int(nn[idx]))
+        else:
+            resolved.append(int(e))
+    # deduplicate while preserving order
+    seen = set()
+    unique = []
+    for e in resolved:
+        if e not in seen:
+            seen.add(e)
+            unique.append(e)
+    return tuple(unique)
+
+
 def _epoch_color(epoch: int, last_epoch: int, cmap: str = EPOCH_CMAP):
     """Return a colour for *epoch* from *cmap* scaled to [0, last_epoch]."""
     cm = matplotlib.colormaps[cmap]
@@ -113,7 +147,6 @@ def _baseline_epochs(results: xr.Dataset) -> np.ndarray:
 def plot_fitting_summary(
     results: xr.Dataset,
     show_neurons: bool = True,
-    cmap: str | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
     """Two-panel summary: log-likelihood (left) and spatial information (right).
@@ -124,8 +157,6 @@ def plot_fitting_summary(
         The ``results_`` Dataset from a fitted SIMPL model.
     show_neurons : bool
         Show individual neuron dots for per-neuron metrics (spatial information).
-    cmap : str
-        Colormap for epoch colouring.
     **plot_kwargs
         Forwarded to the main scatter calls.
 
@@ -133,7 +164,6 @@ def plot_fitting_summary(
     -------
     axes : np.ndarray of Axes, shape (2,)
     """
-    cmap = cmap or EPOCH_CMAP
     epochs = _non_negative_epochs(results)
     last_epoch = int(epochs[-1])
 
@@ -230,8 +260,7 @@ def _plot_trajectory_panel(
 def plot_latent_trajectory(
     results: xr.Dataset,
     time_range: tuple[float, float] | None = None,
-    epoch: int | tuple[int, ...] | None = None,
-    include_behavior: bool = True,
+    epochs: int | tuple[int, ...] | None = None,
     include_ground_truth: bool = True,
     cmap: str | None = None,
     **plot_kwargs,
@@ -243,11 +272,10 @@ def plot_latent_trajectory(
     results : xr.Dataset
     time_range : tuple, optional
         ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-    epoch : int or tuple of ints, optional
-        Which epoch(s) to show.  A single int plots one epoch; a tuple
-        plots multiple.  Default: all non-negative epochs.
-    include_behavior : bool
-        Show the behavioral initialisation (epoch 0) alongside.
+    epochs : int or tuple of ints, optional
+        Which epoch(s) to show.  Negative values index from the end of the
+        non-negative epochs (``-1`` = last epoch).  Default: ``(0, -1)``
+        (behavior and final epoch).
     include_ground_truth : bool
         Show ``Xt`` as ``"k--"`` if present.
     cmap : str
@@ -259,12 +287,7 @@ def plot_latent_trajectory(
     axes : np.ndarray of Axes, shape (D,)
     """
     cmap = cmap or EPOCH_CMAP
-    if epoch is None:
-        epochs_to_plot = tuple(_non_negative_epochs(results))
-    elif isinstance(epoch, int):
-        epochs_to_plot = (epoch,)
-    else:
-        epochs_to_plot = tuple(epoch)
+    epochs_to_plot = _resolve_epochs(epochs, results)
 
     if time_range is None:
         t0 = float(results.time.values[0])
@@ -276,21 +299,12 @@ def plot_latent_trajectory(
     last_epoch = _last_non_negative_epoch(results)
 
     traces = []
-    if include_behavior and 0 not in epochs_to_plot:
-        traces.append(
-            (
-                results.X.sel(epoch=0, time=tslice).values,
-                dict(color=_epoch_color(0, last_epoch, cmap), alpha=0.8, label="Behavior (epoch 0)"),
-            )
-        )
     for ep in epochs_to_plot:
         label = f"Epoch {ep} (behavior)" if ep == 0 else f"Epoch {ep}"
-        traces.append(
-            (
-                results.X.sel(epoch=ep, time=tslice).values,
-                dict(color=_epoch_color(ep, last_epoch, cmap), alpha=0.8, label=label),
-            )
-        )
+        traces.append((
+            results.X.sel(epoch=ep, time=tslice).values,
+            dict(color=_epoch_color(ep, last_epoch, cmap), alpha=0.8, label=label),
+        ))
 
     Xt = results.Xt.sel(time=tslice).values if (include_ground_truth and "Xt" in results) else None
     return _plot_trajectory_panel(t, traces, Xt, dim_names, **plot_kwargs)
@@ -358,9 +372,8 @@ def plot_prediction(
 def plot_receptive_fields(
     results: xr.Dataset,
     extent: tuple | None = None,
-    epoch: int | tuple[int, ...] | None = None,
+    epochs: int | tuple[int, ...] | None = None,
     neurons: list[int] | np.ndarray | None = None,
-    include_behavior: bool = True,
     include_baselines: bool = False,
     ncols: int = 4,
     cmap: str | None = None,
@@ -373,15 +386,12 @@ def plot_receptive_fields(
     results : xr.Dataset
     extent : tuple, optional
         Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``.  Used for 2-D imshow.
-    epoch : int or tuple of int, optional
-        Which epoch(s) to show.  ``None`` shows the first (0) and last
-        non-negative epochs.  An ``int`` shows a single epoch; a ``tuple``
-        shows multiple.
+    epochs : int or tuple of int, optional
+        Which epoch(s) to show.  Negative values index from the end of the
+        non-negative epochs (``-1`` = last epoch).  Default: ``(0, -1)``
+        (behavior and final epoch).
     neurons : array-like, optional
         Subset of neuron indices.  Default: all neurons.
-    include_behavior : bool
-        Show epoch-0 (behavior) fields alongside.  Only adds a column when
-        epoch 0 is not already in the requested epochs.
     include_baselines : bool
         Show ground-truth fields (``Ft``) if present.
     ncols : int
@@ -400,14 +410,7 @@ def plot_receptive_fields(
     if D > 2:
         raise ValueError(f"plot_receptive_fields only supports 1-D and 2-D environments, got {D}-D.")
 
-    # Resolve epoch(s) to a tuple
-    if epoch is None:
-        last = _last_non_negative_epoch(results)
-        epochs = (0, last) if last != 0 else (0,)
-    elif isinstance(epoch, int):
-        epochs = (epoch,)
-    else:
-        epochs = tuple(epoch)
+    epochs = _resolve_epochs(epochs, results)
 
     if neurons is None:
         neurons = results.neuron.values
@@ -429,10 +432,6 @@ def plot_receptive_fields(
 
     # Build column labels per neuron
     col_labels = []
-    # Behavior column if requested and not already in epochs
-    show_beh_col = include_behavior and 0 not in epochs
-    if show_beh_col:
-        col_labels.append("Beh")
     for ep in epochs:
         col_labels.append(f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)")
     if has_baselines:
@@ -494,19 +493,6 @@ def plot_receptive_fields(
         col_base = group_col_starts[group]
 
         col_offset = 0
-
-        # behavior column (only when 0 not in epochs)
-        if show_beh_col:
-            ax = axes[row, col_base + col_offset]
-            used_axes.add((row, col_base + col_offset))
-            F_beh = results.F.sel(epoch=0, neuron=n)
-            if D == 2:
-                ax.imshow(F_beh.values.T, **imkw)
-            else:
-                ax.plot(results[dim_names[0]].values, F_beh.values, **plot_kwargs)
-            if row == 0:
-                ax.set_title("Beh", fontsize=8)
-            col_offset += 1
 
         # epoch columns
         for ep in epochs:
