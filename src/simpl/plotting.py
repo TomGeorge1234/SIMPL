@@ -130,7 +130,7 @@ def plot_fitting_summary(
     epochs = _non_negative_epochs(results)
     last_epoch = int(epochs[-1])
 
-    fig, axes = plt.subplots(1, 2, figsize=(0.7*FIG_WIDTH, 0.7*FIG_WIDTH * 0.35))
+    fig, axes = plt.subplots(1, 2, figsize=(0.7 * FIG_WIDTH, 0.7 * FIG_WIDTH * 0.35), layout="constrained")
     ax_ll, ax_si = axes
 
     ll_train, ll_test, si_means = [], [], []
@@ -167,7 +167,6 @@ def plot_fitting_summary(
     for ax in axes:
         outset_axes(ax)
         ax.spines["bottom"].set_bounds(0, int(epochs[-1]))
-    fig.tight_layout()
     return axes
 
 
@@ -197,7 +196,9 @@ def _plot_trajectory_panel(
         Forwarded to ``ax.plot``.
     """
     D = len(dim_names)
-    fig, axes = plt.subplots(D, 1, figsize=(FIG_WIDTH, FIG_WIDTH * 0.2 * D), sharex=True, squeeze=False)
+    fig, axes = plt.subplots(
+        D, 1, figsize=(FIG_WIDTH, FIG_WIDTH * 0.2 * D), sharex=True, squeeze=False, layout="constrained"
+    )
     axes = axes[:, 0]
 
     for i, d in enumerate(dim_names):
@@ -216,7 +217,6 @@ def _plot_trajectory_panel(
         ax.set_xlim(np.floor(t[0]), np.ceil(t[-1]))
     if title:
         fig.suptitle(title)
-    fig.tight_layout()
     return axes
 
 
@@ -586,7 +586,7 @@ def plot_all_metrics(
         return np.array([])
 
     nrows = int(np.ceil(n_metrics / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.5 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.0 * ncols, 2.5 * nrows), squeeze=False, layout="constrained")
 
     for i, var_name in enumerate(metric_names):
         ax = axes.flat[i]
@@ -639,5 +639,4 @@ def plot_all_metrics(
     for j in range(n_metrics, len(axes.flat)):
         axes.flat[j].set_visible(False)
 
-    fig.tight_layout()
     return axes
