@@ -13,3 +13,4 @@ venv/
 .coverage
 .vscode
 uv.lock
+_version.py
