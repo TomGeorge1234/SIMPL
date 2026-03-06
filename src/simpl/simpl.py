@@ -527,6 +527,17 @@ class SIMPL:
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
 
+        # Backfill F_err for training epochs now that Ft_ is available
+        if self.Ft_ is not None and "F_err" in self.results_:
+            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
+            for i, ep in enumerate(self.results_.epoch.values):
+                if ep >= 0:
+                    F_ep = jnp.array(self.results_.F.sel(epoch=ep).values.reshape(self.N_neurons_, self.N_bins_))
+                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
+            self.results_["F_err"] = xr.DataArray(
+                f_err_vals, dims=("epoch",), coords={"epoch": self.results_.epoch}, attrs=self.results_["F_err"].attrs
+            )
+
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
 
