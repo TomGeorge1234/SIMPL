@@ -30,8 +30,13 @@ model = SIMPL(
     env_pad=0.0,            # padding around data bounds
 )
 
-# 2. Fit: pass spikes (T, N), behavioural positions (T, D), and timestamps (T,)
-model.fit(Y, Xb, time, n_epochs=5)
+# 2. Fit
+model.fit(
+    Y,                      # spike counts (T, N_neurons)
+    Xb,                     # behavioural initialisation positions (T, D)
+    time,                   # timestamps (T,)
+    n_epochs=5,
+    )
 
 # 3. Access results
 model.X_           # final decoded latent positions, shape (T, D)
@@ -70,10 +75,10 @@ model.plot_fitting_summary()
 
 # Decoded trajectory (all epochs by default)
 model.plot_latent_trajectory()
-model.plot_latent_trajectory(time_range=(0, 60), epoch=(1, 5))  # zoom in, specific epochs
+model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific epochs
 
 # Receptive fields (epoch 0 + last by default)
-model.plot_receptive_fields(neurons=[0, 5, 10], include_baselines=True)
+model.plot_receptive_fields(neurons=[0, 5, 10])
 
 # Auto-discover and plot all per-epoch metrics
 model.plot_all_metrics(show_neurons=False)
