@@ -562,7 +562,6 @@ class SIMPL:
     def plot_fitting_summary(
         self,
         show_neurons: bool = True,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Two-panel summary: log-likelihood (left) and spatial information (right).
@@ -571,8 +570,6 @@ class SIMPL:
         ----------
         show_neurons : bool
             Show individual neuron dots for per-neuron metrics.
-        cmap : str
-            Colormap for epoch colouring.
         **plot_kwargs
             Forwarded to the main scatter calls.
 
@@ -583,14 +580,13 @@ class SIMPL:
         from simpl.plotting import plot_fitting_summary
 
         self._check_fitted()
-        return plot_fitting_summary(self.results_, show_neurons=show_neurons, cmap=cmap, **plot_kwargs)
+        return plot_fitting_summary(self.results_, show_neurons=show_neurons, **plot_kwargs)
 
     def plot_latent_trajectory(
         self,
         time_range: tuple[float, float] | None = None,
         epochs: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot decoded latent trajectory (one subplot per spatial dimension).
@@ -601,11 +597,9 @@ class SIMPL:
             ``(t_start, t_end)`` in seconds.  Default: first 120 s.
         epochs : int or tuple of ints, optional
             Which epoch(s) to show.  Negative values index from the end
-            (``-1`` = last epoch).  Default: ``(0, -1)``.
+            (``-1`` = last epoch).  Default: all epochs.
         include_ground_truth : bool
             Show ``Xt`` as ``"k--"`` if present.
-        cmap : str
-            Colormap for epoch colouring.
         **plot_kwargs
             Forwarded to ``ax.plot``.
 
@@ -621,7 +615,6 @@ class SIMPL:
             time_range=time_range,
             epochs=epochs,
             include_ground_truth=include_ground_truth,
-            cmap=cmap,
             **plot_kwargs,
         )
 
@@ -631,7 +624,6 @@ class SIMPL:
         neurons: list[int] | np.ndarray | None = None,
         include_baselines: bool = False,
         ncols: int = 4,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot receptive fields for selected neurons.
@@ -647,8 +639,6 @@ class SIMPL:
             Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
         ncols : int
             Maximum number of neuron-columns in the grid.
-        cmap : str
-            Colormap for receptive field heatmaps.
         **plot_kwargs
             Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -669,14 +659,12 @@ class SIMPL:
             neurons=neurons,
             include_baselines=include_baselines,
             ncols=ncols,
-            cmap=cmap,
             **plot_kwargs,
         )
 
     def plot_all_metrics(
         self,
         show_neurons: bool = True,
-        cmap: str | None = None,
         ncols: int = 3,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -686,8 +674,6 @@ class SIMPL:
         ----------
         show_neurons : bool
             Show individual neuron dots for per-neuron metrics.
-        cmap : str
-            Colormap for epoch colouring.
         ncols : int
             Number of columns in the grid.
         **plot_kwargs
@@ -700,14 +686,13 @@ class SIMPL:
         from simpl.plotting import plot_all_metrics
 
         self._check_fitted()
-        return plot_all_metrics(self.results_, show_neurons=show_neurons, cmap=cmap, ncols=ncols, **plot_kwargs)
+        return plot_all_metrics(self.results_, show_neurons=show_neurons, ncols=ncols, **plot_kwargs)
 
     def plot_prediction(
         self,
         Xb: np.ndarray | None = None,
         Xt: np.ndarray | None = None,
         time_range: tuple[float, float] | None = None,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot predicted trajectory from the most recent ``predict()`` call.
@@ -720,8 +705,6 @@ class SIMPL:
             Ground truth positions for the prediction window, shape ``(T, D)``.
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: full prediction range.
-        cmap : str
-            Colormap for trajectory colouring.
         **plot_kwargs
             Forwarded to ``ax.plot``.
 
@@ -738,7 +721,6 @@ class SIMPL:
             Xb=Xb,
             Xt=Xt,
             time_range=time_range,
-            cmap=cmap,
             **plot_kwargs,
         )
 
