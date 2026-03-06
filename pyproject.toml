@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
 [project]
 name = "simpl"
-version = "0.4.0"
+dynamic = ["version"]
 description = "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour"
 readme = "README.md"
 license = "MIT"
@@ -31,11 +31,14 @@ dev = [
     "twine",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.version]
+source = "vcs"
 
-[tool.setuptools.package-data]
-simpl = ["*.mplstyle"]
+[tool.hatch.build.hooks.vcs]
+version-file = "src/simpl/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/simpl"]
 
 [tool.ruff]
 line-length = 120
