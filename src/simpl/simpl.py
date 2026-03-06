@@ -220,9 +220,9 @@ class SIMPL:
 
             - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
               to ``Xb``.
-            - ``"fields"`` — align based on peak positions of receptive fields. More robust
-              than trajectory alignment, especially in 1D where the latent position
-              distribution can be bimodal.
+            - ``"fields"`` — align based on peak positions of receptive fields. CAn be useful
+            in 1D where the latent position distribution can be bimodal. Unstable / not
+            recommended if fields are likely to have multiple peaks
             - ``True`` — alias for ``"trajectory"``.
             - ``False`` — no alignment.
         resume : bool, optional
@@ -527,6 +527,17 @@ class SIMPL:
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
 
+        # Backfill F_err for training epochs now that Ft_ is available
+        if self.Ft_ is not None and "F_err" in self.results_:
+            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
+            for i, ep in enumerate(self.results_.epoch.values):
+                if ep >= 0:
+                    F_ep = jnp.array(self.results_.F.sel(epoch=ep).values.reshape(self.N_neurons_, self.N_bins_))
+                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
+            self.results_["F_err"] = xr.DataArray(
+                f_err_vals, dims=("epoch",), coords={"epoch": self.results_.epoch}, attrs=self.results_["F_err"].attrs
+            )
+
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
 
@@ -551,7 +562,6 @@ class SIMPL:
     def plot_fitting_summary(
         self,
         show_neurons: bool = True,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Two-panel summary: log-likelihood (left) and spatial information (right).
@@ -560,8 +570,6 @@ class SIMPL:
         ----------
         show_neurons : bool
             Show individual neuron dots for per-neuron metrics.
-        cmap : str
-            Colormap for epoch colouring.
         **plot_kwargs
             Forwarded to the main scatter calls.
 
@@ -572,15 +580,13 @@ class SIMPL:
         from simpl.plotting import plot_fitting_summary
 
         self._check_fitted()
-        return plot_fitting_summary(self.results_, show_neurons=show_neurons, cmap=cmap, **plot_kwargs)
+        return plot_fitting_summary(self.results_, show_neurons=show_neurons, **plot_kwargs)
 
     def plot_latent_trajectory(
         self,
         time_range: tuple[float, float] | None = None,
-        epoch: int | tuple[int, ...] | None = None,
-        include_behavior: bool = True,
+        epochs: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot decoded latent trajectory (one subplot per spatial dimension).
@@ -589,15 +595,11 @@ class SIMPL:
         ----------
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-        epoch : int or tuple of ints, optional
-            Which epoch(s) to show.  A single int plots one epoch; a tuple
-            plots multiple.  Default: last non-negative epoch.
-        include_behavior : bool
-            Show the behavioral initialisation (epoch 0) alongside.
+        epochs : int or tuple of ints, optional
+            Which epoch(s) to show.  Negative values index from the end
+            (``-1`` = last epoch).  Default: all epochs.
         include_ground_truth : bool
             Show ``Xt`` as ``"k--"`` if present.
-        cmap : str
-            Colormap for epoch colouring.
         **plot_kwargs
             Forwarded to ``ax.plot``.
 
@@ -611,40 +613,32 @@ class SIMPL:
         return plot_latent_trajectory(
             self.results_,
             time_range=time_range,
-            epoch=epoch,
-            include_behavior=include_behavior,
+            epochs=epochs,
             include_ground_truth=include_ground_truth,
-            cmap=cmap,
             **plot_kwargs,
         )
 
     def plot_receptive_fields(
         self,
-        epoch: int | tuple[int, ...] | None = None,
+        epochs: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
-        include_behavior: bool = True,
         include_baselines: bool = False,
         ncols: int = 4,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot receptive fields for selected neurons.
 
         Parameters
         ----------
-        epoch : int or tuple of int, optional
-            Which epoch(s) to show.  ``None`` shows the first (0) and last
-            non-negative epochs.
+        epochs : int or tuple of int, optional
+            Which epoch(s) to show.  Negative values index from the end
+            (``-1`` = last epoch).  Default: ``(0, -1)``.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
-        include_behavior : bool
-            Show epoch-0 (behavior) fields alongside.
         include_baselines : bool
             Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
         ncols : int
             Maximum number of neuron-columns in the grid.
-        cmap : str
-            Colormap for receptive field heatmaps.
         **plot_kwargs
             Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -661,19 +655,16 @@ class SIMPL:
         return plot_receptive_fields(
             self.results_,
             extent=extent,
-            epoch=epoch,
+            epochs=epochs,
             neurons=neurons,
-            include_behavior=include_behavior,
             include_baselines=include_baselines,
             ncols=ncols,
-            cmap=cmap,
             **plot_kwargs,
         )
 
     def plot_all_metrics(
         self,
         show_neurons: bool = True,
-        cmap: str | None = None,
         ncols: int = 3,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -683,8 +674,6 @@ class SIMPL:
         ----------
         show_neurons : bool
             Show individual neuron dots for per-neuron metrics.
-        cmap : str
-            Colormap for epoch colouring.
         ncols : int
             Number of columns in the grid.
         **plot_kwargs
@@ -697,14 +686,13 @@ class SIMPL:
         from simpl.plotting import plot_all_metrics
 
         self._check_fitted()
-        return plot_all_metrics(self.results_, show_neurons=show_neurons, cmap=cmap, ncols=ncols, **plot_kwargs)
+        return plot_all_metrics(self.results_, show_neurons=show_neurons, ncols=ncols, **plot_kwargs)
 
     def plot_prediction(
         self,
         Xb: np.ndarray | None = None,
         Xt: np.ndarray | None = None,
         time_range: tuple[float, float] | None = None,
-        cmap: str | None = None,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot predicted trajectory from the most recent ``predict()`` call.
@@ -717,8 +705,6 @@ class SIMPL:
             Ground truth positions for the prediction window, shape ``(T, D)``.
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: full prediction range.
-        cmap : str
-            Colormap for trajectory colouring.
         **plot_kwargs
             Forwarded to ``ax.plot``.
 
@@ -735,7 +721,6 @@ class SIMPL:
             Xb=Xb,
             Xt=Xt,
             time_range=time_range,
-            cmap=cmap,
             **plot_kwargs,
         )
 

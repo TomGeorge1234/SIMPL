@@ -49,13 +49,6 @@ class TestPlotFittingSummary:
 
         plt.close("all")
 
-    def test_custom_cmap(self, results):
-        axes = plot_fitting_summary(results, cmap="viridis")
-        assert len(axes) == 2
-        import matplotlib.pyplot as plt
-
-        plt.close("all")
-
     def test_show_neurons_false(self, results):
         axes = plot_fitting_summary(results, show_neurons=False)
         assert len(axes) == 2
@@ -81,22 +74,15 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
-    def test_no_behavior(self, results):
-        axes = plot_latent_trajectory(results, include_behavior=False)
-        assert len(axes) == len(results.dim.values)
-        import matplotlib.pyplot as plt
-
-        plt.close("all")
-
-    def test_single_epoch_int(self, results):
-        axes = plot_latent_trajectory(results, epoch=1)
+    def test_single_epoch(self, results):
+        axes = plot_latent_trajectory(results, epochs=1)
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
         plt.close("all")
 
     def test_epoch_tuple(self, results):
-        axes = plot_latent_trajectory(results, epoch=(0, 1))
+        axes = plot_latent_trajectory(results, epochs=(0, 1))
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
@@ -144,16 +130,9 @@ class TestPlotReceptiveFields:
         assert axes.shape == (1, 3)
         plt.close("all")
 
-    def test_single_neuron_no_behavior(self, results):
-        axes = plot_receptive_fields(results, neurons=[0], epoch=1, include_behavior=False)
-        assert axes.shape == (1, 1)
-        import matplotlib.pyplot as plt
-
-        plt.close("all")
-
     def test_single_epoch_int(self, results):
         """Single int epoch should show one epoch column per neuron."""
-        axes = plot_receptive_fields(results, neurons=[0], epoch=1)
+        axes = plot_receptive_fields(results, neurons=[0], epochs=1)
         # columns: Beh + Ep 1 = 2 (since epoch=1, include_behavior adds Beh)
         import matplotlib.pyplot as plt
 
@@ -162,7 +141,7 @@ class TestPlotReceptiveFields:
 
     def test_epoch_tuple(self, results):
         """Tuple of epochs should show one column per epoch per neuron."""
-        axes = plot_receptive_fields(results, neurons=[0], epoch=(0, 1))
+        axes = plot_receptive_fields(results, neurons=[0], epochs=(0, 1))
         # columns: Ep 0 (behavior) + Ep 1 = 2 (0 is in epochs, so no extra Beh col)
         import matplotlib.pyplot as plt
 
@@ -180,16 +159,16 @@ class TestPlotReceptiveFields:
 
     def test_spacer_and_unused_axes_off(self, results):
         """With multiple neuron groups, spacer and trailing axes should be turned off."""
-        axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, epoch=1)
-        # 2 neuron cols + 1 spacer = 5 total cols (2*2 data + 1 spacer), 2 rows
+        axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, epochs=1)
+        # epochs=1 → 1 col per neuron, ncols=2 → 2 neuron groups per row
+        # total cols = 2*1 + 1 spacer = 3, total rows = 2
         import matplotlib.pyplot as plt
 
         # spacer column should be off
-        assert not axes[0, 2].axison  # spacer
+        assert not axes[0, 1].axison  # spacer
         # trailing unused axes on row 2 should be off
+        assert not axes[1, 1].axison
         assert not axes[1, 2].axison
-        assert not axes[1, 3].axison
-        assert not axes[1, 4].axison
         plt.close("all")
 
 

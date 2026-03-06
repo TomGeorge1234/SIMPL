@@ -1,0 +1,43 @@
+# SIMPL – clean, pastel-themed Matplotlib style
+
+# --- Color Palette ---
+axes.prop_cycle: cycler('color', ["ff595e","ffca3a","8ac926","1982c4","6a4c93", "ff8fa3","ffe066","a8e6cf","4dabf7","9f86c0"])
+
+# --- Axes & Spines ---
+axes.spines.right: False
+axes.spines.top: False
+axes.linewidth: 0.8
+axes.edgecolor: 444444
+axes.facecolor: none
+
+# --- Ticks ---
+xtick.direction: out
+ytick.direction: out
+xtick.major.size: 4
+ytick.major.size: 4
+xtick.major.width: 1.0
+ytick.major.width: 1.0
+xtick.color: 444444
+ytick.color: 444444
+
+# --- Grid ---
+axes.grid: True
+grid.color: e5e5e5
+grid.linewidth: 0.5
+grid.linestyle: -
+
+# --- Font & Label Sizes ---
+font.size: 9.0
+axes.titlesize: 9.0
+axes.labelsize: 7.0
+xtick.labelsize: 7.0
+ytick.labelsize: 7.0
+legend.fontsize: 7.0
+legend.frameon: True
+legend.facecolor: white
+legend.framealpha: 0.5
+legend.edgecolor: none
+
+# --- Figure ---
+figure.figsize: 6.0, 4.0
+figure.facecolor: none
