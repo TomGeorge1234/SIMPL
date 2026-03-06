@@ -33,6 +33,10 @@ axes.labelsize: 7.0
 xtick.labelsize: 7.0
 ytick.labelsize: 7.0
 legend.fontsize: 7.0
+legend.frameon: True
+legend.facecolor: white
+legend.framealpha: 0.5
+legend.edgecolor: none
 
 # --- Figure ---
 figure.figsize: 6.0, 4.0

@@ -86,16 +86,17 @@ def outset_axes(ax, offset_mm: float = 2) -> None:
 def _resolve_epochs(
     epochs: int | tuple[int, ...] | None,
     results: xr.Dataset,
-    default: tuple[int, ...] = (0, -1),
+    default: tuple[int, ...] | None = (0, -1),
 ) -> tuple[int, ...]:
     """Normalise an *epochs* argument to a tuple of concrete epoch values.
 
     Supports negative indexing: ``-1`` maps to the last non-negative epoch,
-    ``-2`` to the second-last, etc.
+    ``-2`` to the second-last, etc.  Pass ``default=None`` to default to all
+    non-negative epochs.
     """
     nn = _non_negative_epochs(results)
     if epochs is None:
-        raw = default
+        raw = tuple(int(e) for e in nn) if default is None else default
     elif isinstance(epochs, int):
         raw = (epochs,)
     else:
@@ -117,9 +118,9 @@ def _resolve_epochs(
     return tuple(unique)
 
 
-def _epoch_color(epoch: int, last_epoch: int, cmap: str = EPOCH_CMAP):
-    """Return a colour for *epoch* from *cmap* scaled to [0, last_epoch]."""
-    cm = matplotlib.colormaps[cmap]
+def _epoch_color(epoch: int, last_epoch: int):
+    """Return a colour for *epoch* from EPOCH_CMAP scaled to [0, last_epoch]."""
+    cm = matplotlib.colormaps[EPOCH_CMAP]
     if last_epoch == 0:
         return cm(1.0)
     return cm(epoch / last_epoch)
@@ -172,7 +173,7 @@ def plot_fitting_summary(
 
     ll_train, ll_test, si_means = [], [], []
     for e in epochs:
-        c = _epoch_color(e, last_epoch, cmap)
+        c = _epoch_color(e, last_epoch)
         ll_train.append(float(results.logPYXF.sel(epoch=e)))
         ll_test.append(float(results.logPYXF_test.sel(epoch=e)))
         ax_ll.scatter(e, ll_train[-1], color=c, zorder=5, **plot_kwargs)
@@ -187,7 +188,7 @@ def plot_fitting_summary(
 
     # connecting lines
     for i in range(len(epochs) - 1):
-        c = _epoch_color(epochs[i + 1], last_epoch, cmap)
+        c = _epoch_color(epochs[i + 1], last_epoch)
         ax_ll.plot(epochs[i : i + 2], ll_train[i : i + 2], color=c, lw=0.8, zorder=3)
         ax_ll.plot(epochs[i : i + 2], ll_test[i : i + 2], color=c, lw=0.8, zorder=3)
         ax_si.plot(epochs[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
@@ -262,7 +263,6 @@ def plot_latent_trajectory(
     time_range: tuple[float, float] | None = None,
     epochs: int | tuple[int, ...] | None = None,
     include_ground_truth: bool = True,
-    cmap: str | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
     """Plot decoded latent trajectory (one subplot per spatial dimension).
@@ -274,11 +274,9 @@ def plot_latent_trajectory(
         ``(t_start, t_end)`` in seconds.  Default: first 120 s.
     epochs : int or tuple of ints, optional
         Which epoch(s) to show.  Negative values index from the end of the
-        non-negative epochs (``-1`` = last epoch).  Default: ``(0, -1)``
-        (behavior and final epoch).
+        non-negative epochs (``-1`` = last epoch).  Default: all epochs.
     include_ground_truth : bool
         Show ``Xt`` as ``"k--"`` if present.
-    cmap : str
     **plot_kwargs
         Forwarded to ``ax.plot``.
 
@@ -286,8 +284,7 @@ def plot_latent_trajectory(
     -------
     axes : np.ndarray of Axes, shape (D,)
     """
-    cmap = cmap or EPOCH_CMAP
-    epochs_to_plot = _resolve_epochs(epochs, results)
+    epochs_to_plot = _resolve_epochs(epochs, results, default=None)
 
     if time_range is None:
         t0 = float(results.time.values[0])
@@ -301,10 +298,12 @@ def plot_latent_trajectory(
     traces = []
     for ep in epochs_to_plot:
         label = f"Epoch {ep} (behavior)" if ep == 0 else f"Epoch {ep}"
-        traces.append((
-            results.X.sel(epoch=ep, time=tslice).values,
-            dict(color=_epoch_color(ep, last_epoch, cmap), alpha=0.8, label=label),
-        ))
+        traces.append(
+            (
+                results.X.sel(epoch=ep, time=tslice).values,
+                dict(color=_epoch_color(ep, last_epoch), alpha=0.8, label=label),
+            )
+        )
 
     Xt = results.Xt.sel(time=tslice).values if (include_ground_truth and "Xt" in results) else None
     return _plot_trajectory_panel(t, traces, Xt, dim_names, **plot_kwargs)
@@ -315,7 +314,6 @@ def plot_prediction(
     Xb: np.ndarray | None = None,
     Xt: np.ndarray | None = None,
     time_range: tuple[float, float] | None = None,
-    cmap: str | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
     """Plot predicted trajectory from ``predict()``.
@@ -330,7 +328,6 @@ def plot_prediction(
         Ground truth positions for the prediction window, shape ``(T, D)``.
     time_range : tuple, optional
         ``(t_start, t_end)`` in seconds.  Default: full prediction range.
-    cmap : str
     **plot_kwargs
         Forwarded to ``ax.plot``.
 
@@ -338,7 +335,6 @@ def plot_prediction(
     -------
     axes : np.ndarray of Axes, shape (D,)
     """
-    cmap = cmap or EPOCH_CMAP
     dim_names = list(prediction_results.dim.values)
 
     T = len(prediction_results.time)
@@ -357,11 +353,11 @@ def plot_prediction(
     t = prediction_results.time.sel(time=tslice).values
     traces = []
     if Xb is not None:
-        traces.append((Xb[mask], dict(color=_epoch_color(0, 1, cmap), alpha=0.8, label="Behavior")))
+        traces.append((Xb[mask], dict(color=_epoch_color(0, 1), alpha=0.8, label="Behavior")))
     traces.append(
         (
             prediction_results.mu_s.sel(time=tslice).values,
-            dict(color=_epoch_color(1, 1, cmap), alpha=0.8, label="Predicted"),
+            dict(color=_epoch_color(1, 1), alpha=0.8, label="Predicted"),
         )
     )
 
@@ -376,7 +372,6 @@ def plot_receptive_fields(
     neurons: list[int] | np.ndarray | None = None,
     include_baselines: bool = False,
     ncols: int = 4,
-    cmap: str | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
     """Plot receptive fields for selected neurons.
@@ -396,7 +391,6 @@ def plot_receptive_fields(
         Show ground-truth fields (``Ft``) if present.
     ncols : int
         Maximum number of neuron-columns in the grid.
-    cmap : str
     **plot_kwargs
         Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -404,7 +398,6 @@ def plot_receptive_fields(
     -------
     axes : np.ndarray of Axes
     """
-    cmap = cmap or FIELD_CMAP
     dim_names = list(results.dim.values)
     D = len(dim_names)
     if D > 2:
@@ -483,7 +476,7 @@ def plot_receptive_fields(
     else:
         ext = None
 
-    imkw = dict(cmap=cmap, origin="lower", aspect="equal", **plot_kwargs)
+    imkw = dict(cmap=FIELD_CMAP, origin="lower", aspect="equal", **plot_kwargs)
     if ext is not None:
         imkw["extent"] = ext
 
@@ -543,7 +536,6 @@ def plot_receptive_fields(
 def plot_all_metrics(
     results: xr.Dataset,
     show_neurons: bool = True,
-    cmap: str | None = None,
     ncols: int = 3,
     **plot_kwargs,
 ) -> np.ndarray:
@@ -554,7 +546,6 @@ def plot_all_metrics(
     results : xr.Dataset
     show_neurons : bool
         Show individual neuron dots for per-neuron metrics.
-    cmap : str
     ncols : int
         Number of columns in the grid.
     **plot_kwargs
@@ -564,7 +555,6 @@ def plot_all_metrics(
     -------
     axes : np.ndarray of Axes
     """
-    cmap = cmap or EPOCH_CMAP
     epochs = _non_negative_epochs(results)
     last_epoch = int(epochs[-1])
     baselines = _baseline_epochs(results)
@@ -601,10 +591,10 @@ def plot_all_metrics(
             # line plot
             vals = [float(da.sel(epoch=e)) for e in epochs]
             for j in range(len(epochs)):
-                c = _epoch_color(epochs[j], last_epoch, cmap)
+                c = _epoch_color(epochs[j], last_epoch)
                 ax.scatter(epochs[j], vals[j], color=c, zorder=5, **plot_kwargs)
             for j in range(len(epochs) - 1):
-                c = _epoch_color(epochs[j + 1], last_epoch, cmap)
+                c = _epoch_color(epochs[j + 1], last_epoch)
                 ax.plot(epochs[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
             # baseline: only epoch -1 ("best model")
             if -1 in baselines:
@@ -613,7 +603,7 @@ def plot_all_metrics(
             # per-neuron (possibly mean over place_field first)
             means = []
             for e in epochs:
-                c = _epoch_color(e, last_epoch, cmap)
+                c = _epoch_color(e, last_epoch)
                 vals_e = da.sel(epoch=e)
                 if has_place_field:
                     vals_e = vals_e.mean(dim="place_field", skipna=True)
@@ -627,7 +617,7 @@ def plot_all_metrics(
                     means.append(float(np.nanmean(v)))
                 ax.scatter(e, means[-1], color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
             for j in range(len(epochs) - 1):
-                c = _epoch_color(epochs[j + 1], last_epoch, cmap)
+                c = _epoch_color(epochs[j + 1], last_epoch)
                 ax.plot(epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
 
         ax.set(xlabel="Epoch", ylabel=ylabel)
