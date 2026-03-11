@@ -204,8 +204,9 @@ class SIMPL:
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
         time : np.ndarray, shape (T,)
-            Time stamps (in seconds) for each time bin. Must be uniformly spaced. The time
-            step ``dt`` is inferred as ``time[1] - time[0]``.
+            Time stamps (in seconds) for each time bin. Values must be finite and strictly
+            increasing. Small gaps are allowed; the representative time step ``dt`` is
+            inferred as ``median(diff(time))``.
         n_epochs : int, optional
             Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
             M-step (useful for manual epoch control via ``_fit_epoch()``). By default 5.
@@ -1114,12 +1115,30 @@ class SIMPL:
     def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, verbose) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
+        time = np.asarray(time, dtype=float)
+
         if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
             Xb = Xb[:, np.newaxis]
         if Y.shape[0] != Xb.shape[0]:
             raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
+        if time.ndim != 1:
+            raise ValueError(f"time must be a 1D array (got shape {time.shape})")
         if Y.shape[0] != len(time):
             raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
+        if len(time) < 2:
+            raise ValueError("time must contain at least 2 samples so dt can be inferred")
+        if not np.all(np.isfinite(time)):
+            raise ValueError("time must contain only finite values")
+
+        dt = np.diff(time)
+        if not np.all(dt > 0):
+            raise ValueError("time must be strictly increasing")
+        if not 0 < self.test_frac < 1:
+            raise ValueError(f"test_frac must be between 0 and 1 (exclusive), got {self.test_frac}")
+        if self.speckle_block_size_seconds <= 0:
+            raise ValueError(
+                "speckle_block_size_seconds must be positive so the held-out mask spans at least one time bin"
+            )
 
         # ── Build environment and extract dimensions ──
         if self._environment_override is not None:
@@ -1143,7 +1162,7 @@ class SIMPL:
         self.Xb_ = jnp.array(Xb)
         self.time_ = jnp.array(time)
         self.neuron_ = jnp.array(neurons)
-        self.dt_ = float(self.time_[1] - self.time_[0])
+        self.dt_ = float(np.median(dt))
 
         self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
         self.xF_shape_ = self.environment_.discrete_env_shape
@@ -1153,13 +1172,25 @@ class SIMPL:
         self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
 
-        self.block_size_ = int(self.speckle_block_size_seconds / self.dt_)
+        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
+        if self.block_size_ >= self.T_:
+            raise ValueError(
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and test "
+                f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+            )
         self.spike_mask_ = create_speckled_mask(
             size=(self.T_, self.N_neurons_),
             sparsity=self.test_frac,
             block_size=self.block_size_,
             random_seed=self.random_seed,
         )
+        n_train = int(np.asarray(self.spike_mask_).sum())
+        n_test = int(np.asarray((~self.spike_mask_)).sum())
+        if n_train == 0 or n_test == 0:
+            raise ValueError(
+                "The held-out mask produced an empty train/test split. Adjust test_frac or "
+                "speckle_block_size_seconds."
+            )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_

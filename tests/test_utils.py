@@ -379,6 +379,16 @@ class TestAccumulateSpikes:
         assert result.dtype == Y.dtype
 
 
+class TestCreateSpeckledMask:
+    def test_validates_sparsity(self):
+        with pytest.raises(ValueError, match="sparsity"):
+            create_speckled_mask(size=(10, 3), sparsity=0.0, block_size=2)
+
+    def test_validates_block_size(self):
+        with pytest.raises(ValueError, match="block_size"):
+            create_speckled_mask(size=(10, 3), sparsity=0.1, block_size=0)
+
+
 class TestPrintDataSummary:
     def test_prints_output(self, demo_data, capsys):
         """print_data_summary should produce output with key headings."""
