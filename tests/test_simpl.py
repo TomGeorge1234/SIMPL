@@ -107,6 +107,69 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
+    def test_fit_requires_at_least_two_timepoints(self):
+        model = SIMPL()
+        with pytest.raises(ValueError, match="at least 2 samples"):
+            model.fit(
+                Y=np.zeros((1, 5)),
+                Xb=np.zeros((1, 2)),
+                time=np.array([0.0]),
+                n_epochs=0,
+            )
+
+    def test_fit_validates_monotonic_time(self):
+        model = SIMPL()
+        with pytest.raises(ValueError, match="strictly increasing"):
+            model.fit(
+                Y=np.zeros((4, 5)),
+                Xb=np.zeros((4, 2)),
+                time=np.array([0.0, 0.05, 0.05, 0.10]),
+                n_epochs=0,
+            )
+
+    def test_fit_uses_median_dt_when_time_has_gaps(self):
+        time = np.array([0.0, 0.05, 0.11, 0.17, 0.23, 0.29, 0.35, 0.41, 0.47, 0.86])
+        model = SIMPL(test_frac=0.2, speckle_block_size_seconds=0.11)
+        model.fit(
+            Y=np.zeros((len(time), 5)),
+            Xb=np.zeros((len(time), 2)),
+            time=time,
+            n_epochs=0,
+        )
+        assert model.dt_ == pytest.approx(0.06)
+        assert model.block_size_ == 2
+
+    @pytest.mark.parametrize("test_frac", [0.0, 1.0, -0.1, 1.1])
+    def test_fit_validates_test_frac(self, test_frac):
+        model = SIMPL(test_frac=test_frac)
+        with pytest.raises(ValueError, match="test_frac"):
+            model.fit(
+                Y=np.zeros((10, 5)),
+                Xb=np.zeros((10, 2)),
+                time=np.arange(10) * 0.05,
+                n_epochs=0,
+            )
+
+    def test_fit_validates_speckle_block_size_duration(self):
+        model = SIMPL(speckle_block_size_seconds=1.0)
+        with pytest.raises(ValueError, match="shorter than the recording duration"):
+            model.fit(
+                Y=np.zeros((10, 5)),
+                Xb=np.zeros((10, 2)),
+                time=np.arange(10) * 0.05,
+                n_epochs=0,
+            )
+
+    def test_fit_validates_nonempty_mask_split(self):
+        model = SIMPL(test_frac=0.01, speckle_block_size_seconds=0.01)
+        with pytest.raises(ValueError, match="empty train/test split"):
+            model.fit(
+                Y=np.zeros((10, 5)),
+                Xb=np.zeros((10, 2)),
+                time=np.arange(10) * 0.05,
+                n_epochs=0,
+            )
+
 
 class TestSIMPLFitResume:
     def test_resume_continues_training(self, demo_data):
