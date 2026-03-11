@@ -571,6 +571,33 @@ class TestSIMPLManifoldAlignment:
         assert "coef" not in model.E_
 
 
+class TestSIMPLCircularEnvironment:
+    def test_circular_fit_uses_full_domain_even_with_partial_behavior(self):
+        T, N_neurons = 200, 4
+        time = np.arange(T) * 0.02
+        Xb = np.linspace(-1.0, 1.0, T)[:, None]
+        Y = np.zeros((T, N_neurons))
+        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.5, speckle_block_size_seconds=0.1)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            model.fit(Y, Xb, time, n_epochs=0)
+
+        assert any("env_pad is ignored" in str(w.message) for w in caught)
+        assert np.allclose(model.environment_.lims[0], (-np.pi,))
+        assert np.allclose(model.environment_.lims[1], (np.pi,))
+
+    def test_circular_fit_rejects_incompatible_env_lims(self):
+        T, N_neurons = 200, 4
+        time = np.arange(T) * 0.02
+        Xb = np.linspace(-1.0, 1.0, T)[:, None]
+        Y = np.zeros((T, N_neurons))
+        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_lims=((-1.0,), (1.0,)))
+
+        with pytest.raises(ValueError, match=r"full \[-pi, pi\) domain"):
+            model.fit(Y, Xb, time, n_epochs=0)
+
+
 class TestSIMPLPredict:
     def test_predict_returns_correct_shape(self, demo_data):
         N = 2000
