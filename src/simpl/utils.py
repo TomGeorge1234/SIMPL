@@ -495,6 +495,17 @@ def create_speckled_mask(
     mask : np.ndarray
         A boolean mask with the specified properties.
     """
+    if len(size) != 2 or size[0] <= 0 or size[1] <= 0:
+        raise ValueError(f"size must be a pair of positive integers, got {size}")
+    if not 0 < sparsity < 1:
+        raise ValueError(f"sparsity must be between 0 and 1 (exclusive), got {sparsity}")
+    if block_size < 1:
+        raise ValueError(f"block_size must be at least 1, got {block_size}")
+    if block_size >= size[0]:
+        raise ValueError(
+            f"block_size must be smaller than the time dimension so the mask leaves training data, got {block_size}"
+        )
+
     mask = np.ones(size, dtype=bool)
     num_blocks_per_row = int(sparsity * size[0] / block_size)
     np.random.seed(random_seed)
