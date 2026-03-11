@@ -112,14 +112,18 @@ class SIMPL:
         env_pad : float, optional
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
-            clipped. In the same units as the latent space. By default 0.1.
+            clipped. In the same units as the latent space. Ignored when
+            ``is_circular=True`` because the circular domain is fixed to ``[-pi, pi)``.
+            By default 0.1.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
-            By default None (auto-inferred from ``Xb``).
+            By default None (auto-inferred from ``Xb``). When ``is_circular=True``, the
+            domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
         environment : Environment or None, optional
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
-            ``env_pad``, and ``env_lims`` are all ignored. By default None.
+            ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
+            environment must also represent the full ``[-pi, pi)`` domain. By default None.
         test_frac : float, optional
             Fraction of spike observations held out for testing, implemented via a speckled
             (block-structured) mask. Used to compute held-out log-likelihood for monitoring
@@ -1141,17 +1145,39 @@ class SIMPL:
             )
 
         # ── Build environment and extract dimensions ──
-        if self._environment_override is not None:
-            self.environment_ = self._environment_override
-        else:
-            self.environment_ = Environment(
-                Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
-            )
-
         self.D_ = Xb.shape[1]
         self.T_ = Y.shape[0]
         self.N_neurons_ = Y.shape[1]
         self.N_PFmax_ = 20
+
+        if self.is_circular:
+            if self.D_ != 1:
+                raise ValueError("Circular mode currently supports only 1D latent variables")
+
+            circular_lims = ((-np.pi,), (np.pi,))
+            if self._environment_override is not None:
+                self.environment_ = self._environment_override
+            else:
+                if self.env_lims is not None:
+                    env_lims_array = np.asarray(self.env_lims, dtype=float)
+                    if not np.allclose(env_lims_array, np.asarray(circular_lims), atol=1e-6):
+                        raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
+                if self.env_pad != 0:
+                    warnings.warn("env_pad is ignored when is_circular=True; using the full [-pi, pi) domain.")
+                self.environment_ = Environment(
+                    Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
+                )
+
+            environment_lims = np.asarray(self.environment_.lims, dtype=float)
+            if self.environment_.D != 1 or not np.allclose(environment_lims, np.asarray(circular_lims), atol=1e-6):
+                raise ValueError("Circular mode requires an Environment spanning the full [-pi, pi) domain")
+        else:
+            if self._environment_override is not None:
+                self.environment_ = self._environment_override
+            else:
+                self.environment_ = Environment(
+                    Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
+                )
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
