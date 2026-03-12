@@ -112,14 +112,18 @@ class SIMPL:
         env_pad : float, optional
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
-            clipped. In the same units as the latent space. By default 0.1.
+            clipped. In the same units as the latent space. Ignored when
+            ``is_circular=True`` because the circular domain is fixed to ``[-pi, pi)``.
+            By default 0.1.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
-            By default None (auto-inferred from ``Xb``).
+            By default None (auto-inferred from ``Xb``). When ``is_circular=True``, the
+            domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
         environment : Environment or None, optional
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
-            ``env_pad``, and ``env_lims`` are all ignored. By default None.
+            ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
+            environment must also represent the full ``[-pi, pi)`` domain. By default None.
         test_frac : float, optional
             Fraction of spike observations held out for testing, implemented via a speckled
             (block-structured) mask. Used to compute held-out log-likelihood for monitoring
@@ -204,8 +208,9 @@ class SIMPL:
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
         time : np.ndarray, shape (T,)
-            Time stamps (in seconds) for each time bin. Must be uniformly spaced. The time
-            step ``dt`` is inferred as ``time[1] - time[0]``.
+            Time stamps (in seconds) for each time bin. Values should be uniformly
+            increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically
+            inferred as ``median(diff(time))``.
         n_epochs : int, optional
             Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
             M-step (useful for manual epoch control via ``_fit_epoch()``). By default 5.
@@ -1114,28 +1119,87 @@ class SIMPL:
     def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, verbose) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
+        time = np.asarray(time, dtype=float)
+
         if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
             Xb = Xb[:, np.newaxis]
         if Y.shape[0] != Xb.shape[0]:
             raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
+        if time.ndim != 1:
+            raise ValueError(f"time must be a 1D array (got shape {time.shape})")
         if Y.shape[0] != len(time):
             raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
+        if len(time) < 2:
+            raise ValueError("time must contain at least 2 samples so dt can be inferred")
+        if not np.all(np.isfinite(time)):
+            raise ValueError("time must contain only finite values")
 
-        # ── Build environment and extract dimensions ──
-        if self._environment_override is not None:
-            self.environment_ = self._environment_override
-        else:
-            self.environment_ = Environment(
-                Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
+        dt = np.diff(time)
+        if not np.all(dt > 0):
+            raise ValueError("time must be strictly increasing")
+        dt_median = np.median(dt)
+        if self.use_kalman_smoothing and dt_median > 0 and np.max(np.abs(dt - dt_median)) / dt_median > 0.01:
+            warnings.warn(
+                f"time is not uniformly spaced (dt varies by more than 1% around the median dt={dt_median:.6g}s). "
+                "The Kalman filter assumes a constant dt. Consider using `trial_boundaries` to separate "
+                "non-contiguous segments"
+            )
+        if not 0 < self.test_frac < 1:
+            raise ValueError(f"test_frac must be between 0 and 1 (exclusive), got {self.test_frac}")
+        if self.speckle_block_size_seconds <= 0:
+            raise ValueError(
+                "speckle_block_size_seconds must be positive so the held-out mask spans at least one time bin"
             )
 
+        # ── Build environment and extract dimensions ──
         self.D_ = Xb.shape[1]
         self.T_ = Y.shape[0]
         self.N_neurons_ = Y.shape[1]
         self.N_PFmax_ = 20
 
+        if self.is_circular:
+            if self.D_ != 1:
+                raise ValueError("Circular mode currently supports only 1D latent variables")
+
+            circular_lims = ((-np.pi,), (np.pi,))
+            if self._environment_override is not None:
+                self.environment_ = self._environment_override
+            else:
+                if self.env_lims is not None:
+                    env_lims_array = np.asarray(self.env_lims, dtype=float)
+                    if not np.allclose(env_lims_array, circular_lims, atol=1e-6):
+                        raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
+                if self.env_pad != 0:
+                    warnings.warn("env_pad is ignored when is_circular=True; using the full [-pi, pi) domain.")
+                self.environment_ = Environment(
+                    Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
+                )
+
+            environment_lims = np.asarray(self.environment_.lims, dtype=float)
+            if self.environment_.D != 1 or not np.allclose(environment_lims, np.asarray(circular_lims), atol=1e-6):
+                raise ValueError("Circular mode requires an Environment spanning the full [-pi, pi) domain")
+        else:
+            if self._environment_override is not None:
+                self.environment_ = self._environment_override
+            else:
+                self.environment_ = Environment(
+                    Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
+                )
+
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
+
+        env_lo = np.asarray(self.environment_.lims[0])
+        env_hi = np.asarray(self.environment_.lims[1])
+        data_lo = Xb.min(axis=0)
+        data_hi = Xb.max(axis=0)
+        if np.any(data_lo < env_lo) or np.any(data_hi > env_hi):
+            warnings.warn(
+                f"Behavioural data spans [{data_lo}, {data_hi}] but the environment only covers "
+                f"[{env_lo}, {env_hi}]. Positions outside the environment have no matching spatial bins, "
+                "which may degrade receptive field estimates and decoding accuracy. "
+                "Consider increasing `env_pad` or adjusting `env_lims`."
+            )
 
         # ── Convert data to JAX arrays ──
         neurons = np.arange(self.N_neurons_)
@@ -1143,7 +1207,7 @@ class SIMPL:
         self.Xb_ = jnp.array(Xb)
         self.time_ = jnp.array(time)
         self.neuron_ = jnp.array(neurons)
-        self.dt_ = float(self.time_[1] - self.time_[0])
+        self.dt_ = float(np.median(dt))
 
         self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
         self.xF_shape_ = self.environment_.discrete_env_shape
@@ -1153,13 +1217,24 @@ class SIMPL:
         self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
 
-        self.block_size_ = int(self.speckle_block_size_seconds / self.dt_)
+        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
+        if self.block_size_ >= self.T_:
+            raise ValueError(
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and test "
+                f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+            )
         self.spike_mask_ = create_speckled_mask(
             size=(self.T_, self.N_neurons_),
             sparsity=self.test_frac,
             block_size=self.block_size_,
             random_seed=self.random_seed,
         )
+        n_train = int(np.asarray(self.spike_mask_).sum())
+        if n_train == 0:
+            raise ValueError(
+                "The held-out mask produced an empty train split (no spikes are used for fitting). "
+                "Adjust test_frac or speckle_block_size_seconds."
+            )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_
