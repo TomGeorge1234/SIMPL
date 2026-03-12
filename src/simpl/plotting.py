@@ -150,7 +150,7 @@ def plot_fitting_summary(
     show_neurons: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Two-panel summary: log-likelihood (left) and spatial information (right).
+    """Two-panel summary: bits per spike (left) and spatial information (right).
 
     Parameters
     ----------
@@ -169,15 +169,15 @@ def plot_fitting_summary(
     last_epoch = int(epochs[-1])
 
     fig, axes = plt.subplots(1, 2, figsize=(0.7 * FIG_WIDTH, 0.7 * FIG_WIDTH * 0.35), layout="constrained")
-    ax_ll, ax_si = axes
+    ax_bps, ax_si = axes
 
-    ll_train, ll_test, si_means = [], [], []
+    bps_train, bps_test, si_means = [], [], []
     for e in epochs:
         c = _epoch_color(e, last_epoch)
-        ll_train.append(float(results.logPYXF.sel(epoch=e)))
-        ll_test.append(float(results.logPYXF_test.sel(epoch=e)))
-        ax_ll.scatter(e, ll_train[-1], color=c, zorder=5, **plot_kwargs)
-        ax_ll.scatter(e, ll_test[-1], color="w", edgecolors=c, linewidth=2, zorder=5, **plot_kwargs)
+        bps_train.append(float(results.bits_per_spike.sel(epoch=e)))
+        bps_test.append(float(results.bits_per_spike_test.sel(epoch=e)))
+        ax_bps.scatter(e, bps_train[-1], color=c, zorder=5, **plot_kwargs)
+        ax_bps.scatter(e, bps_test[-1], color="w", edgecolors=c, linewidth=2, zorder=5, **plot_kwargs)
 
         si = results.spatial_information.sel(epoch=e).values
         if show_neurons:
@@ -189,18 +189,18 @@ def plot_fitting_summary(
     # connecting lines
     for i in range(len(epochs) - 1):
         c = _epoch_color(epochs[i + 1], last_epoch)
-        ax_ll.plot(epochs[i : i + 2], ll_train[i : i + 2], color=c, lw=0.8, zorder=3)
-        ax_ll.plot(epochs[i : i + 2], ll_test[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_bps.plot(epochs[i : i + 2], bps_train[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_bps.plot(epochs[i : i + 2], bps_test[i : i + 2], color=c, lw=0.8, zorder=3)
         ax_si.plot(epochs[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
 
     # baseline: only epoch -1 ("best model")
     if -1 in results.epoch.values:
-        if "logPYXF" in results:
-            ax_ll.axhline(float(results.logPYXF.sel(epoch=-1)), color="k", ls="--", lw=0.8)
+        if "bits_per_spike" in results:
+            ax_bps.axhline(float(results.bits_per_spike.sel(epoch=-1)), color="k", ls="--", lw=0.8)
         if "spatial_information" in results:
             ax_si.axhline(float(results.spatial_information.sel(epoch=-1).mean()), color="k", ls="--", lw=0.8)
 
-    ax_ll.set(xlabel="Epoch", ylabel="Log likelihood")
+    ax_bps.set(xlabel="Epoch", ylabel="Bits per spike")
     ax_si.set(xlabel="Epoch", ylabel="Spatial information (bits/s)")
     for ax in axes:
         outset_axes(ax)
