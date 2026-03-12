@@ -137,9 +137,6 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
-        verbose : bool, optional
-            Whether to print progress information (data summary, epoch summaries, warnings)
-            during ``fit()``. By default True.
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
