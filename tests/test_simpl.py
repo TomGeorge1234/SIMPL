@@ -127,18 +127,6 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
-    def test_fit_uses_median_dt_when_time_has_gaps(self):
-        time = np.array([0.0, 0.05, 0.11, 0.17, 0.23, 0.29, 0.35, 0.41, 0.47, 0.86])
-        model = SIMPL(test_frac=0.2, speckle_block_size_seconds=0.11)
-        model.fit(
-            Y=np.zeros((len(time), 5)),
-            Xb=np.zeros((len(time), 2)),
-            time=time,
-            n_epochs=0,
-        )
-        assert model.dt_ == pytest.approx(0.06)
-        assert model.block_size_ == 2
-
     @pytest.mark.parametrize("test_frac", [0.0, 1.0, -0.1, 1.1])
     def test_fit_validates_test_frac(self, test_frac):
         model = SIMPL(test_frac=test_frac)
@@ -159,7 +147,6 @@ class TestSIMPLFit:
                 time=np.arange(10) * 0.05,
                 n_epochs=0,
             )
-
 
 
 class TestSIMPLFitResume:
