@@ -383,22 +383,22 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "axis title": "Kalman posterior predictive",
             "formula": r"$\log P(Y|Y_{\textrm{train}})$",
         },
-        "logPYF_test": {
-            "name": "Total data log-likelihood (test)",
+        "logPYF_val": {
+            "name": "Total data log-likelihood (validation)",
             "description": (
                 "See logPYF but for observations derived from "
-                "the testing spikes i.e. logPYF_test = "
-                "P(Y_test|Y_train) = int_X "
-                "P(Y_test|X)P(X|Y_train). Its analogous to "
-                'asking "were the test observations (~test '
-                "spikes) P(Y_test|X) likely under the decoded "
+                "the validation spikes i.e. logPYF_val = "
+                "P(Y_val|Y_train) = int_X "
+                "P(Y_val|X)P(X|Y_train). Its analogous to "
+                'asking "were the validation observations (~validation '
+                "spikes) P(Y_val|X) likely under the decoded "
                 'trajectory P(X|Y_train)?" or in other words '
                 '"can the train spikes be used to predict the '
-                'test spikes?"'
+                'validation spikes?"'
             ),
             "dims": [],
-            "axis title": "Kalman posterior predictive (test)",
-            "formula": r"$\log P(Y_{\textrm{test}}|Y_{\textrm{train}})$",
+            "axis title": "Kalman posterior predictive (validation)",
+            "formula": r"$\log P(Y_{\textrm{val}}|Y_{\textrm{train}})$",
         },
         "logPYXF": {
             "name": "Mean spike log-likelihood given trajectory",
@@ -412,23 +412,40 @@ def build_variable_info_dict(dim: list[str]) -> dict:
                 "observations of those spikes (likelihood map "
                 "modes). It is normalised by the number of "
                 "spike-time bins to make it comparable across "
-                "test and train datasets."
+                "validation and train datasets."
             ),
             "dims": [],
             "axis title": "Spike log-likelihood",
             "formula": r"$\log P(Y|X(t), \Theta)$",
         },
-        "logPYXF_test": {
-            "name": "Mean spike log-likelihood given trajectory (test)",
+        "logPYXF_val": {
+            "name": "Mean spike log-likelihood given trajectory (validation)",
+            "description": "See logPYXF, but applied to the validation spikes.",
+            "dims": [],
+            "axis title": "Spike log-likelihood (validation)",
+            "formula": r"$\log P(Y_{\textrm{val}}|X(t), \Theta)$",
+        },
+        "bits_per_spike": {
+            "name": "Bits per spike (train)",
             "description": (
-                "See logPYXF but for observations derived "
-                "from the testing spikes. This is the poisson "
-                "log-likelihood of the test spikes along the "
-                "trajectory derived from the train spikes."
+                "Bits per spike on the training set. A renormalisation of the Poisson log-likelihood (logPYXF) "
+                "that subtracts a mean-rate baseline and divides by total spike count, converting to bits: "
+                "bps = (ll_model - ll_mean_rate) / (n_spikes * log2). Monotonically related to logPYXF but "
+                "more interpretable and comparable across datasets with different spike counts."
             ),
             "dims": [],
-            "axis title": "Spike log-likelihood (test)",
-            "formula": r"$\log P(Y_{\textrm{test}}|X(t), \Theta)$",
+            "axis_title": "Bits per spike (train)",
+            "formula": r"$\frac{\mathcal{L}(\hat\lambda) - \mathcal{L}(\bar\lambda)}{N_{\mathrm{spk}} \ln 2}$",
+        },
+        "bits_per_spike_val": {
+            "name": "Bits per spike (validation)",
+            "description": "See bits_per_spike, but applied to the validation spikes.",
+            "dims": [],
+            "axis_title": "Bits per spike (validation)",
+            "formula": (
+                r"$\frac{\mathcal{L}_{\mathrm{val}}(\hat\lambda)"
+                r" - \mathcal{L}_{\mathrm{val}}(\bar\lambda)}{N_{\mathrm{spk,val}} \ln 2}$"
+            ),
         },
         "spatial_information": {
             "axis title": "Spatial Information (bits/spike)",
