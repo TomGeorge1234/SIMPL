@@ -1138,7 +1138,7 @@ class SIMPL:
         if not np.all(dt > 0):
             raise ValueError("time must be strictly increasing")
         dt_median = np.median(dt)
-        if dt_median > 0 and np.max(np.abs(dt - dt_median)) / dt_median > 0.01:
+        if self.use_kalman_smoothing and dt_median > 0 and np.max(np.abs(dt - dt_median)) / dt_median > 0.01:
             warnings.warn(
                 f"time is not uniformly spaced (dt varies by more than 1% around the median dt={dt_median:.6g}s). "
                 "The Kalman filter assumes a constant dt. Consider using `trial_boundaries` to separate "
