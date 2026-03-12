@@ -1161,13 +1161,13 @@ class SIMPL:
             if self.D_ != 1:
                 raise ValueError("Circular mode currently supports only 1D latent variables")
 
-            circular_lims = ((-np.pi,), (np.pi,))
+            circular_lims = np.asarray((-np.pi,), (np.pi,))
             if self._environment_override is not None:
                 self.environment_ = self._environment_override
             else:
                 if self.env_lims is not None:
                     env_lims_array = np.asarray(self.env_lims, dtype=float)
-                    if not np.allclose(env_lims_array, np.asarray(circular_lims), atol=1e-6):
+                    if not np.allclose(env_lims_array, circular_lims, atol=1e-6):
                         raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
                 if self.env_pad != 0:
                     warnings.warn("env_pad is ignored when is_circular=True; using the full [-pi, pi) domain.")
