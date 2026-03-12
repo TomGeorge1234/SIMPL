@@ -382,11 +382,19 @@ class TestAccumulateSpikes:
 class TestCreateSpeckledMask:
     def test_validates_sparsity(self):
         with pytest.raises(ValueError, match="sparsity"):
-            create_speckled_mask(size=(10, 3), sparsity=0.0, block_size=2)
+            create_speckled_mask(size=(10, 3), sparsity=-0.1, block_size=2)
+
+    def test_sparsity_zero_returns_all_true(self):
+        mask = create_speckled_mask(size=(10, 3), sparsity=0.0, block_size=2)
+        assert mask.all()
 
     def test_validates_block_size(self):
         with pytest.raises(ValueError, match="block_size"):
-            create_speckled_mask(size=(10, 3), sparsity=0.1, block_size=0)
+            create_speckled_mask(size=(10, 3), sparsity=0.1, block_size=-1)
+
+    def test_block_size_zero_returns_all_true(self):
+        mask = create_speckled_mask(size=(10, 3), sparsity=0.1, block_size=0)
+        assert mask.all()
 
 
 class TestPrintDataSummary:
