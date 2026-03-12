@@ -5,6 +5,7 @@
 
 <img src="simpl.gif" width=850>
 
+<!-- docs-intro-start -->
 ## Installation
 This repository contains code for the ICLR 2025 paper "_SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour_" ([ICLR](https://openreview.net/forum?id=9kFaNwX6rv)). Specifically:
 
@@ -18,6 +19,9 @@ To run the example you will need to install `simpl` by
 3. **Install**: `pip install .[demos]`. This will install the `simpl` package and its dependencies.
 4. **Run the demo**: `jupyter notebook examples/simpl_demo.ipynb` !
 
+<!-- docs-intro-end -->
+
+<!-- docs-usage-start -->
 ## API
 
 SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
@@ -131,6 +135,8 @@ Y_coarse, Xb_coarse, time_coarse = coarsen_dt(Y, Xb, time, dt_multiplier=2)
 # Accumulate spikes with a causal sliding window
 Y_accum = accumulate_spikes(Y, window=3)
 ```
+
+<!-- docs-usage-end -->
 
 ## Examples
 
