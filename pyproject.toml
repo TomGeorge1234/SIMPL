@@ -23,6 +23,11 @@ dependencies = [
 
 [project.optional-dependencies]
 demos = ["jupyter", "ratinabox", "tqdm"]
+docs = [
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "mkdocs-include-markdown-plugin",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
