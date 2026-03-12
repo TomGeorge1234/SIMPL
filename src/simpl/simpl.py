@@ -43,7 +43,7 @@ class SIMPL:
         env_lims: tuple | None = None,
         environment: Environment | None = None,
         # Mask and analysis parameters
-        test_frac: float = 0.1,
+        val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
     ) -> None:
@@ -124,12 +124,12 @@ class SIMPL:
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
             ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
             environment must also represent the full ``[-pi, pi)`` domain. By default None.
-        test_frac : float, optional
-            Fraction of spike observations held out for testing, implemented via a speckled
+        val_frac : float, optional
+            Fraction of spike observations held out for validation, implemented via a speckled
             (block-structured) mask. Used to compute held-out log-likelihood for monitoring
             overfitting. By default 0.1.
         speckle_block_size_seconds : float, optional
-            Temporal size (in seconds) of contiguous blocks in the speckled test mask. Larger
+            Temporal size (in seconds) of contiguous blocks in the speckled validation mask. Larger
             blocks give more temporally coherent held-out segments. By default 1.0.
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
@@ -158,7 +158,7 @@ class SIMPL:
         self._environment_override = environment  # power-user pre-built Environment
 
         # Mask and analysis parameters
-        self.test_frac = test_frac
+        self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
 
@@ -183,7 +183,7 @@ class SIMPL:
         This is the main entry point for training. It performs the following steps:
 
         1. **Setup** — validates inputs, creates the ``Environment`` (spatial discretisation
-           grid), sets up the Kalman filter, and builds the speckled test mask.
+           grid), sets up the Kalman filter, and builds the speckled validation mask.
         2. **Epoch 0** — runs the M-step only on the behavioral trajectory ``Xb`` to produce
            the initial receptive fields. Prints a data summary and spatial information
            diagnostics (if ``verbose=True``).
@@ -197,7 +197,7 @@ class SIMPL:
         - ``self.results_`` — full ``xarray.Dataset`` with all epochs, metrics, and
           intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
           stability, etc.).
-        - ``self.loglikelihoods_`` — per-epoch train/test log-likelihoods.
+        - ``self.loglikelihoods_`` — per-epoch train/validation log-likelihoods.
 
         Parameters
         ----------
@@ -244,7 +244,7 @@ class SIMPL:
             Metrics, receptive fields, decoded trajectories, and Kalman outputs are
             unaffected and stored for every epoch regardless. By default False.
         early_stopping : bool, optional
-            If True, training stops early when the test log-likelihood has not improved
+            If True, training stops early when the validation log-likelihood has not improved
             for 3 consecutive epochs. By default True.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
@@ -849,7 +849,7 @@ class SIMPL:
         -------
         dict
             Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
-            logPYF, logPYF_test, and optionally logPYXF_maps.
+            logPYF, logPYF_val, and optionally logPYXF_maps.
         """
         if mask is None:
             mask = jnp.ones(Y.shape, dtype=bool)
@@ -870,7 +870,7 @@ class SIMPL:
 
         # Process each trial
         mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
-        logPYF_list, logPYF_test_list = [], []
+        logPYF_list, logPYF_val_list = [], []
 
         for trial_slice in trial_slices:
             _mode_l = mode_l[trial_slice]
@@ -897,17 +897,17 @@ class SIMPL:
             # Likelihoods
             logPYF = self.kalman_filter_.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
 
-            # Test likelihood
-            logPYXF_maps_test = poisson_log_likelihood(_Y, F, mask=~_mask)
-            no_spikes_test = jnp.sum(_Y * ~_mask, axis=1) == 0
-            _, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_test))
-            observation_noise_test = jnp.where(
-                no_spikes_test[:, None, None],
+            # Validation likelihood
+            logPYXF_maps_val = poisson_log_likelihood(_Y, F, mask=~_mask)
+            no_spikes_val = jnp.sum(_Y * ~_mask, axis=1) == 0
+            _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
+            observation_noise_val = jnp.where(
+                no_spikes_val[:, None, None],
                 jnp.eye(self.D_) * 1e6,
-                sigma_l_test,
+                sigma_l_val,
             )
-            logPYF_test = self.kalman_filter_.loglikelihood(
-                Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s
+            logPYF_val = self.kalman_filter_.loglikelihood(
+                Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
             ).sum()
 
             mu_f_list.append(mu_f)
@@ -915,7 +915,7 @@ class SIMPL:
             mu_s_list.append(mu_s)
             sigma_s_list.append(sigma_s)
             logPYF_list.append(logPYF)
-            logPYF_test_list.append(logPYF_test)
+            logPYF_val_list.append(logPYF_val)
 
         # Concatenate
         mu_f = jnp.concatenate(mu_f_list, axis=0)
@@ -923,7 +923,7 @@ class SIMPL:
         mu_s = jnp.concatenate(mu_s_list, axis=0)
         sigma_s = jnp.concatenate(sigma_s_list, axis=0)
         logPYF = sum(logPYF_list)
-        logPYF_test = sum(logPYF_test_list)
+        logPYF_val = sum(logPYF_val_list)
 
         E = {
             "mu_l": mu_l,
@@ -934,7 +934,7 @@ class SIMPL:
             "mu_s": mu_s,
             "sigma_s": sigma_s,
             "logPYF": logPYF,
-            "logPYF_test": logPYF_test,
+            "logPYF_val": logPYF_val,
         }
         E["logPYXF_maps"] = logPYXF_maps
 
@@ -1031,7 +1031,7 @@ class SIMPL:
         if N <= 0:
             return
         patience = 3
-        best_test_ll = -np.inf
+        best_val_ll = -np.inf
         epochs_without_improvement = 0
         self._print_epoch_summary()
         for _ in range(N):
@@ -1040,15 +1040,18 @@ class SIMPL:
                 if verbose:
                     self._print_epoch_summary()
                 if early_stopping:
-                    test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=self.epoch_).values)
-                    if test_ll > best_test_ll:
-                        best_test_ll = test_ll
+                    val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=self.epoch_).values)
+                    if val_ll > best_val_ll:
+                        best_val_ll = val_ll
                         epochs_without_improvement = 0
                     else:
                         epochs_without_improvement += 1
                         if epochs_without_improvement >= patience:
                             if verbose:
-                                print(f"  Early stopping: test log-likelihood has not improved for {patience} epochs.")
+                                print(
+                                    f"  Early stopping: validation log-likelihood has not "
+                                    f"improved for {patience} epochs."
+                                )
                             break
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch_} epochs.")
@@ -1162,8 +1165,8 @@ class SIMPL:
                 "The Kalman filter assumes a constant dt. Consider using `trial_boundaries` to separate "
                 "non-contiguous segments"
             )
-        if not 0 < self.test_frac < 1:
-            raise ValueError(f"test_frac must be between 0 and 1 (exclusive), got {self.test_frac}")
+        if not 0 < self.val_frac < 1:
+            raise ValueError(f"val_frac must be between 0 and 1 (exclusive), got {self.val_frac}")
         if self.speckle_block_size_seconds <= 0:
             raise ValueError(
                 "speckle_block_size_seconds must be positive so the held-out mask spans at least one time bin"
@@ -1248,12 +1251,12 @@ class SIMPL:
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
         if self.block_size_ >= self.T_:
             raise ValueError(
-                "speckle_block_size_seconds must be shorter than the recording duration so both train and test "
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and validation "
                 f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
             )
         self.spike_mask_ = create_speckled_mask(
             size=(self.T_, self.N_neurons_),
-            sparsity=self.test_frac,
+            sparsity=self.val_frac,
             block_size=self.block_size_,
             random_seed=self.random_seed,
         )
@@ -1261,7 +1264,7 @@ class SIMPL:
         if n_train == 0:
             raise ValueError(
                 "The held-out mask produced an empty train split (no spikes are used for fitting). "
-                "Adjust test_frac or speckle_block_size_seconds."
+                "Adjust val_frac or speckle_block_size_seconds."
             )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
@@ -1374,20 +1377,20 @@ class SIMPL:
         e = self.epoch_
         try:
             train_ll = float(self.loglikelihoods_.logPYXF.sel(epoch=e).values)
-            test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=e).values)
+            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=e).values)
             bps_train = float(self.loglikelihoods_.bits_per_spike.sel(epoch=e).values)
-            bps_test = float(self.loglikelihoods_.bits_per_spike_test.sel(epoch=e).values)
+            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(epoch=e).values)
             si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
             parts = [
-                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, test={test_ll:.4f})",
-                f"bits/spike(train={bps_train:.4f}, test={bps_test:.4f})",
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
+                f"bits/spike(train={bps_train:.4f}, val={bps_val:.4f})",
                 f"spatial_info={si:.4f} bits/s/neuron",
             ]
             print("     ".join(parts))
             if e > 0:
-                epoch0_test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=0).values)
-                if test_ll < epoch0_test_ll:
-                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
+                epoch0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=0).values)
+                if val_ll < epoch0_val_ll:
+                    print("    WARNING: validation LL below epoch 0. Model may be overfitting.")
         except Exception:
             print(f"Epoch {e}")
 
@@ -1436,22 +1439,22 @@ class SIMPL:
         Returns
         -------
         dict
-            Dictionary with 'logPYXF' and 'logPYXF_test' keys.
+            Dictionary with 'logPYXF' and 'logPYXF_val' keys.
         """
         LLs = {}
         train_mask = self.spike_mask_
-        test_mask = ~self.spike_mask_
+        val_mask = ~self.spike_mask_
 
         logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum() / train_mask.sum()
-        logPYXF_test = poisson_log_likelihood_trajectory(Y, FX, mask=test_mask).sum() / test_mask.sum()
+        logPYXF_val = poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum() / val_mask.sum()
         LLs["logPYXF"] = logPYXF
-        LLs["logPYXF_test"] = logPYXF_test
+        LLs["logPYXF_val"] = logPYXF_val
 
         # Bits per spike: (ll_model - ll_mean_rate) / (n_spikes * log2)
         mean_FX = (Y * train_mask).sum(axis=0, keepdims=True) / train_mask.sum(axis=0, keepdims=True)
         mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
 
-        for mask, suffix in [(train_mask, ""), (test_mask, "_test")]:
+        for mask, suffix in [(train_mask, ""), (val_mask, "_val")]:
             ll_model = poisson_log_likelihood_trajectory(Y, FX, mask=mask).sum()
             ll_baseline = poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
             n_spikes = (Y * mask).sum()
@@ -1616,7 +1619,7 @@ class SIMPL:
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_circular": int(self.is_circular),
             "environment_provided": int(self._environment_override is not None),
-            "test_frac": self.test_frac,
+            "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "random_seed": self.random_seed,
         }
