@@ -37,7 +37,7 @@ class SIMPL:
         use_kalman_smoothing: bool = True,
         behavior_prior: float | None = None,
         # Environment parameters
-        is_circular: bool = False,
+        is_1D_angular: bool = False,
         bin_size: float = 0.02,
         env_pad: float = 0.1,
         env_lims: tuple | None = None,
@@ -101,10 +101,13 @@ class SIMPL:
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
             towards ``Xb``. None means no prior (the latent is free to move anywhere).
             By default None.
-        is_circular : bool, optional
-            Whether the latent space is circular (e.g. head direction data in radians). If
-            True, angular KDE is used and the space is assumed to be in [-pi, pi].
-            By default False.
+        is_1D_angular : bool, optional
+            Whether the latent space is 1D angular/circular (e.g. head direction data in
+            radians). If True, angular KDE is used, the Kalman filter wraps its state to
+            [-pi, pi) after every predict/update/smooth step, and the environment is fixed
+            to [-pi, pi). The wrapped Kalman approximation assumes a tight posterior
+            (sigma << 2*pi); results may degrade when posterior uncertainty is large relative
+            to the circular domain. By default False.
         bin_size : float, optional
             Spatial bin size for discretising the environment, in the same units as the latent
             space. Controls the resolution of the receptive field grid. Smaller bins give
@@ -113,12 +116,12 @@ class SIMPL:
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
             clipped. In the same units as the latent space. Ignored when
-            ``is_circular=True`` because the circular domain is fixed to ``[-pi, pi)``.
+            ``is_1D_angular=True`` because the circular domain is fixed to ``[-pi, pi)``.
             By default 0.1.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
-            By default None (auto-inferred from ``Xb``). When ``is_circular=True``, the
+            By default None (auto-inferred from ``Xb``). When ``is_1D_angular=True``, the
             domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
         environment : Environment or None, optional
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
@@ -149,7 +152,7 @@ class SIMPL:
         self.speed_prior = speed_prior
         self.use_kalman_smoothing = use_kalman_smoothing
         self.behavior_prior = behavior_prior
-        self.is_circular = is_circular
+        self.is_1D_angular = is_1D_angular
 
         # Environment config
         self.bin_size = bin_size
@@ -390,6 +393,8 @@ class SIMPL:
         )
 
         X_decoded = np.array(E["mu_s"])
+        if self.is_1D_angular:
+            X_decoded = np.array(_wrap_minuspi_pi(jnp.array(X_decoded)))
 
         # Store full decode results as an xr.Dataset
         pred_time = np.arange(T_new) * self.dt_
@@ -771,7 +776,7 @@ class SIMPL:
             source, target = None, None
 
         if source is not None:
-            if self.is_circular:
+            if self.is_1D_angular:
                 angle, _ = cca_angular(source, target)
                 E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
                 align_dict = {"intercept": jnp.atleast_1d(angle)}
@@ -1178,7 +1183,7 @@ class SIMPL:
         self.N_neurons_ = Y.shape[1]
         self.N_PFmax_ = 20
 
-        if self.is_circular:
+        if self.is_1D_angular:
             if self.D_ != 1:
                 raise ValueError("Circular mode currently supports only 1D latent variables")
 
@@ -1191,7 +1196,7 @@ class SIMPL:
                     if not np.allclose(env_lims_array, circular_lims, atol=1e-6):
                         raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
                 if self.env_pad != 0:
-                    warnings.warn("env_pad is ignored when is_circular=True; using the full [-pi, pi) domain.")
+                    warnings.warn("env_pad is ignored when is_1D_angular=True; using the full [-pi, pi) domain.")
                 self.environment_ = Environment(
                     Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
                 )
@@ -1278,7 +1283,7 @@ class SIMPL:
             )
         self.align_mode_ = align_to_behavior if align_to_behavior else None
         self.Xalign_ = self.Xb_ if self.align_mode_ else None
-        self._kde = kde_angular if self.is_circular else kde
+        self._kde = kde_angular if self.is_1D_angular else kde
 
         self.lastF_, self.lastX_ = None, None
         self.epoch_ = -1
@@ -1342,7 +1347,17 @@ class SIMPL:
         Q = sigma_eff_square * jnp.eye(self.D_)
         H = jnp.eye(self.D_)
 
-        self.kalman_filter_ = KalmanFilter(dim_Z=self.D_, dim_Y=self.D_, dim_U=self.D_, F=F, B=B, Q=Q, H=H, R=None)
+        self.kalman_filter_ = KalmanFilter(
+            dim_Z=self.D_,
+            dim_Y=self.D_,
+            dim_U=self.D_,
+            F=F,
+            B=B,
+            Q=Q,
+            H=H,
+            R=None,
+            is_1D_angular=self.is_1D_angular,
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Display
@@ -1617,7 +1632,7 @@ class SIMPL:
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
-            "is_circular": int(self.is_circular),
+            "is_1D_angular": int(self.is_1D_angular),
             "environment_provided": int(self._environment_override is not None),
             "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
