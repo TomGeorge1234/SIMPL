@@ -104,6 +104,23 @@ from simpl import load_results
 results = load_results("results.nc")
 ```
 
+### 1D angular / circular data
+
+SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step.
+
+```python
+model = SIMPL(
+    is_1D_angular=True,
+    bin_size=np.pi / 32,
+    env_pad=0.0,
+    speed_prior=0.1,
+    kernel_bandwidth=0.3,
+)
+model.fit(Y, Xb, time, n_epochs=5)  # Xb should be in radians, [-pi, pi)
+```
+
+> **Note:** The wrapped Kalman filter assumes a tight posterior (σ ≪ 2π). If posterior uncertainty is large relative to the circular domain, decoding accuracy may degrade.
+
 ### Data preprocessing utilities
 
 ```python

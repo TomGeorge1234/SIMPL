@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 from jax import jit, vmap
 
-from simpl.utils import gaussian_pdf, log_gaussian_pdf
+from simpl.utils import _wrap_minuspi_pi, gaussian_pdf, log_gaussian_pdf
 
 __all__ = [
     "KalmanFilter",
@@ -64,6 +64,7 @@ class KalmanFilter:
         dim_Y: int,
         dim_U: int = 0,
         batch_size: int = 100,
+        is_1D_angular: bool = False,
         # optional parameters
         mu0: jax.Array | None = None,
         sigma0: jax.Array | None = None,
@@ -96,6 +97,12 @@ class KalmanFilter:
             The size of the control space (default is 0, for no control)
         batch_size : int
             The batch size for the Kalman filter
+        is_1D_angular : bool, optional
+            Whether the state is a 1D angle in [-pi, pi). If True, the filter
+            and smoother wrap mu to [-pi, pi) after every predict, update, and
+            smooth step. Only valid when dim_Z == 1. The wrapped Kalman
+            approximation assumes a tight posterior (sigma << 2*pi).
+            By default False.
 
         Optional parameters
         -------------------
@@ -114,7 +121,10 @@ class KalmanFilter:
         R : jax.Array, shape (dim_X, dim_X)
             The observation noise covariance
         """
+        if is_1D_angular and dim_Z != 1:
+            raise ValueError("is_1D_angular=True requires dim_Z == 1")
 
+        self.is_1D_angular = jnp.array(is_1D_angular)
         self.dim_Z = dim_Z
         self.dim_Y = dim_Y
         self.dim_U = dim_U
@@ -241,6 +251,7 @@ class KalmanFilter:
                 Q=Q[start:end],
                 H=H[start:end],
                 R=R[start:end],
+                is_1D_angular=self.is_1D_angular,
             )
             mus_f.append(mu)
             sigmas_f.append(sigma)
@@ -312,6 +323,7 @@ class KalmanFilter:
                 F=F[start:end],
                 B=B[start:end],
                 Q=Q[start:end],
+                is_1D_angular=self.is_1D_angular,
             )
             mus_s.insert(0, mu)
             sigmas_s.insert(0, sigma)
@@ -415,6 +427,7 @@ def kalman_filter(
     Q: jax.Array,
     H: jax.Array,
     R: jax.Array,
+    is_1D_angular: jax.Array = jnp.array(False),
 ) -> tuple[jax.Array, jax.Array]:
     """Kalman filters a batch of observation data, Y.
 
@@ -438,7 +451,9 @@ def kalman_filter(
         The observation matrix
     R : jax.Array, shape (T, dim_Y, dim_Y)
         The observation noise covariances
-
+    is_1D_angular : jax.Array, optional
+        Scalar bool. If True, wrap mu to [-pi, pi) after predict and update steps
+        and wrap the innovation for angular data. By default False.
 
     Returns
     -------
@@ -460,7 +475,9 @@ def kalman_filter(
             R,
         ) = inputs
         mu_p, sigma_p = kalman_predict(mu, sigma, F, Q, B, u)
-        mu_u, sigma_u = kalman_update(mu_p, sigma_p, H, R, Y)
+        mu_p = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_p), mu_p)
+        mu_u, sigma_u = kalman_update(mu_p, sigma_p, H, R, Y, is_1D_angular=is_1D_angular)
+        mu_u = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_u), mu_u)
         return (mu_u, sigma_u), (mu_u, sigma_u)  # carry, output
 
     _, (mu_all, sigma_all) = jax.lax.scan(loop, (mu0, sigma0), (Y, U, F, B, Q, H, R))
@@ -477,6 +494,7 @@ def kalman_smoother(
     F: jax.Array,
     B: jax.Array,
     Q: jax.Array,
+    is_1D_angular: jax.Array = jnp.array(False),
 ) -> tuple[jax.Array, jax.Array]:
     """Runs the Kalman smoother on the data.
 
@@ -503,6 +521,9 @@ def kalman_smoother(
         The control matrix
     Q : jax.Array, shape (T, dim_Z, dim_Z)
         The state transition noise covariance
+    is_1D_angular : jax.Array, optional
+        Scalar bool. If True, wrap mu and angular differences to [-pi, pi)
+        during smoothing. By default False.
 
     Returns
     -------
@@ -516,8 +537,12 @@ def kalman_smoother(
         mu, sigma = carry
         mu_, sigma_, u, F, B, Q = inputs
         mu_predict, sigma_predict = kalman_predict(mu_, sigma_, F, Q, B, u)
+        mu_predict = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_predict), mu_predict)
         J = sigma_ @ F.T @ jnp.linalg.inv(sigma_predict)
-        mu_smoothed = mu_ + J @ (mu - mu_predict)
+        diff = mu - mu_predict
+        diff = jnp.where(is_1D_angular, _wrap_minuspi_pi(diff), diff)
+        mu_smoothed = mu_ + J @ diff
+        mu_smoothed = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_smoothed), mu_smoothed)
         sigma_smoothed = sigma_ + J @ (sigma - sigma_predict) @ J.T
         return (mu_smoothed, sigma_smoothed), (mu_smoothed, sigma_smoothed)
 
@@ -652,6 +677,7 @@ def kalman_update(
     H: jax.Array,
     R: jax.Array,
     y: jax.Array,
+    is_1D_angular: jax.Array = jnp.array(False),
 ) -> tuple[jax.Array, jax.Array]:
     """Updates the state estimate given an observation.
 
@@ -667,6 +693,9 @@ def kalman_update(
         The observation noise covariance
     y : jax.Array, shape (dim_Y,)
         The state observation
+    is_1D_angular : jax.Array, optional
+        Scalar bool. If True, wrap the innovation (y - y_hat) to [-pi, pi)
+        for angular data. By default False.
 
     Returns
     -------
@@ -678,7 +707,9 @@ def kalman_update(
     S = calculate_S_matrix(sigma, H, R)
     y_hat = H @ mu
     K = calculate_K_matrix(sigma, H, S)
-    mu_post = mu + K @ (y - y_hat)
+    innovation = y - y_hat
+    innovation = jnp.where(is_1D_angular, _wrap_minuspi_pi(innovation), innovation)
+    mu_post = mu + K @ innovation
     sigma_post = (jnp.eye(len(mu)) - K @ H) @ sigma
 
     return mu_post, sigma_post
