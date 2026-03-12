@@ -127,10 +127,10 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
-    @pytest.mark.parametrize("test_frac", [0.0, 1.0, -0.1, 1.1])
-    def test_fit_validates_test_frac(self, test_frac):
-        model = SIMPL(test_frac=test_frac)
-        with pytest.raises(ValueError, match="test_frac"):
+    @pytest.mark.parametrize("val_frac", [0.0, 1.0, -0.1, 1.1])
+    def test_fit_validates_val_frac(self, val_frac):
+        model = SIMPL(val_frac=val_frac)
+        with pytest.raises(ValueError, match="val_frac"):
             model.fit(
                 Y=np.zeros((10, 5)),
                 Xb=np.zeros((10, 2)),
@@ -220,7 +220,7 @@ class TestSIMPLEvaluateEpoch:
     def test_metrics_dict_keys(self, small_simpl_model):
         model = small_simpl_model
         assert "logPYXF" in model.results_
-        assert "logPYXF_test" in model.results_
+        assert "logPYXF_val" in model.results_
 
 
 class TestSIMPLWithGroundTruth:
@@ -289,7 +289,7 @@ class TestSIMPLSaveLoadResults:
             bin_size=0.05,
             env_pad=0.0,
             env_lims=((0.0, 0.0), (1.0, 1.0)),
-            test_frac=0.2,
+            val_frac=0.2,
             speckle_block_size_seconds=2.0,
             random_seed=7,
         )
@@ -309,7 +309,7 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["env_pad"] == 0.0
         np.testing.assert_allclose(model.results_.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
         assert model.results_.attrs["environment_provided"] == 0
-        assert model.results_.attrs["test_frac"] == 0.2
+        assert model.results_.attrs["val_frac"] == 0.2
         assert model.results_.attrs["speckle_block_size_seconds"] == 2.0
         assert model.results_.attrs["random_seed"] == 7
 
@@ -338,7 +338,7 @@ class TestSIMPLGetLoglikelihoods:
         model = small_simpl_model
         lls = model._get_loglikelihoods(model.Y_, model.M_["FX"])
         assert "logPYXF" in lls
-        assert "logPYXF_test" in lls
+        assert "logPYXF_val" in lls
 
 
 class TestSIMPLSeeding:
