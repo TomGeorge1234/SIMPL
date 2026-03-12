@@ -1231,6 +1231,16 @@ class SIMPL:
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
 
+        # ── Check speed prior against data ──
+        displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
+        median_speed = float(np.median(displacements / self.dt_))
+        if median_speed > 0 and self.speed_prior < 0.2 * median_speed:
+            warnings.warn(
+                f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
+                f"({median_speed:.4g}). This may impede the decoded trajectory. "
+                f"Consider increasing speed_prior (e.g. to {median_speed:.2g} or higher)."
+            )
+
         # ── Set up Kalman filter, masks, and alignment ──
         self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
