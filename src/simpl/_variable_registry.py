@@ -430,6 +430,32 @@ def build_variable_info_dict(dim: list[str]) -> dict:
             "axis title": "Spike log-likelihood (test)",
             "formula": r"$\log P(Y_{\textrm{test}}|X(t), \Theta)$",
         },
+        "bits_per_spike": {
+            "name": "Bits per spike (train)",
+            "description": (
+                "Bits per spike on the training set. A renormalisation of the Poisson log-likelihood (logPYXF) "
+                "that subtracts a mean-rate baseline and divides by total spike count, converting to bits: "
+                "bps = (ll_model - ll_mean_rate) / (n_spikes * log2). Monotonically related to logPYXF but "
+                "more interpretable and comparable across datasets with different spike counts."
+            ),
+            "dims": [],
+            "axis_title": "Bits per spike (train)",
+            "formula": r"$\frac{\mathcal{L}(\hat\lambda) - \mathcal{L}(\bar\lambda)}{N_{\mathrm{spk}} \ln 2}$",
+        },
+        "bits_per_spike_test": {
+            "name": "Bits per spike (test)",
+            "description": (
+                "Bits per spike on the held-out test set. A renormalisation of the test Poisson log-likelihood "
+                "(logPYXF_test) that subtracts a mean-rate baseline (estimated from training data) and divides "
+                "by total test spike count, converting to bits. Monotonically related to logPYXF_test."
+            ),
+            "dims": [],
+            "axis_title": "Bits per spike (test)",
+            "formula": (
+                r"$\frac{\mathcal{L}_{\mathrm{test}}(\hat\lambda)"
+                r" - \mathcal{L}_{\mathrm{test}}(\bar\lambda)}{N_{\mathrm{spk,test}} \ln 2}$"
+            ),
+        },
         "spatial_information": {
             "axis title": "Spatial Information (bits/spike)",
             "name": "Spatial information",
