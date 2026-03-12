@@ -1,0 +1,28 @@
+site_name: SIMPL
+site_url: https://tomgeorge1234.github.io/simpl/
+repo_url: https://github.com/TomGeorge1234/simpl
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: teal
+plugins:
+  - search
+  - include-markdown
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            docstring_style: numpy
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - API Reference:
+    - SIMPL: api/simpl.md
+    - Environment: api/environment.md
+    - Kalman Filter: api/kalman.md
+    - KDE: api/kde.md
+    - Plotting: api/plotting.md
+    - Utilities: api/utils.md
