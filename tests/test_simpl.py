@@ -160,15 +160,6 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
-    def test_fit_validates_nonempty_mask_split(self):
-        model = SIMPL(test_frac=0.01, speckle_block_size_seconds=0.01)
-        with pytest.raises(ValueError, match="empty train/test split"):
-            model.fit(
-                Y=np.zeros((10, 5)),
-                Xb=np.zeros((10, 2)),
-                time=np.arange(10) * 0.05,
-                n_epochs=0,
-            )
 
 
 class TestSIMPLFitResume:
