@@ -1375,9 +1375,12 @@ class SIMPL:
         try:
             train_ll = float(self.loglikelihoods_.logPYXF.sel(epoch=e).values)
             test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=e).values)
+            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(epoch=e).values)
+            bps_test = float(self.loglikelihoods_.bits_per_spike_test.sel(epoch=e).values)
             si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
             parts = [
                 f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, test={test_ll:.4f})",
+                f"bits/spike(train={bps_train:.4f}, test={bps_test:.4f})",
                 f"spatial_info={si:.4f} bits/s/neuron",
             ]
             print("     ".join(parts))
@@ -1436,12 +1439,25 @@ class SIMPL:
             Dictionary with 'logPYXF' and 'logPYXF_test' keys.
         """
         LLs = {}
-        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=self.spike_mask_).sum() / self.spike_mask_.sum()
-        logPYXF_test = (
-            poisson_log_likelihood_trajectory(Y, FX, mask=~self.spike_mask_).sum() / (~self.spike_mask_).sum()
-        )
+        train_mask = self.spike_mask_
+        test_mask = ~self.spike_mask_
+
+        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum() / train_mask.sum()
+        logPYXF_test = poisson_log_likelihood_trajectory(Y, FX, mask=test_mask).sum() / test_mask.sum()
         LLs["logPYXF"] = logPYXF
         LLs["logPYXF_test"] = logPYXF_test
+
+        # Bits per spike: (ll_model - ll_mean_rate) / (n_spikes * log2)
+        mean_FX = (Y * train_mask).sum(axis=0, keepdims=True) / train_mask.sum(axis=0, keepdims=True)
+        mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
+
+        for mask, suffix in [(train_mask, ""), (test_mask, "_test")]:
+            ll_model = poisson_log_likelihood_trajectory(Y, FX, mask=mask).sum()
+            ll_baseline = poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
+            n_spikes = (Y * mask).sum()
+            bps = jnp.where(n_spikes > 0, (ll_model - ll_baseline) / (n_spikes * jnp.log(2.0)), 0.0)
+            LLs[f"bits_per_spike{suffix}"] = bps
+
         return LLs
 
     def _get_metrics(
