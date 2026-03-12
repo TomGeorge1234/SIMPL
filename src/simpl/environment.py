@@ -22,8 +22,8 @@ class Environment:
             DD: ['x1', 'x2', 'x3', ..., 'xD']
     - coords_dict: a dictionary mapping the coordinate names to the coordinate
             arrays in the environment. These a strictly increasing arrays of
-            the form np.linspace(lims[0][i], lims[1][i], N_bins) for each
-            dimension i.
+            the form ``np.linspace(lims[0][i], lims[1][i], N_bins)`` for each
+            dimension ``i``.
     - dicretised_coords: an array of coordinates discretising the env,
             flattened into shape (N_bins x D) where
             (N_bins = N_xbins, x N_ybins x ...)
