@@ -1,4 +1,4 @@
-name: CI
+name: Tests
 on:
   push:
     branches: [main]
@@ -28,9 +28,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest --cov=simpl --cov-report=xml
-      - if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v5
-        with:
-          files: coverage.xml
-          fail_ci_if_error: false
+      - run: pytest

@@ -150,7 +150,7 @@ def plot_fitting_summary(
     show_neurons: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Two-panel summary: log-likelihood (left) and spatial information (right).
+    """Two-panel summary: bits per spike (left) and spatial information (right).
 
     Parameters
     ----------
@@ -169,15 +169,15 @@ def plot_fitting_summary(
     last_epoch = int(epochs[-1])
 
     fig, axes = plt.subplots(1, 2, figsize=(0.7 * FIG_WIDTH, 0.7 * FIG_WIDTH * 0.35), layout="constrained")
-    ax_ll, ax_si = axes
+    ax_bps, ax_si = axes
 
-    ll_train, ll_test, si_means = [], [], []
+    bps_train, bps_val, si_means = [], [], []
     for e in epochs:
         c = _epoch_color(e, last_epoch)
-        ll_train.append(float(results.logPYXF.sel(epoch=e)))
-        ll_test.append(float(results.logPYXF_test.sel(epoch=e)))
-        ax_ll.scatter(e, ll_train[-1], color=c, zorder=5, **plot_kwargs)
-        ax_ll.scatter(e, ll_test[-1], color="w", edgecolors=c, linewidth=2, zorder=5, **plot_kwargs)
+        bps_train.append(float(results.bits_per_spike.sel(epoch=e)))
+        bps_val.append(float(results.bits_per_spike_val.sel(epoch=e)))
+        ax_bps.scatter(e, bps_train[-1], color=c, zorder=5, **plot_kwargs)
+        ax_bps.scatter(e, bps_val[-1], color=c, marker="o", facecolors="none", linewidth=1.5, zorder=5, **plot_kwargs)
 
         si = results.spatial_information.sel(epoch=e).values
         if show_neurons:
@@ -189,18 +189,23 @@ def plot_fitting_summary(
     # connecting lines
     for i in range(len(epochs) - 1):
         c = _epoch_color(epochs[i + 1], last_epoch)
-        ax_ll.plot(epochs[i : i + 2], ll_train[i : i + 2], color=c, lw=0.8, zorder=3)
-        ax_ll.plot(epochs[i : i + 2], ll_test[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_bps.plot(epochs[i : i + 2], bps_train[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_bps.plot(epochs[i : i + 2], bps_val[i : i + 2], color=c, lw=0.8, ls="--", zorder=3)
         ax_si.plot(epochs[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
 
     # baseline: only epoch -1 ("best model")
     if -1 in results.epoch.values:
-        if "logPYXF" in results:
-            ax_ll.axhline(float(results.logPYXF.sel(epoch=-1)), color="k", ls="--", lw=0.8)
+        if "bits_per_spike" in results:
+            ax_bps.axhline(float(results.bits_per_spike.sel(epoch=-1)), color="k", ls="--", lw=0.8)
         if "spatial_information" in results:
             ax_si.axhline(float(results.spatial_information.sel(epoch=-1).mean()), color="k", ls="--", lw=0.8)
 
-    ax_ll.set(xlabel="Epoch", ylabel="Log likelihood")
+    # legend on first panel
+    ax_bps.plot([], [], color="gray", lw=0.8, label="train")
+    ax_bps.plot([], [], color="gray", lw=0.8, ls="--", label="val")
+    ax_bps.legend(fontsize="small", frameon=False)
+
+    ax_bps.set(xlabel="Epoch", ylabel="Bits per spike")
     ax_si.set(xlabel="Epoch", ylabel="Spatial information (bits/s)")
     for ax in axes:
         outset_axes(ax)
@@ -560,6 +565,7 @@ def plot_all_metrics(
     baselines = _baseline_epochs(results)
 
     # discover metric variables: anything with epoch dim and only neuron/place_field remaining
+    # skip _val variants — they are plotted alongside their train counterpart
     metric_names = []
     for var_name in results.data_vars:
         da = results[var_name]
@@ -567,6 +573,8 @@ def plot_all_metrics(
             continue
         other_dims = set(da.dims) - {"epoch"}
         if other_dims <= {"neuron", "place_field"}:
+            if var_name.endswith("_val") and var_name[:-4] in results.data_vars:
+                continue  # will be plotted with the train variant
             metric_names.append(var_name)
 
     n_metrics = len(metric_names)
@@ -589,13 +597,29 @@ def plot_all_metrics(
 
         if is_scalar:
             # line plot
+            val_name = f"{var_name}_val"
+            has_val = val_name in results.data_vars
             vals = [float(da.sel(epoch=e)) for e in epochs]
+            vals_v = [float(results[val_name].sel(epoch=e)) for e in epochs] if has_val else None
             for j in range(len(epochs)):
                 c = _epoch_color(epochs[j], last_epoch)
                 ax.scatter(epochs[j], vals[j], color=c, zorder=5, **plot_kwargs)
+                if has_val:
+                    ax.scatter(
+                        epochs[j],
+                        vals_v[j],
+                        color=c,
+                        marker="o",
+                        facecolors="none",
+                        linewidth=1.5,
+                        zorder=5,
+                        **plot_kwargs,
+                    )
             for j in range(len(epochs) - 1):
                 c = _epoch_color(epochs[j + 1], last_epoch)
                 ax.plot(epochs[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
+                if has_val:
+                    ax.plot(epochs[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
             # baseline: only epoch -1 ("best model")
             if -1 in baselines:
                 ax.axhline(float(da.sel(epoch=-1)), color="k", ls="--", lw=0.8)
@@ -623,6 +647,12 @@ def plot_all_metrics(
         ax.set(xlabel="Epoch", ylabel=ylabel)
         outset_axes(ax)
         ax.spines["bottom"].set_bounds(0, int(epochs[-1]))
+
+    # legend on first panel showing train/val distinction
+    first_ax = axes.flat[0]
+    first_ax.plot([], [], color="gray", lw=0.8, label="train")
+    first_ax.plot([], [], color="gray", lw=0.8, ls="--", label="val")
+    first_ax.legend(fontsize="small", frameon=False)
 
     # hide unused axes
     for j in range(n_metrics, len(axes.flat)):

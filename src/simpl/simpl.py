@@ -37,13 +37,13 @@ class SIMPL:
         use_kalman_smoothing: bool = True,
         behavior_prior: float | None = None,
         # Environment parameters
-        is_circular: bool = False,
+        is_1D_angular: bool = False,
         bin_size: float = 0.02,
         env_pad: float = 0.1,
         env_lims: tuple | None = None,
         environment: Environment | None = None,
         # Mask and analysis parameters
-        test_frac: float = 0.1,
+        val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
     ) -> None:
@@ -101,10 +101,13 @@ class SIMPL:
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
             towards ``Xb``. None means no prior (the latent is free to move anywhere).
             By default None.
-        is_circular : bool, optional
-            Whether the latent space is circular (e.g. head direction data in radians). If
-            True, angular KDE is used and the space is assumed to be in [-pi, pi].
-            By default False.
+        is_1D_angular : bool, optional
+            Whether the latent space is 1D angular/circular (e.g. head direction data in
+            radians). If True, angular KDE is used, the Kalman filter wraps its state to
+            [-pi, pi) after every predict/update/smooth step, and the environment is fixed
+            to [-pi, pi). The wrapped Kalman approximation assumes a tight posterior
+            (sigma << 2*pi); results may degrade when posterior uncertainty is large relative
+            to the circular domain. By default False.
         bin_size : float, optional
             Spatial bin size for discretising the environment, in the same units as the latent
             space. Controls the resolution of the receptive field grid. Smaller bins give
@@ -113,23 +116,23 @@ class SIMPL:
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
             clipped. In the same units as the latent space. Ignored when
-            ``is_circular=True`` because the circular domain is fixed to ``[-pi, pi)``.
+            ``is_1D_angular=True`` because the circular domain is fixed to ``[-pi, pi)``.
             By default 0.1.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
-            By default None (auto-inferred from ``Xb``). When ``is_circular=True``, the
+            By default None (auto-inferred from ``Xb``). When ``is_1D_angular=True``, the
             domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
         environment : Environment or None, optional
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
             ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
             environment must also represent the full ``[-pi, pi)`` domain. By default None.
-        test_frac : float, optional
-            Fraction of spike observations held out for testing, implemented via a speckled
+        val_frac : float, optional
+            Fraction of spike observations held out for validation, implemented via a speckled
             (block-structured) mask. Used to compute held-out log-likelihood for monitoring
             overfitting. By default 0.1.
         speckle_block_size_seconds : float, optional
-            Temporal size (in seconds) of contiguous blocks in the speckled test mask. Larger
+            Temporal size (in seconds) of contiguous blocks in the speckled validation mask. Larger
             blocks give more temporally coherent held-out segments. By default 1.0.
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
@@ -149,7 +152,7 @@ class SIMPL:
         self.speed_prior = speed_prior
         self.use_kalman_smoothing = use_kalman_smoothing
         self.behavior_prior = behavior_prior
-        self.is_circular = is_circular
+        self.is_1D_angular = is_1D_angular
 
         # Environment config
         self.bin_size = bin_size
@@ -158,7 +161,7 @@ class SIMPL:
         self._environment_override = environment  # power-user pre-built Environment
 
         # Mask and analysis parameters
-        self.test_frac = test_frac
+        self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
 
@@ -175,6 +178,7 @@ class SIMPL:
         align_to_behavior: bool | str = "trajectory",
         resume: bool = False,
         save_full_history: bool = False,
+        early_stopping: bool = True,
         verbose: bool = True,
     ) -> "SIMPL":
         """Fit the SIMPL model to data.
@@ -182,7 +186,7 @@ class SIMPL:
         This is the main entry point for training. It performs the following steps:
 
         1. **Setup** — validates inputs, creates the ``Environment`` (spatial discretisation
-           grid), sets up the Kalman filter, and builds the speckled test mask.
+           grid), sets up the Kalman filter, and builds the speckled validation mask.
         2. **Epoch 0** — runs the M-step only on the behavioral trajectory ``Xb`` to produce
            the initial receptive fields. Prints a data summary and spatial information
            diagnostics (if ``verbose=True``).
@@ -196,7 +200,7 @@ class SIMPL:
         - ``self.results_`` — full ``xarray.Dataset`` with all epochs, metrics, and
           intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
           stability, etc.).
-        - ``self.loglikelihoods_`` — per-epoch train/test log-likelihoods.
+        - ``self.loglikelihoods_`` — per-epoch train/validation log-likelihoods.
 
         Parameters
         ----------
@@ -242,6 +246,9 @@ class SIMPL:
             ``logPYXF_maps`` is stored for the last epoch only (due to its huge size).
             Metrics, receptive fields, decoded trajectories, and Kalman outputs are
             unaffected and stored for every epoch regardless. By default False.
+        early_stopping : bool, optional
+            If True, training stops early when the validation log-likelihood has not improved
+            for 3 consecutive epochs. By default True.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -274,7 +281,7 @@ class SIMPL:
         if resume:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
-            self._fit_N_epochs(n_epochs, verbose=verbose)
+            self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
             self.results_["FX_lastepoch"] = dict_to_dataset(
                 {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
             )["FX_lastepoch"]
@@ -288,7 +295,7 @@ class SIMPL:
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
-        self._fit_N_epochs(n_epochs, verbose=verbose)
+        self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
 
         # ── Attach FX_firstepoch and FX_lastepoch (always, without epoch dim) ──
         self.results_["FX_firstepoch"] = dict_to_dataset(
@@ -386,6 +393,8 @@ class SIMPL:
         )
 
         X_decoded = np.array(E["mu_s"])
+        if self.is_1D_angular:
+            X_decoded = np.array(_wrap_minuspi_pi(jnp.array(X_decoded)))
 
         # Store full decode results as an xr.Dataset
         pred_time = np.arange(T_new) * self.dt_
@@ -767,7 +776,7 @@ class SIMPL:
             source, target = None, None
 
         if source is not None:
-            if self.is_circular:
+            if self.is_1D_angular:
                 angle, _ = cca_angular(source, target)
                 E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
                 align_dict = {"intercept": jnp.atleast_1d(angle)}
@@ -845,7 +854,7 @@ class SIMPL:
         -------
         dict
             Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
-            logPYF, logPYF_test, and optionally logPYXF_maps.
+            logPYF, logPYF_val, and optionally logPYXF_maps.
         """
         if mask is None:
             mask = jnp.ones(Y.shape, dtype=bool)
@@ -866,7 +875,7 @@ class SIMPL:
 
         # Process each trial
         mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
-        logPYF_list, logPYF_test_list = [], []
+        logPYF_list, logPYF_val_list = [], []
 
         for trial_slice in trial_slices:
             _mode_l = mode_l[trial_slice]
@@ -893,17 +902,17 @@ class SIMPL:
             # Likelihoods
             logPYF = self.kalman_filter_.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
 
-            # Test likelihood
-            logPYXF_maps_test = poisson_log_likelihood(_Y, F, mask=~_mask)
-            no_spikes_test = jnp.sum(_Y * ~_mask, axis=1) == 0
-            _, mode_l_test, sigma_l_test = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_test))
-            observation_noise_test = jnp.where(
-                no_spikes_test[:, None, None],
+            # Validation likelihood
+            logPYXF_maps_val = poisson_log_likelihood(_Y, F, mask=~_mask)
+            no_spikes_val = jnp.sum(_Y * ~_mask, axis=1) == 0
+            _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
+            observation_noise_val = jnp.where(
+                no_spikes_val[:, None, None],
                 jnp.eye(self.D_) * 1e6,
-                sigma_l_test,
+                sigma_l_val,
             )
-            logPYF_test = self.kalman_filter_.loglikelihood(
-                Y=mode_l_test, R=observation_noise_test, mu=mu_s, sigma=sigma_s
+            logPYF_val = self.kalman_filter_.loglikelihood(
+                Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
             ).sum()
 
             mu_f_list.append(mu_f)
@@ -911,7 +920,7 @@ class SIMPL:
             mu_s_list.append(mu_s)
             sigma_s_list.append(sigma_s)
             logPYF_list.append(logPYF)
-            logPYF_test_list.append(logPYF_test)
+            logPYF_val_list.append(logPYF_val)
 
         # Concatenate
         mu_f = jnp.concatenate(mu_f_list, axis=0)
@@ -919,7 +928,7 @@ class SIMPL:
         mu_s = jnp.concatenate(mu_s_list, axis=0)
         sigma_s = jnp.concatenate(sigma_s_list, axis=0)
         logPYF = sum(logPYF_list)
-        logPYF_test = sum(logPYF_test_list)
+        logPYF_val = sum(logPYF_val_list)
 
         E = {
             "mu_l": mu_l,
@@ -930,7 +939,7 @@ class SIMPL:
             "mu_s": mu_s,
             "sigma_s": sigma_s,
             "logPYF": logPYF,
-            "logPYF_test": logPYF_test,
+            "logPYF_val": logPYF_val,
         }
         E["logPYXF_maps"] = logPYXF_maps
 
@@ -1022,16 +1031,33 @@ class SIMPL:
         )
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
-    def _fit_N_epochs(self, N: int, verbose: bool = True) -> None:
-        """Train for N epochs with KeyboardInterrupt support."""
+    def _fit_N_epochs(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
+        """Train for N epochs with KeyboardInterrupt and early stopping support."""
         if N <= 0:
             return
+        patience = 3
+        best_val_ll = -np.inf
+        epochs_without_improvement = 0
         self._print_epoch_summary()
         for _ in range(N):
             try:
                 self._fit_epoch()
                 if verbose:
                     self._print_epoch_summary()
+                if early_stopping:
+                    val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=self.epoch_).values)
+                    if val_ll > best_val_ll:
+                        best_val_ll = val_ll
+                        epochs_without_improvement = 0
+                    else:
+                        epochs_without_improvement += 1
+                        if epochs_without_improvement >= patience:
+                            if verbose:
+                                print(
+                                    f"  Early stopping: validation log-likelihood has not "
+                                    f"improved for {patience} epochs."
+                                )
+                            break
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch_} epochs.")
                 break
@@ -1144,8 +1170,8 @@ class SIMPL:
                 "The Kalman filter assumes a constant dt. Consider using `trial_boundaries` to separate "
                 "non-contiguous segments"
             )
-        if not 0 < self.test_frac < 1:
-            raise ValueError(f"test_frac must be between 0 and 1 (exclusive), got {self.test_frac}")
+        if not 0 < self.val_frac < 1:
+            raise ValueError(f"val_frac must be between 0 and 1 (exclusive), got {self.val_frac}")
         if self.speckle_block_size_seconds <= 0:
             raise ValueError(
                 "speckle_block_size_seconds must be positive so the held-out mask spans at least one time bin"
@@ -1157,7 +1183,7 @@ class SIMPL:
         self.N_neurons_ = Y.shape[1]
         self.N_PFmax_ = 20
 
-        if self.is_circular:
+        if self.is_1D_angular:
             if self.D_ != 1:
                 raise ValueError("Circular mode currently supports only 1D latent variables")
 
@@ -1170,7 +1196,7 @@ class SIMPL:
                     if not np.allclose(env_lims_array, circular_lims, atol=1e-6):
                         raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
                 if self.env_pad != 0:
-                    warnings.warn("env_pad is ignored when is_circular=True; using the full [-pi, pi) domain.")
+                    warnings.warn("env_pad is ignored when is_1D_angular=True; using the full [-pi, pi) domain.")
                 self.environment_ = Environment(
                     Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
                 )
@@ -1213,6 +1239,16 @@ class SIMPL:
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
 
+        # ── Check speed prior against data ──
+        displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
+        median_speed = float(np.median(displacements / self.dt_))
+        if median_speed > 0 and self.speed_prior < 0.2 * median_speed:
+            warnings.warn(
+                f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
+                f"({median_speed:.4g}). This may impede the decoded trajectory. "
+                f"Consider increasing speed_prior (e.g. to {median_speed:.2g} or higher)."
+            )
+
         # ── Set up Kalman filter, masks, and alignment ──
         self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
@@ -1220,12 +1256,12 @@ class SIMPL:
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
         if self.block_size_ >= self.T_:
             raise ValueError(
-                "speckle_block_size_seconds must be shorter than the recording duration so both train and test "
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and validation "
                 f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
             )
         self.spike_mask_ = create_speckled_mask(
             size=(self.T_, self.N_neurons_),
-            sparsity=self.test_frac,
+            sparsity=self.val_frac,
             block_size=self.block_size_,
             random_seed=self.random_seed,
         )
@@ -1233,7 +1269,7 @@ class SIMPL:
         if n_train == 0:
             raise ValueError(
                 "The held-out mask produced an empty train split (no spikes are used for fitting). "
-                "Adjust test_frac or speckle_block_size_seconds."
+                "Adjust val_frac or speckle_block_size_seconds."
             )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
@@ -1247,7 +1283,7 @@ class SIMPL:
             )
         self.align_mode_ = align_to_behavior if align_to_behavior else None
         self.Xalign_ = self.Xb_ if self.align_mode_ else None
-        self._kde = kde_angular if self.is_circular else kde
+        self._kde = kde_angular if self.is_1D_angular else kde
 
         self.lastF_, self.lastX_ = None, None
         self.epoch_ = -1
@@ -1311,7 +1347,17 @@ class SIMPL:
         Q = sigma_eff_square * jnp.eye(self.D_)
         H = jnp.eye(self.D_)
 
-        self.kalman_filter_ = KalmanFilter(dim_Z=self.D_, dim_Y=self.D_, dim_U=self.D_, F=F, B=B, Q=Q, H=H, R=None)
+        self.kalman_filter_ = KalmanFilter(
+            dim_Z=self.D_,
+            dim_Y=self.D_,
+            dim_U=self.D_,
+            F=F,
+            B=B,
+            Q=Q,
+            H=H,
+            R=None,
+            is_1D_angular=self.is_1D_angular,
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Display
@@ -1346,17 +1392,20 @@ class SIMPL:
         e = self.epoch_
         try:
             train_ll = float(self.loglikelihoods_.logPYXF.sel(epoch=e).values)
-            test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=e).values)
+            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=e).values)
+            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(epoch=e).values)
+            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(epoch=e).values)
             si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
             parts = [
-                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, test={test_ll:.4f})",
+                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
+                f"bits/spike(train={bps_train:.4f}, val={bps_val:.4f})",
                 f"spatial_info={si:.4f} bits/s/neuron",
             ]
             print("     ".join(parts))
             if e > 0:
-                epoch0_test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=0).values)
-                if test_ll < epoch0_test_ll:
-                    print("    WARNING: test LL below epoch 0. Model may be overfitting.")
+                epoch0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=0).values)
+                if val_ll < epoch0_val_ll:
+                    print("    WARNING: validation LL below epoch 0. Model may be overfitting.")
         except Exception:
             print(f"Epoch {e}")
 
@@ -1405,15 +1454,28 @@ class SIMPL:
         Returns
         -------
         dict
-            Dictionary with 'logPYXF' and 'logPYXF_test' keys.
+            Dictionary with 'logPYXF' and 'logPYXF_val' keys.
         """
         LLs = {}
-        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=self.spike_mask_).sum() / self.spike_mask_.sum()
-        logPYXF_test = (
-            poisson_log_likelihood_trajectory(Y, FX, mask=~self.spike_mask_).sum() / (~self.spike_mask_).sum()
-        )
+        train_mask = self.spike_mask_
+        val_mask = ~self.spike_mask_
+
+        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum() / train_mask.sum()
+        logPYXF_val = poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum() / val_mask.sum()
         LLs["logPYXF"] = logPYXF
-        LLs["logPYXF_test"] = logPYXF_test
+        LLs["logPYXF_val"] = logPYXF_val
+
+        # Bits per spike: (ll_model - ll_mean_rate) / (n_spikes * log2)
+        mean_FX = (Y * train_mask).sum(axis=0, keepdims=True) / train_mask.sum(axis=0, keepdims=True)
+        mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
+
+        for mask, suffix in [(train_mask, ""), (val_mask, "_val")]:
+            ll_model = poisson_log_likelihood_trajectory(Y, FX, mask=mask).sum()
+            ll_baseline = poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
+            n_spikes = (Y * mask).sum()
+            bps = jnp.where(n_spikes > 0, (ll_model - ll_baseline) / (n_spikes * jnp.log(2.0)), 0.0)
+            LLs[f"bits_per_spike{suffix}"] = bps
+
         return LLs
 
     def _get_metrics(
@@ -1570,9 +1632,9 @@ class SIMPL:
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
-            "is_circular": int(self.is_circular),
+            "is_1D_angular": int(self.is_1D_angular),
             "environment_provided": int(self._environment_override is not None),
-            "test_frac": self.test_frac,
+            "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "random_seed": self.random_seed,
         }
