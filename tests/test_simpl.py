@@ -127,10 +127,10 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
-    @pytest.mark.parametrize("test_frac", [0.0, 1.0, -0.1, 1.1])
-    def test_fit_validates_test_frac(self, test_frac):
-        model = SIMPL(test_frac=test_frac)
-        with pytest.raises(ValueError, match="test_frac"):
+    @pytest.mark.parametrize("val_frac", [0.0, 1.0, -0.1, 1.1])
+    def test_fit_validates_val_frac(self, val_frac):
+        model = SIMPL(val_frac=val_frac)
+        with pytest.raises(ValueError, match="val_frac"):
             model.fit(
                 Y=np.zeros((10, 5)),
                 Xb=np.zeros((10, 2)),
@@ -220,7 +220,7 @@ class TestSIMPLEvaluateEpoch:
     def test_metrics_dict_keys(self, small_simpl_model):
         model = small_simpl_model
         assert "logPYXF" in model.results_
-        assert "logPYXF_test" in model.results_
+        assert "logPYXF_val" in model.results_
 
 
 class TestSIMPLWithGroundTruth:
@@ -285,11 +285,11 @@ class TestSIMPLSaveLoadResults:
             speed_prior=0.2,
             use_kalman_smoothing=False,
             behavior_prior=0.4,
-            is_circular=False,
+            is_1D_angular=False,
             bin_size=0.05,
             env_pad=0.0,
             env_lims=((0.0, 0.0), (1.0, 1.0)),
-            test_frac=0.2,
+            val_frac=0.2,
             speckle_block_size_seconds=2.0,
             random_seed=7,
         )
@@ -304,12 +304,12 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["speed_prior"] == 0.2
         assert model.results_.attrs["use_kalman_smoothing"] == 0
         assert model.results_.attrs["behavior_prior"] == 0.4
-        assert model.results_.attrs["is_circular"] == 0
+        assert model.results_.attrs["is_1D_angular"] == 0
         assert model.results_.attrs["bin_size"] == 0.05
         assert model.results_.attrs["env_pad"] == 0.0
         np.testing.assert_allclose(model.results_.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
         assert model.results_.attrs["environment_provided"] == 0
-        assert model.results_.attrs["test_frac"] == 0.2
+        assert model.results_.attrs["val_frac"] == 0.2
         assert model.results_.attrs["speckle_block_size_seconds"] == 2.0
         assert model.results_.attrs["random_seed"] == 7
 
@@ -338,7 +338,7 @@ class TestSIMPLGetLoglikelihoods:
         model = small_simpl_model
         lls = model._get_loglikelihoods(model.Y_, model.M_["FX"])
         assert "logPYXF" in lls
-        assert "logPYXF_test" in lls
+        assert "logPYXF_val" in lls
 
 
 class TestSIMPLSeeding:
@@ -524,7 +524,7 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_epochs=1, align_to_behavior="fields")
         assert model.align_mode_ == "fields"
         assert "intercept" in model.E_
@@ -542,7 +542,7 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_epochs=1, align_to_behavior="trajectory")
         assert model.align_mode_ == "trajectory"
         assert "intercept" in model.E_
@@ -555,7 +555,7 @@ class TestSIMPLCircularEnvironment:
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_pad=0.5, speckle_block_size_seconds=0.1)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.5, speckle_block_size_seconds=0.1)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -570,7 +570,7 @@ class TestSIMPLCircularEnvironment:
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_circular=True, bin_size=np.pi / 32, env_lims=((-1.0,), (1.0,)))
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_lims=((-1.0,), (1.0,)))
 
         with pytest.raises(ValueError, match=r"full \[-pi, pi\) domain"):
             model.fit(Y, Xb, time, n_epochs=0)
