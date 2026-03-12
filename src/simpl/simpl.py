@@ -209,7 +209,7 @@ class SIMPL:
             latent dimensions (e.g. 2 for 2D position).
         time : np.ndarray, shape (T,)
             Time stamps (in seconds) for each time bin. Values should be uniformly
-            increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically 
+            increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically
             inferred as ``median(diff(time))``.
         n_epochs : int, optional
             Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
@@ -1230,10 +1230,10 @@ class SIMPL:
             random_seed=self.random_seed,
         )
         n_train = int(np.asarray(self.spike_mask_).sum())
-        n_test = int(np.asarray((~self.spike_mask_)).sum())
         if n_train == 0:
             raise ValueError(
-                "The held-out mask produced an empty train split (no spikes are used for fitting). Adjust test_frac or speckle_block_size_seconds."
+                "The held-out mask produced an empty train split (no spikes are used for fitting). "
+                "Adjust test_frac or speckle_block_size_seconds."
             )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
