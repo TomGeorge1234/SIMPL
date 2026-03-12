@@ -1231,9 +1231,9 @@ class SIMPL:
         )
         n_train = int(np.asarray(self.spike_mask_).sum())
         n_test = int(np.asarray((~self.spike_mask_)).sum())
-        if n_train == 0 or n_test == 0:
+        if n_train == 0:
             raise ValueError(
-                "The held-out mask produced an empty train/test split. Adjust test_frac or speckle_block_size_seconds."
+                "The held-out mask produced an empty train split (no spikes are used for fitting). Adjust test_frac or speckle_block_size_seconds."
             )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
