@@ -208,8 +208,8 @@ class SIMPL:
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
         time : np.ndarray, shape (T,)
-            Time stamps (in seconds) for each time bin. Values must be finite and strictly
-            increasing. Small gaps are allowed; the representative time step ``dt`` is
+            Time stamps (in seconds) for each time bin. Values should be uniformly
+            increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically 
             inferred as ``median(diff(time))``.
         n_epochs : int, optional
             Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
@@ -1137,6 +1137,13 @@ class SIMPL:
         dt = np.diff(time)
         if not np.all(dt > 0):
             raise ValueError("time must be strictly increasing")
+        dt_median = np.median(dt)
+        if dt_median > 0 and np.max(np.abs(dt - dt_median)) / dt_median > 0.01:
+            warnings.warn(
+                f"time is not uniformly spaced (dt varies by more than 1% around the median dt={dt_median:.6g}s). "
+                "The Kalman filter assumes a constant dt. Consider using `trial_boundaries` to separate "
+                "non-contiguous segments"
+            )
         if not 0 < self.test_frac < 1:
             raise ValueError(f"test_frac must be between 0 and 1 (exclusive), got {self.test_frac}")
         if self.speckle_block_size_seconds <= 0:
