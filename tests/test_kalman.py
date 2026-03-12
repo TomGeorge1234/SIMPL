@@ -2,6 +2,7 @@
 
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from simpl.kalman import (
     KalmanFilter,
@@ -210,3 +211,82 @@ class TestKalmanFilterWithControl:
         U = jnp.ones((T, D))
         mus_f, sigmas_f = kf.filter(Y, U=U)
         assert mus_f.shape == (T, D)
+
+
+class TestKalmanFilterAngular:
+    def test_is_1D_angular_requires_dim_Z_1(self):
+        with pytest.raises(ValueError, match="dim_Z == 1"):
+            KalmanFilter(dim_Z=2, dim_Y=2, is_1D_angular=True)
+
+    def test_default_is_1D_angular_false(self):
+        kf = KalmanFilter(dim_Z=2, dim_Y=2)
+        assert not bool(kf.is_1D_angular)
+
+    def test_mu_stays_in_range(self):
+        """Filter with angular data crossing +/-pi boundary, verify mu stays in [-pi, pi)."""
+        D = 1
+        T = 50
+        kf = KalmanFilter(
+            dim_Z=D,
+            dim_Y=D,
+            is_1D_angular=True,
+            F=jnp.eye(D),
+            Q=0.01 * jnp.eye(D),
+            H=jnp.eye(D),
+            R=0.1 * jnp.eye(D),
+            mu0=jnp.array([3.0]),
+            sigma0=jnp.eye(D),
+        )
+        # Observations that cross the +pi/-pi boundary
+        angles = jnp.linspace(2.5, 2.5 + 3.0, T)[:, None]  # crosses pi
+        Y = jnp.mod(angles + jnp.pi, 2 * jnp.pi) - jnp.pi  # wrap to [-pi, pi)
+        mus_f, sigmas_f = kf.filter(Y)
+        mus_s, sigmas_s = kf.smooth(mus_f, sigmas_f)
+
+        assert jnp.all(mus_f >= -jnp.pi)
+        assert jnp.all(mus_f < jnp.pi + 1e-6)
+        assert jnp.all(mus_s >= -jnp.pi)
+        assert jnp.all(mus_s < jnp.pi + 1e-6)
+
+    def test_no_wrapping_when_disabled(self):
+        """is_1D_angular=False should not change existing behavior."""
+        D = 1
+        T = 20
+        np.random.seed(123)
+        Y = jnp.array(np.random.randn(T, D) * 5)  # values outside [-pi, pi)
+
+        kf = KalmanFilter(
+            dim_Z=D,
+            dim_Y=D,
+            is_1D_angular=False,
+            F=jnp.eye(D),
+            Q=0.01 * jnp.eye(D),
+            H=jnp.eye(D),
+            R=0.01 * jnp.eye(D),
+            mu0=jnp.zeros(D),
+            sigma0=jnp.eye(D),
+        )
+        mus_f, _ = kf.filter(Y)
+        # With very low R, filtered means should track observations closely
+        # Some values should be outside [-pi, pi)
+        assert jnp.any(jnp.abs(mus_f) > jnp.pi)
+
+    def test_innovation_wrapping(self):
+        """Innovation wrapping: obs at -3.0, prediction at 3.0 should give small innovation."""
+        D = 1
+        kf = KalmanFilter(
+            dim_Z=D,
+            dim_Y=D,
+            is_1D_angular=True,
+            F=jnp.eye(D),
+            Q=0.001 * jnp.eye(D),
+            H=jnp.eye(D),
+            R=0.1 * jnp.eye(D),
+            mu0=jnp.array([3.0]),  # near +pi
+            sigma0=0.01 * jnp.eye(D),
+        )
+        # Single observation near -pi (short angular distance from +3.0)
+        Y = jnp.array([[-3.0]])
+        mus_f, _ = kf.filter(Y)
+        # The filtered mu should be near pi (not pulled towards 0 as with Euclidean diff)
+        assert jnp.abs(mus_f[0, 0]) > 2.5  # should stay near the boundary
