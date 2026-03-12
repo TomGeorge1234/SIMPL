@@ -175,6 +175,7 @@ class SIMPL:
         align_to_behavior: bool | str = "trajectory",
         resume: bool = False,
         save_full_history: bool = False,
+        early_stopping: bool = True,
         verbose: bool = True,
     ) -> "SIMPL":
         """Fit the SIMPL model to data.
@@ -242,6 +243,9 @@ class SIMPL:
             ``logPYXF_maps`` is stored for the last epoch only (due to its huge size).
             Metrics, receptive fields, decoded trajectories, and Kalman outputs are
             unaffected and stored for every epoch regardless. By default False.
+        early_stopping : bool, optional
+            If True, training stops early when the test log-likelihood has not improved
+            for 3 consecutive epochs. By default True.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -274,7 +278,7 @@ class SIMPL:
         if resume:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
-            self._fit_N_epochs(n_epochs, verbose=verbose)
+            self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
             self.results_["FX_lastepoch"] = dict_to_dataset(
                 {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
             )["FX_lastepoch"]
@@ -288,7 +292,7 @@ class SIMPL:
         self._run_epoch_zero(verbose)
 
         # ── Train for n_epochs ──
-        self._fit_N_epochs(n_epochs, verbose=verbose)
+        self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
 
         # ── Attach FX_firstepoch and FX_lastepoch (always, without epoch dim) ──
         self.results_["FX_firstepoch"] = dict_to_dataset(
@@ -1022,16 +1026,30 @@ class SIMPL:
         )
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
 
-    def _fit_N_epochs(self, N: int, verbose: bool = True) -> None:
-        """Train for N epochs with KeyboardInterrupt support."""
+    def _fit_N_epochs(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
+        """Train for N epochs with KeyboardInterrupt and early stopping support."""
         if N <= 0:
             return
+        patience = 3
+        best_test_ll = -np.inf
+        epochs_without_improvement = 0
         self._print_epoch_summary()
         for _ in range(N):
             try:
                 self._fit_epoch()
                 if verbose:
                     self._print_epoch_summary()
+                if early_stopping:
+                    test_ll = float(self.loglikelihoods_.logPYXF_test.sel(epoch=self.epoch_).values)
+                    if test_ll > best_test_ll:
+                        best_test_ll = test_ll
+                        epochs_without_improvement = 0
+                    else:
+                        epochs_without_improvement += 1
+                        if epochs_without_improvement >= patience:
+                            if verbose:
+                                print(f"  Early stopping: test log-likelihood has not improved for {patience} epochs.")
+                            break
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch_} epochs.")
                 break
