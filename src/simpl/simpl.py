@@ -1161,7 +1161,7 @@ class SIMPL:
             if self.D_ != 1:
                 raise ValueError("Circular mode currently supports only 1D latent variables")
 
-            circular_lims = np.asarray((-np.pi,), (np.pi,))
+            circular_lims = ((-np.pi,), (np.pi,))
             if self._environment_override is not None:
                 self.environment_ = self._environment_override
             else:
@@ -1188,6 +1188,18 @@ class SIMPL:
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
+
+        env_lo = np.asarray(self.environment_.lims[0])
+        env_hi = np.asarray(self.environment_.lims[1])
+        data_lo = Xb.min(axis=0)
+        data_hi = Xb.max(axis=0)
+        if np.any(data_lo < env_lo) or np.any(data_hi > env_hi):
+            warnings.warn(
+                f"Behavioural data spans [{data_lo}, {data_hi}] but the environment only covers "
+                f"[{env_lo}, {env_hi}]. Positions outside the environment have no matching spatial bins, "
+                "which may degrade receptive field estimates and decoding accuracy. "
+                "Consider increasing `env_pad` or adjusting `env_lims`."
+            )
 
         # ── Convert data to JAX arrays ──
         neurons = np.arange(self.N_neurons_)
