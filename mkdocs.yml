@@ -1,6 +1,6 @@
 site_name: SIMPL
-site_url: https://tomgeorge1234.github.io/simpl/
-repo_url: https://github.com/TomGeorge1234/simpl
+site_url: https://tomge.org/SIMPL/
+repo_url: https://github.com/TomGeorge1234/SIMPL
 theme:
   name: material
   palette:
