@@ -4,8 +4,31 @@ repo_url: https://github.com/TomGeorge1234/SIMPL
 theme:
   name: material
   palette:
-    scheme: default
-    primary: teal
+    # Light mode
+    - scheme: default
+      primary: white
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: Fira Code
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.instant
+    - toc.integrate
+    - content.code.copy
+extra_css:
+  - stylesheets/extra.css
 plugins:
   - search
   - include-markdown
