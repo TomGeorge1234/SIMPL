@@ -22,7 +22,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-demos = ["jupyter", "ratinabox", "tqdm"]
+demos = [
+    "jupyter", 
+    "ratinabox", 
+    "tqdm",
+]
 docs = [
     "mkdocs-material",
     "mkdocstrings[python]",

@@ -1,7 +1,29 @@
 """Kalman filter and smoother implementation in JAX.
 
-Provides a high-level ``KalmanFilter`` class as well as lower-level JIT-compiled
-functions for prediction, update, filtering, smoothing, and parameter fitting.
+Provides the ``KalmanFilter`` class — the primary interface used by the SIMPL
+E-step — as well as lower-level JIT-compiled helper functions for prediction,
+update, filtering, smoothing, and parameter fitting.
+
+The Kalman dynamics are:
+
+.. math::
+
+    z_t = F \\, z_{t-1} + B \\, u_t + q_t, \\qquad y_t = H \\, z_t + r_t
+
+where :math:`q_t \\sim \\mathcal{N}(0, Q)` and
+:math:`r_t \\sim \\mathcal{N}(0, R)`.
+
+* **Filtering** estimates the causal posterior
+  :math:`P(z_t \\mid y_{1:t})`.
+* **Smoothing** refines this to the full posterior
+  :math:`P(z_t \\mid y_{1:T})` using all observations.
+
+For 1-D angular state spaces (``is_1D_angular=True``), the filter and smoother
+wrap :math:`\\mu` to :math:`[-\\pi, \\pi)` after every predict, update, and
+smooth step.
+
+The lower-level functions (prefixed with ``_``) mirror ``KalmanFilter``
+methods and are not intended for direct use.
 """
 
 import math
@@ -14,20 +36,20 @@ from simpl.utils import _wrap_minuspi_pi, gaussian_pdf, log_gaussian_pdf
 
 __all__ = [
     "KalmanFilter",
-    "kalman_filter",
-    "kalman_smoother",
-    "kalman_predict",
-    "kalman_update",
-    "kalman_likelihoods",
-    "calculate_S_matrix",
-    "calculate_K_matrix",
-    "fit_parameters",
-    "fit_mu0",
-    "fit_sigma0",
-    "fit_F",
-    "fit_Q",
-    "fit_H",
-    "fit_R",
+    "_kalman_filter",
+    "_kalman_smoother",
+    "_kalman_predict",
+    "_kalman_update",
+    "_kalman_likelihoods",
+    "_calculate_S_matrix",
+    "_calculate_K_matrix",
+    "_fit_parameters",
+    "_fit_mu0",
+    "_fit_sigma0",
+    "_fit_F",
+    "_fit_Q",
+    "_fit_H",
+    "_fit_R",
 ]
 
 
@@ -241,7 +263,7 @@ class KalmanFilter:
         for i in range(N_batch):
             start = i * self.batch_size
             end = min((i + 1) * self.batch_size, T)
-            mu, sigma = kalman_filter(
+            mu, sigma = _kalman_filter(
                 Y=Y[start:end],
                 U=U[start:end],
                 mu0=mu0,
@@ -314,7 +336,7 @@ class KalmanFilter:
         for i in range(math.ceil((T - 1) / (self.batch_size))):
             start = max(0, T - 1 - (i + 1) * self.batch_size)
             end = T - 1 - i * self.batch_size
-            mu, sigma = kalman_smoother(
+            mu, sigma = _kalman_smoother(
                 mu=mus_f[start:end],
                 sigma=sigmas_f[start:end],
                 U=U[start:end],
@@ -375,7 +397,7 @@ class KalmanFilter:
         H = self._verify_and_tile(H, self.H, T, (self.dim_Y, self.dim_Z))
         R = self._verify_and_tile(R, self.R, T, (self.dim_Y, self.dim_Y))
 
-        S = vmap(calculate_S_matrix, (0, 0, 0))(sigma, H, R)
+        S = vmap(_calculate_S_matrix, (0, 0, 0))(sigma, H, R)
         Y_hat = jnp.einsum("ijk,ik->ij", H, mu)  # the "observation" mean
         logP = vmap(log_gaussian_pdf, (0, 0, 0))(Y, Y_hat, S)
 
@@ -417,7 +439,7 @@ class KalmanFilter:
 
 
 @jit
-def kalman_filter(
+def _kalman_filter(
     Y: jax.Array,
     U: jax.Array,
     mu0: jax.Array,
@@ -474,9 +496,9 @@ def kalman_filter(
             H,
             R,
         ) = inputs
-        mu_p, sigma_p = kalman_predict(mu, sigma, F, Q, B, u)
+        mu_p, sigma_p = _kalman_predict(mu, sigma, F, Q, B, u)
         mu_p = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_p), mu_p)
-        mu_u, sigma_u = kalman_update(mu_p, sigma_p, H, R, Y, is_1D_angular=is_1D_angular)
+        mu_u, sigma_u = _kalman_update(mu_p, sigma_p, H, R, Y, is_1D_angular=is_1D_angular)
         mu_u = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_u), mu_u)
         return (mu_u, sigma_u), (mu_u, sigma_u)  # carry, output
 
@@ -485,7 +507,7 @@ def kalman_filter(
 
 
 @jit
-def kalman_smoother(
+def _kalman_smoother(
     mu: jax.Array,
     sigma: jax.Array,
     U: jax.Array,
@@ -536,7 +558,7 @@ def kalman_smoother(
     def loop(carry, inputs):
         mu, sigma = carry
         mu_, sigma_, u, F, B, Q = inputs
-        mu_predict, sigma_predict = kalman_predict(mu_, sigma_, F, Q, B, u)
+        mu_predict, sigma_predict = _kalman_predict(mu_, sigma_, F, Q, B, u)
         mu_predict = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_predict), mu_predict)
         J = sigma_ @ F.T @ jnp.linalg.inv(sigma_predict)
         diff = mu - mu_predict
@@ -556,7 +578,7 @@ def kalman_smoother(
 
 
 @jit
-def kalman_likelihoods(
+def _kalman_likelihoods(
     Z: jax.Array,
     Y: jax.Array,
     mu: jax.Array,
@@ -634,7 +656,7 @@ def kalman_likelihoods(
     return PZ, PZXF, PXZF
 
 
-def kalman_predict(
+def _kalman_predict(
     mu: jax.Array,
     sigma: jax.Array,
     F: jax.Array,
@@ -671,7 +693,7 @@ def kalman_predict(
     return mu_next, sigma_next
 
 
-def kalman_update(
+def _kalman_update(
     mu: jax.Array,
     sigma: jax.Array,
     H: jax.Array,
@@ -704,9 +726,9 @@ def kalman_update(
     sigma_post : jax.Array, shape (dim_Z, dim_Z)
         The posterior state covariance
     """
-    S = calculate_S_matrix(sigma, H, R)
+    S = _calculate_S_matrix(sigma, H, R)
     y_hat = H @ mu
-    K = calculate_K_matrix(sigma, H, S)
+    K = _calculate_K_matrix(sigma, H, S)
     innovation = y - y_hat
     innovation = jnp.where(is_1D_angular, _wrap_minuspi_pi(innovation), innovation)
     mu_post = mu + K @ innovation
@@ -715,7 +737,7 @@ def kalman_update(
     return mu_post, sigma_post
 
 
-def calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Array:
+def _calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Array:
     """Calculates the S matrix for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
@@ -738,7 +760,7 @@ def calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Arra
     return H @ sigma @ H.T + R
 
 
-def calculate_K_matrix(sigma: jax.Array, H: jax.Array, S: jax.Array) -> jax.Array:
+def _calculate_K_matrix(sigma: jax.Array, H: jax.Array, S: jax.Array) -> jax.Array:
     """Calculates the K matrix for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
@@ -761,7 +783,7 @@ def calculate_K_matrix(sigma: jax.Array, H: jax.Array, S: jax.Array) -> jax.Arra
     return sigma @ H.T @ jnp.linalg.inv(S)
 
 
-def fit_parameters(
+def _fit_parameters(
     Z: jax.Array,
     Y: jax.Array,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -824,10 +846,10 @@ def fit_parameters(
     return mu0, sigma0, F, Q, H, R
 
 
-def fit_mu0(Z: jax.Array) -> jax.Array:
+def _fit_mu0(Z: jax.Array) -> jax.Array:
     """Fits the initial state mean of the Kalman filter.
 
-    Assumes stationary dynamics, see `fit_parameters` for more details.
+    Assumes stationary dynamics, see `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -842,10 +864,10 @@ def fit_mu0(Z: jax.Array) -> jax.Array:
     return Z.mean(axis=0)
 
 
-def fit_sigma0(Z: jax.Array) -> jax.Array:
+def _fit_sigma0(Z: jax.Array) -> jax.Array:
     """Fits the initial state covariance of the Kalman filter.
 
-    Assumes stationary dynamics, see `fit_parameters` for more details.
+    Assumes stationary dynamics, see `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -862,11 +884,11 @@ def fit_sigma0(Z: jax.Array) -> jax.Array:
     return (1 / T) * ((Z - mu0).T @ (Z - mu0))
 
 
-def fit_F(Z: jax.Array) -> jax.Array:
+def _fit_F(Z: jax.Array) -> jax.Array:
     """Fits the state transition matrix of the Kalman filter.
 
     Assumes stationary dynamics **and no control input**, see
-    `fit_parameters` for more details.
+    `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -881,11 +903,11 @@ def fit_F(Z: jax.Array) -> jax.Array:
     return (Z[1:].T @ Z[:-1]) @ jnp.linalg.inv(Z.T @ Z)
 
 
-def fit_Q(Z: jax.Array) -> jax.Array:
+def _fit_Q(Z: jax.Array) -> jax.Array:
     """Fits the state transition noise covariance of the Kalman filter.
 
     Assumes stationary dynamics **and no control input**, see
-    `fit_parameters` for more details.
+    `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -902,10 +924,10 @@ def fit_Q(Z: jax.Array) -> jax.Array:
     return (1 / (T - 1)) * (Z[1:] - Z[:-1] @ F.T).T @ (Z[1:] - Z[:-1] @ F.T)
 
 
-def fit_H(Z: jax.Array, Y: jax.Array) -> jax.Array:
+def _fit_H(Z: jax.Array, Y: jax.Array) -> jax.Array:
     """Fits the observation matrix of the Kalman filter.
 
-    Assumes stationary dynamics, see `fit_parameters` for more details.
+    Assumes stationary dynamics, see `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -922,10 +944,10 @@ def fit_H(Z: jax.Array, Y: jax.Array) -> jax.Array:
     return (Y.T @ Z) @ jnp.linalg.inv(Z.T @ Z)
 
 
-def fit_R(Z: jax.Array, Y: jax.Array) -> jax.Array:
+def _fit_R(Z: jax.Array, Y: jax.Array) -> jax.Array:
     """Fits the observation noise covariance of the Kalman filter.
 
-    Assumes stationary dynamics, see `fit_parameters` for more details.
+    Assumes stationary dynamics, see `_fit_parameters` for more details.
 
     Parameters
     ----------
@@ -940,5 +962,5 @@ def fit_R(Z: jax.Array, Y: jax.Array) -> jax.Array:
         The observation noise covariance
     """
     T = Z.shape[0]
-    H = fit_H(Z, Y)
+    H = _fit_H(Z, Y)
     return (1 / T) * (Y - Z @ H.T).T @ (Y - Z @ H.T)

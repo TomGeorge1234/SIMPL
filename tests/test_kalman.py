@@ -6,15 +6,15 @@ import pytest
 
 from simpl.kalman import (
     KalmanFilter,
-    fit_F,
-    fit_H,
-    fit_mu0,
-    fit_parameters,
-    fit_Q,
-    fit_R,
-    fit_sigma0,
-    kalman_predict,
-    kalman_update,
+    _fit_F,
+    _fit_H,
+    _fit_mu0,
+    _fit_parameters,
+    _fit_Q,
+    _fit_R,
+    _fit_sigma0,
+    _kalman_predict,
+    _kalman_update,
 )
 
 
@@ -85,7 +85,7 @@ class TestKalmanPredict:
         Q = 0.1 * jnp.eye(D)
         B = jnp.zeros((D, 1))
         u = jnp.zeros(1)
-        mu_next, sigma_next = kalman_predict(mu, sigma, F, Q, B, u)
+        mu_next, sigma_next = _kalman_predict(mu, sigma, F, Q, B, u)
         assert mu_next.shape == (D,)
         assert sigma_next.shape == (D, D)
 
@@ -98,7 +98,7 @@ class TestKalmanUpdate:
         H = jnp.eye(D)
         R = 0.1 * jnp.eye(D)
         y = jnp.array([1.0, 0.0])
-        mu_post, sigma_post = kalman_update(mu, sigma, H, R, y)
+        mu_post, sigma_post = _kalman_update(mu, sigma, H, R, y)
         # Posterior covariance trace should be less than prior
         assert jnp.trace(sigma_post) < jnp.trace(sigma)
 
@@ -146,7 +146,7 @@ class TestFitParameters:
         H_true = jnp.array(np.random.randn(D_Y, D_Z))
         Y = Z @ H_true.T + jnp.array(np.random.randn(T, D_Y) * 0.01)
 
-        mu0, sigma0, F, Q, H, R = fit_parameters(Z, Y)
+        mu0, sigma0, F, Q, H, R = _fit_parameters(Z, Y)
         assert mu0.shape == (D_Z,)
         assert sigma0.shape == (D_Z, D_Z)
         assert F.shape == (D_Z, D_Z)
@@ -162,13 +162,13 @@ class TestFitIndividualParameters:
         Z = jnp.array(np.random.randn(T, D_Z))
         Y = jnp.array(np.random.randn(T, D_Y))
 
-        mu0_all, sigma0_all, F_all, Q_all, H_all, R_all = fit_parameters(Z, Y)
-        assert jnp.allclose(fit_mu0(Z), mu0_all, atol=1e-5)
-        assert jnp.allclose(fit_sigma0(Z), sigma0_all, atol=1e-5)
-        assert jnp.allclose(fit_F(Z), F_all, atol=1e-5)
-        assert jnp.allclose(fit_Q(Z), Q_all, atol=1e-4)
-        assert jnp.allclose(fit_H(Z, Y), H_all, atol=1e-5)
-        assert jnp.allclose(fit_R(Z, Y), R_all, atol=1e-5)
+        mu0_all, sigma0_all, F_all, Q_all, H_all, R_all = _fit_parameters(Z, Y)
+        assert jnp.allclose(_fit_mu0(Z), mu0_all, atol=1e-5)
+        assert jnp.allclose(_fit_sigma0(Z), sigma0_all, atol=1e-5)
+        assert jnp.allclose(_fit_F(Z), F_all, atol=1e-5)
+        assert jnp.allclose(_fit_Q(Z), Q_all, atol=1e-4)
+        assert jnp.allclose(_fit_H(Z, Y), H_all, atol=1e-5)
+        assert jnp.allclose(_fit_R(Z, Y), R_all, atol=1e-5)
 
 
 class TestKalmanLoglikelihood:
