@@ -1,4 +1,18 @@
-"""Kernel density estimation of neural firing rate maps and Poisson log-likelihood computation."""
+"""Kernel density estimation (KDE) of neural firing-rate maps and Poisson log-likelihood.
+
+The M-step of the SIMPL EM loop estimates each neuron's receptive field using
+KDE: spikes are smoothed with a Gaussian kernel over the spatial grid, and
+normalised by occupancy, yielding a firing-rate map in units of spikes per
+time bin.
+
+For 1-D angular environments (``is_1D_angular=True``), the specialised
+``kde_angular`` function convolves with a wrapped Gaussian kernel via FFT so
+that the estimate is seamless across the :math:`[-\\pi, \\pi)` boundary.
+
+The Poisson log-likelihood functions (``poisson_log_likelihood`` and
+``poisson_log_likelihood_trajectory``) evaluate how well the estimated
+receptive fields explain the observed spike counts and are used during the
+E-step to construct likelihood maps over position space."""
 
 from collections.abc import Callable
 from functools import partial
@@ -179,7 +193,7 @@ def poisson_log_likelihood(
     where
     log(X!) = log(sqrt(2*pi)) + (X+0.5) * log(X) - X
     (manually correcting for when X=0)
-    #this stirlings approximation IS necessary as it avoids going through
+    this stirlings approximation IS necessary as it avoids going through
     n! which can be enormous and give nans for large spike counts
 
     Optionally, a boolean mask same shape as spikes can be passed to ignore

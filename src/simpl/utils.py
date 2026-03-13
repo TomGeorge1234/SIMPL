@@ -1,5 +1,26 @@
-"""Utility functions: Gaussian PDF helpers, Gaussian fitting, CCA alignment,
-data preparation, I/O, and circular/angular helpers."""
+"""Utility functions used throughout SIMPL and available for downstream analysis.
+
+Gaussian Helpers
+    ``gaussian_pdf``, ``log_gaussian_pdf``, ``gaussian_norm_const``
+
+Gaussian Fitting
+    ``fit_gaussian``, ``fit_gaussian_vmap``, ``gaussian_sample``
+
+Statistical and Analysis Helpers
+    ``coefficient_of_determination``, ``cca``, ``cca_angular``,
+    ``correlation_at_lag``
+
+Data Preparation
+    ``accumulate_spikes``, ``coarsen_dt``, ``create_speckled_mask``
+
+Data I/O
+    ``load_demo_data``, ``print_data_summary``, ``save_results_to_netcdf``,
+    ``load_results``
+
+Place-Field Analysis
+    ``get_field_peaks``, ``analyse_place_fields``,
+    ``calculate_spatial_information``
+"""
 
 import jax
 import jax.numpy as jnp
@@ -266,7 +287,14 @@ def coefficient_of_determination(
     X : jnp.ndarray, shape (N, D)
         The predicted latent positions
     Y : jnp.ndarray, shape (N, D)
-        The true latent positions"""
+        The true latent positions
+
+    Returns
+    -------
+    R2 : jax.Array, scalar
+        The coefficient of determination.  1.0 indicates a perfect prediction;
+        0.0 indicates the model explains no more variance than the mean of *Y*;
+        negative values indicate worse-than-mean predictions."""
     assert X.shape == Y.shape, "The predicted and true latent positions must have the same shape."
     SST = jnp.sum((Y - jnp.mean(Y, axis=0)) ** 2)
     SSR = jnp.sum((Y - X) ** 2)
@@ -595,7 +623,18 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
 
 
 def print_data_summary(data: xr.Dataset) -> None:
-    """Print a concise summary of the dataset."""
+    """Print a concise summary of an ``xr.Dataset`` loaded via :func:`load_demo_data`.
+
+    Prints the number of neurons, time bins, dimensionality, recording
+    duration, time-bin width, firing-rate statistics (min / Q25 / median /
+    Q75 / max / mean), median speed, mean step size, and the fraction of
+    time bins with 0, 1, or 2+ simultaneously active neurons.
+
+    Parameters
+    ----------
+    data : xr.Dataset
+        Dataset containing at least ``Y`` (spike counts), ``Xb``
+        (behavioural positions), and a ``time`` coordinate."""
     Y = data.Y.values
     Xb = data.Xb.values
     time = data.time.values
@@ -656,11 +695,21 @@ def print_data_summary(data: xr.Dataset) -> None:
 
 
 def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
-    """
-    Save results to a file.
-    To make the data netCDF safe, some variables need to be converted.
+    """Save a SIMPL results ``xr.Dataset`` to a netCDF file.
 
-    """
+    Before writing, the function performs several type conversions required by
+    the netCDF4 format: boolean arrays (e.g. ``spike_mask``) are cast to
+    ``int32``, boolean ``attrs`` are cast to ``int``, and ``trial_slices``
+    (a list of Python ``slice`` objects) is serialised to a flat ``int64``
+    array.  Use :func:`load_results` to reload and automatically reverse
+    these conversions.
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        The results dataset (typically ``model.results_``).
+    path : str
+        Destination file path (e.g. ``'results.nc'``)."""
     results["spike_mask"] = results["spike_mask"].astype("int32")
     # Convert boolean 'reshape' attrs to int (netCDF4 doesn't support bool attrs)
     for var in results.data_vars:

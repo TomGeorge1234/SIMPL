@@ -1,3 +1,20 @@
+"""Core SIMPL class implementing the EM-style optimisation loop.
+
+This module provides the :class:`SIMPL` class, the primary user-facing API.  It
+follows scikit-learn conventions: ``__init__`` stores hyperparameters only,
+``fit()`` accepts data and runs the EM algorithm, and ``predict()`` decodes new
+spike data using the fitted receptive fields.
+
+Each EM epoch proceeds as:
+
+1. **E-step** — Kalman filter/smoother decodes latent positions from spike
+   observations.
+2. **M-step** — Kernel density estimation re-estimates receptive fields from
+   the decoded positions.
+3. **Evaluate** — Metrics (log-likelihood, spatial information, stability,
+   etc.) are computed and stored in an ``xarray.Dataset``.
+"""
+
 # Jax, for the majority of the calculations
 import threading
 import warnings
@@ -9,7 +26,7 @@ import xarray as xr
 from jax import vmap
 
 # Internal libraries
-from simpl._variable_registry import build_variable_info_dict, dict_to_dataset
+from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
 from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
 from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
@@ -279,7 +296,7 @@ class SIMPL:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
             self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
-            self.results_["FX_lastepoch"] = dict_to_dataset(
+            self.results_["FX_lastepoch"] = _dict_to_dataset(
                 {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
             )["FX_lastepoch"]
             self.X_ = self.E_["X"]
@@ -295,16 +312,16 @@ class SIMPL:
         self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
 
         # ── Attach FX_firstepoch and FX_lastepoch (always, without epoch dim) ──
-        self.results_["FX_firstepoch"] = dict_to_dataset(
+        self.results_["FX_firstepoch"] = _dict_to_dataset(
             {"FX_firstepoch": self.FX_firstepoch_}, self.variable_info_dict_, self.coordinates_dict_
         )["FX_firstepoch"]
-        self.results_["FX_lastepoch"] = dict_to_dataset(
+        self.results_["FX_lastepoch"] = _dict_to_dataset(
             {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
         )["FX_lastepoch"]
 
         # ── Attach logPYXF_maps for the final epoch only (too large to store per epoch) ──
         if self.save_full_history_:
-            self.results_["logPYXF_maps"] = dict_to_dataset(
+            self.results_["logPYXF_maps"] = _dict_to_dataset(
                 {"logPYXF_maps": self.E_["logPYXF_maps"]}, self.variable_info_dict_, self.coordinates_dict_
             )["logPYXF_maps"]
 
@@ -396,7 +413,7 @@ class SIMPL:
         # Store full decode results as an xr.Dataset
         pred_time = np.arange(T_new) * self.dt_
         pred_coords = {**self.coordinates_dict_, "time": pred_time}
-        self.prediction_results_ = dict_to_dataset(E, self.variable_info_dict_, pred_coords)
+        self.prediction_results_ = _dict_to_dataset(E, self.variable_info_dict_, pred_coords)
         self.prediction_results_.attrs = self._build_dataset_attrs(
             trial_boundaries=trial_boundaries if trial_boundaries is not None else [0],
             trial_slices=trial_slices,
@@ -491,7 +508,7 @@ class SIMPL:
 
         # Store Xt in results
         self.results_ = xr.merge(
-            [self.results_, dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
+            [self.results_, _dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
             compat="override",
         )
 
@@ -516,7 +533,7 @@ class SIMPL:
             self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
             self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
             self.results_ = xr.merge(
-                [self.results_, dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
+                [self.results_, _dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
                 compat="override",
             )
 
@@ -982,7 +999,7 @@ class SIMPL:
         # ── Evaluate and save results ──
         self._evaluate_epoch()
         ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
-        loglikelihoods = dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+        loglikelihoods = _dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"epoch": [self.epoch_]}
         )
         self.loglikelihoods_ = xr.concat(
@@ -1023,7 +1040,7 @@ class SIMPL:
         if not self.save_full_history_:
             epoch_data.pop("FX", None)
         epoch_data.pop("logPYXF_maps", None)
-        results = dict_to_dataset(epoch_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+        results = _dict_to_dataset(epoch_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"epoch": [self.epoch_]}
         )
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
@@ -1130,7 +1147,7 @@ class SIMPL:
         if not self.save_full_history_:
             data.pop("FX", None)
         data.pop("logPYXF_maps", None)
-        results = dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+        results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"epoch": [epoch_id]}
         )
         self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
@@ -1287,7 +1304,7 @@ class SIMPL:
 
         # ── Build coordinate system and variable registry ──
         self.dim_ = self.environment_.dim
-        self.variable_info_dict_ = build_variable_info_dict(self.dim_)
+        self.variable_info_dict_ = _build_variable_info_dict(self.dim_)
         self.coordinates_dict_ = {
             "neuron": self.neuron_,
             "time": self.time_,
@@ -1304,7 +1321,7 @@ class SIMPL:
         )
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
-            [self.results_, dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
+            [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
             compat="override",
         )
         self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
@@ -1433,7 +1450,7 @@ class SIMPL:
         """
         F = np.array(F)
         X = np.array(X)
-        data = dict_to_dataset({"F": F, "X": X}, self.variable_info_dict_, self.coordinates_dict_)
+        data = _dict_to_dataset({"F": F, "X": X}, self.variable_info_dict_, self.coordinates_dict_)
         coord_args = {dim: data.X.sel(dim=dim) for dim in self.dim_}
         FX = data.F.sel(**coord_args, method="nearest").T
         return FX.data
