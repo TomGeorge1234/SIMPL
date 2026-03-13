@@ -1,3 +1,22 @@
+"""Spatial environment discretisation for SIMPL.
+
+The :class:`Environment` manages the spatial grid over which receptive fields
+are defined.  It supports arbitrary dimensionality (1-D through n-D) and
+provides coordinate arrays, discretised meshgrids, and plotting helpers.
+
+Dimension naming convention:
+
+* 1-D: ``['x']``
+* 2-D: ``['x', 'y']``
+* 3-D: ``['x', 'y', 'z']``
+* Higher: ``['x1', 'x2', ..., 'xD']``
+
+Typically users do **not** create an ``Environment`` directly — ``SIMPL.fit()``
+builds one automatically from the data and the ``bin_size`` / ``env_pad``
+hyperparameters.  Power users may pass a pre-built ``Environment`` to
+``SIMPL.__init__`` for full control over the spatial grid.
+"""
+
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np

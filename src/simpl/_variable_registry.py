@@ -1,11 +1,26 @@
-"""Variable metadata registry for the SIMPL results dataset."""
+"""Variable metadata registry for the SIMPL results ``xarray.Dataset``.
+
+Every variable stored in the SIMPL results dataset has an entry in the
+registry built by :func:`_build_variable_info_dict`.  Each entry is a dict
+with the following keys:
+
+* **name** — human-readable display name
+* **description** — brief description of the variable
+* **dims** — list of dimension names (e.g. ``['time', 'neuron']``)
+* **axis_title** — label used when plotting the variable
+* **formula** — LaTeX formula (optional)
+* **reshape** — if ``True``, the array is reshaped to match ``dims`` when saved
+
+These dicts are attached as ``attrs`` on the ``xr.DataArray`` instances inside
+the results ``Dataset``, keeping metadata co-located with the data for
+introspection and serialisation."""
 
 import warnings
 
 import xarray as xr
 
 
-def dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.Dataset:
+def _dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.Dataset:
     """Convert a dictionary to an xarray Dataset, appending metadata from variable_info_dict where available.
 
     Parameters
@@ -13,7 +28,7 @@ def dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.Da
     data : dict
         Dictionary of variable_name -> array.
     variable_info_dict : dict
-        Variable metadata dictionary (from :func:`build_variable_info_dict`).
+        Variable metadata dictionary (from :func:`_build_variable_info_dict`).
     coords : dict
         Coordinate arrays.
 
@@ -50,7 +65,7 @@ def dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.Da
     return dataset
 
 
-def build_variable_info_dict(dim: list[str]) -> dict:
+def _build_variable_info_dict(dim: list[str]) -> dict:
     """Build the dictionary describing every variable stored in SIMPL results.
 
     This dictionary summarises _all_ the variables used and returned by the

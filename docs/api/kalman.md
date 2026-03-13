@@ -1,11 +1,9 @@
 # Kalman Filter
 
-::: simpl.kalman.KalmanFilter
-
-::: simpl.kalman.kalman_filter
-
-::: simpl.kalman.kalman_smoother
-
-::: simpl.kalman.kalman_predict
-
-::: simpl.kalman.kalman_update
+::: simpl.kalman
+    options:
+      show_if_no_docstring: false
+      members_order: source
+      filters:
+        - "!^__"
+        - "!^_verify_and_tile"

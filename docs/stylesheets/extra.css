@@ -1,0 +1,31 @@
+/* Furo-inspired clean styling */
+
+/* Muted header bar — white in light mode, blends in dark mode */
+[data-md-color-scheme="default"] .md-header {
+  background-color: #f8f9fa;
+  color: #333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+[data-md-color-scheme="default"] .md-header .md-header__title {
+  color: #333;
+}
+[data-md-color-scheme="default"] .md-header .md-icon {
+  color: #555;
+}
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: #f8f9fa;
+  color: #333;
+}
+
+/* Sidebar styling — lighter, cleaner */
+[data-md-color-scheme="default"] .md-sidebar {
+  background-color: #fafafa;
+}
+
+/* Softer link colours */
+:root {
+  --md-typeset-a-color: #2962ff;
+}
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: #82b1ff;
+}
