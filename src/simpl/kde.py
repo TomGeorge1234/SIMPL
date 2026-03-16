@@ -7,7 +7,7 @@ time bin.
 
 For 1-D angular environments (``is_1D_angular=True``), the specialised
 ``kde_angular`` function convolves with a wrapped Gaussian kernel via FFT so
-that the estimate is seamless across the :math:`[-\\pi, \\pi)` boundary.
+that the estimate is seamless across the \\([-\\pi, \\pi)\\) boundary.
 
 The Poisson log-likelihood functions (``poisson_log_likelihood`` and
 ``poisson_log_likelihood_trajectory``) evaluate how well the estimated
@@ -37,7 +37,12 @@ def gaussian_kernel(
     x2: jax.Array,
     bandwidth: float,
 ) -> jax.Array:
-    """Calculates the gaussian kernel between two points x1 and x2 with covariance
+    """Evaluates the Gaussian kernel between two points \\(x_1\\) and \\(x_2\\):
+
+    $$K(x_1, x_2) = \\frac{1}{\\sqrt{(2\\pi)^D |\\Sigma|}}
+    \\exp\\!\\left(-\\frac{1}{2}(x_1 - x_2)^\\top \\Sigma^{-1} (x_1 - x_2)\\right)$$
+
+    where \\(\\Sigma = \\sigma^2 I\\) is the isotropic covariance with bandwidth \\(\\sigma\\).
 
     Parameters
     ----------
@@ -81,12 +86,13 @@ def kde(
     estimate is an expected-spike-count-per-timebin, in order to get firing rate
     in Hz, divide this by dt.
 
-    Kernel Density Estimation goes as follows (the denominator corrects for for non-uniform position density):
+    Kernel Density Estimation goes as follows (the denominator corrects for
+    non-uniform position density):
 
-              # spikes observed at x     sum_{spike_times} K(x, x(ts))     Ks
-      mu(x) = ---------------------- ==> ----------------------------- :=  --
-                  # visits to x            sum_{all_times} K(x, x(t))      Kx
-              = exp[log(Ks) - log(Kx)]
+    $$\\mu(x) = \\frac{\\sum_{t_s \\in \\text{spike times}} K(x, x(t_s))}{\\sum_{t} K(x, x(t))} = \\frac{K_s}{K_x}$$
+
+    In practice this is computed in log-space as
+    \\(\\mu(x) = \\exp[\\log(K_s) - \\log(K_x)]\\).
 
     Optionally, a boolean mask same shape as spikes can be passed to ignore
     certain spikes. This restricts the KDE calculation to only the spikes
@@ -186,15 +192,24 @@ def poisson_log_likelihood(
 ) -> jax.Array:
     """Takes an array of spike counts and an array of mean rates and returns
     the log-likelihood of the spikes given the mean rate of the neuron
-    (it's receptive field).
+    (its receptive field).
 
-    P(X|mu) = (mu^X * e^-mu) / X!
-    log(P(X|mu)) = sum_{neurons} [ X * log(mu) - mu - log(X!) ]
-    where
-    log(X!) = log(sqrt(2*pi)) + (X+0.5) * log(X) - X
-    (manually correcting for when X=0)
-    this stirlings approximation IS necessary as it avoids going through
-    n! which can be enormous and give nans for large spike counts
+    The Poisson probability of observing \\(X\\) spikes given mean rate \\(\\mu\\) is:
+
+    $$P(X \\mid \\mu) = \\frac{\\mu^X \\, e^{-\\mu}}{X!}$$
+
+    The log-likelihood summed over neurons is:
+
+    $$\\log P(X \\mid \\mu) = \\sum_{\\text{neurons}} \\left[ X \\log \\mu - \\mu - \\log(X!) \\right]$$
+
+    where \\(\\log(X!)\\) is computed via Stirling's approximation (manually
+    correcting for when \\(X = 0\\)):
+
+    $$\\log(X!) \\approx \\log\\sqrt{2\\pi} + (X + 0.5)\\log X - X$$
+
+    This Stirling's approximation IS necessary as it avoids computing
+    \\(n!\\) directly, which can be enormous and produce NaNs for large spike
+    counts.
 
     Optionally, a boolean mask same shape as spikes can be passed to ignore
     certain spikes. This restricts the likelihood calculation to only the
@@ -250,10 +265,11 @@ def poisson_log_likelihood_trajectory(
 ) -> jax.Array:
     """Takes an array of spike counts and an _equally shaped_ array of mean
     rates and returns the log-likelihood of the spikes given the mean rate of
-    the neuron (it's receptive field). This is different from
-    `poisson_log_likelihood` in that it takes in a trajectory of mean rates
-    and spikes and returns the log-likelihood of the spikes given the
-    trajectory of mean rates.
+    the neuron (its receptive field). Unlike `poisson_log_likelihood`, which
+    evaluates the likelihood over a grid of positions, this function takes a
+    trajectory of mean rates and returns the Poisson log-likelihood at each
+    time step along that trajectory. See `poisson_log_likelihood` for the
+    full formula.
 
     Parameters
     ----------
@@ -309,22 +325,25 @@ def kde_angular(
     at each angular bin (divide by dt for Hz). See `kde()` for the linear
     equivalent.
 
-              # spikes observed at theta     Ks
-      mu(theta) = ---------------------- :=  --
-                  # visits to theta           Kx
+    $$\\mu(\\theta) = \\frac{K_s}{K_x}$$
+
+    where \\(K_s\\) and \\(K_x\\) are the kernel-smoothed spike count and
+    occupancy histograms, respectively.
 
     Unlike `kde()`, which evaluates all pairwise kernel values, this function
     first histograms the data then smooths via FFT-based circular convolution
     with a von Mises kernel:
 
-        smooth(x) = IFFT(FFT(histogram) * FFT(von_Mises_kernel))
+    $$\\text{smooth}(x) = \\mathcal{F}^{-1}\\!\\big[\\mathcal{F}(\\text{histogram})
+    \\cdot \\mathcal{F}(\\text{von Mises kernel})\\big]$$
 
-    This is O(N_bins * log(N_bins)) rather than O(N_bins * T).
+    This is \\(O(N_{\\text{bins}} \\log N_{\\text{bins}})\\) rather than
+    \\(O(N_{\\text{bins}} \\cdot T)\\).
 
-    Both `bins` and `trajectory` must be in radians in [-pi, pi). Bins must
-    be uniformly spaced. `kernel_bandwidth` is in radians and is converted
-    internally to von Mises concentration: kappa = 1 / kernel_bandwidth^2
-    (accurate for kappa > 2, i.e. small bandwidth < ~0.7 rad).
+    Both `bins` and `trajectory` must be in radians in \\([-\\pi, \\pi)\\). Bins
+    must be uniformly spaced. `kernel_bandwidth` is in radians and is converted
+    internally to von Mises concentration \\(\\kappa = 1 / \\sigma^2\\)
+    (accurate for \\(\\kappa > 2\\), i.e. small bandwidth \\(\\sigma < {\\sim}0.7\\) rad).
 
     Parameters
     ----------
