@@ -44,7 +44,10 @@ def gaussian_pdf(
     mu: jax.Array,
     sigma: jax.Array,
 ) -> jax.Array:
-    """Calculates the gaussian pdf of a multivariate normal distribution of mean mu and covariance sigma at x
+    """Calculates the multivariate Gaussian PDF at x.
+
+    $$\\mathcal{N}(x \\mid \\mu, \\Sigma) = \\frac{1}{\\sqrt{(2\\pi)^D |\\Sigma|}}
+    \\exp\\!\\left(-\\frac{1}{2}(x - \\mu)^\\top \\Sigma^{-1} (x - \\mu)\\right)$$
 
     Parameters
     ----------
@@ -78,7 +81,11 @@ def log_gaussian_pdf(
     mu: jax.Array,
     sigma: jax.Array,
 ) -> jax.Array:
-    """Calculates the log of the gaussian pdf of a multivariate normal distribution of mean mu and covariance sigma at x
+    """Calculates the log of the multivariate Gaussian PDF at x.
+
+    $$\\log \\mathcal{N}(x \\mid \\mu, \\Sigma) = -\\frac{D}{2}\\log(2\\pi)
+    - \\frac{1}{2}\\log|\\Sigma|
+    - \\frac{1}{2}(x - \\mu)^\\top \\Sigma^{-1} (x - \\mu)$$
 
     Parameters
     ----------
@@ -107,7 +114,9 @@ def log_gaussian_pdf(
 
 
 def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
-    """Calculates the normalizing constant of a multivariate normal distribution with covariance sigma
+    """Calculates the normalizing constant of a multivariate normal distribution with covariance sigma.
+
+    $$Z = \\frac{1}{\\sqrt{(2\\pi)^D |\\Sigma|}}$$
 
     Parameters
     ----------
@@ -131,6 +140,13 @@ def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
 
 def fit_gaussian(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
+
+    Computes the weighted mean and covariance:
+
+    $$\\mu = \\frac{\\sum_i x_i \\, p_i}{\\sum_i p_i}, \\qquad
+    \\Sigma = \\frac{\\sum_i (x_i - \\mu)(x_i - \\mu)^\\top p_i}{\\sum_i p_i}$$
+
+    where \\(p_i\\) is the likelihood weight at bin \\(i\\).
 
     Parameters
     ----------
@@ -278,9 +294,12 @@ def coefficient_of_determination(
     X: jax.Array,
     Y: jax.Array,
 ) -> jax.Array:
-    """Calculates the coefficient of determination (R^2) between X and Y.
+    """Calculates the coefficient of determination (\\(R^2\\)) between X and Y.
 
     This reflects the proportion of the variance in Y that is predictable from X.
+
+    $$R^2 = 1 - \\frac{SS_{\\textrm{res}}}{SS_{\\textrm{tot}}}
+    = 1 - \\frac{\\sum_i (Y_i - X_i)^2}{\\sum_i (Y_i - \\bar{Y})^2}$$
 
     Parameters
     ----------
@@ -411,7 +430,7 @@ def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
     ``window - 1`` bins. This is equivalent to smoothing the spikes with
     a causal rectangular kernel.
 
-    .. warning::
+    !!! warning
 
         This changes the interpretation of the estimated receptive fields.
         Since each bin now contains on average ``window`` times more spikes,
@@ -623,7 +642,7 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
 
 
 def print_data_summary(data: xr.Dataset) -> None:
-    """Print a concise summary of an ``xr.Dataset`` loaded via :func:`load_demo_data`.
+    """Print a concise summary of an ``xr.Dataset`` loaded via ``load_demo_data``.
 
     Prints the number of neurons, time bins, dimensionality, recording
     duration, time-bin width, firing-rate statistics (min / Q25 / median /
@@ -701,7 +720,7 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     the netCDF4 format: boolean arrays (e.g. ``spike_mask``) are cast to
     ``int32``, boolean ``attrs`` are cast to ``int``, and ``trial_slices``
     (a list of Python ``slice`` objects) is serialised to a flat ``int64``
-    array.  Use :func:`load_results` to reload and automatically reverse
+    array.  Use ``load_results`` to reload and automatically reverse
     these conversions.
 
     Parameters
@@ -911,6 +930,11 @@ def calculate_spatial_information(
     PX: jax.Array,
 ) -> jax.Array:
     """Calculate Skaggs spatial information per neuron (bits/s).
+
+    $$I = \\sum_x r(x) \\log_2 \\frac{r(x)}{\\bar{r}} \\, P(x)$$
+
+    where \\(r(x)\\) is the firing rate at position \\(x\\), \\(\\bar{r}\\) is the mean firing rate,
+    and \\(P(x)\\) is the occupancy probability.
 
     Parameters
     ----------

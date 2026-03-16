@@ -1,6 +1,6 @@
 """Core SIMPL class implementing the EM-style optimisation loop.
 
-This module provides the :class:`SIMPL` class, the primary user-facing API.  It
+This module provides the ``SIMPL`` class, the primary user-facing API.  It
 follows scikit-learn conventions: ``__init__`` stores hyperparameters only,
 ``fit()`` accepts data and runs the EM algorithm, and ``predict()`` decodes new
 spike data using the fitted receptive fields.
@@ -353,7 +353,7 @@ class SIMPL:
         (filtered/smoothed means and covariances, log-likelihoods, etc.) are stored as an
         ``xr.Dataset`` in ``self.prediction_results_``.
 
-        .. important::
+        !!! important
 
             The spike data must be binned at the same ``dt`` as the training data (i.e. the
             ``time`` array passed to ``fit()``). The Kalman filter dynamics and receptive
@@ -493,7 +493,7 @@ class SIMPL:
         Ft: np.ndarray | None = None,
         Ft_coords_dict: dict | None = None,
     ) -> None:
-        """Deprecated: use :meth:`add_baselines` instead."""
+        """Deprecated: use ``add_baselines`` instead."""
         warnings.warn("add_baselines_to_results is deprecated, use add_baselines instead.", DeprecationWarning)
         self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
 
