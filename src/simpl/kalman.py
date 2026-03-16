@@ -6,20 +6,20 @@ update, filtering, smoothing, and parameter fitting.
 
 The Kalman dynamics are:
 
-.. math::
+$$
+z_t = F \\, z_{t-1} + B \\, u_t + q_t, \\qquad y_t = H \\, z_t + r_t
+$$
 
-    z_t = F \\, z_{t-1} + B \\, u_t + q_t, \\qquad y_t = H \\, z_t + r_t
-
-where :math:`q_t \\sim \\mathcal{N}(0, Q)` and
-:math:`r_t \\sim \\mathcal{N}(0, R)`.
+where \\(q_t \\sim \\mathcal{N}(0, Q)\\) and
+\\(r_t \\sim \\mathcal{N}(0, R)\\).
 
 * **Filtering** estimates the causal posterior
-  :math:`P(z_t \\mid y_{1:t})`.
+  \\(P(z_t \\mid y_{1:t})\\).
 * **Smoothing** refines this to the full posterior
-  :math:`P(z_t \\mid y_{1:T})` using all observations.
+  \\(P(z_t \\mid y_{1:T})\\) using all observations.
 
 For 1-D angular state spaces (``is_1D_angular=True``), the filter and smoother
-wrap :math:`\\mu` to :math:`[-\\pi, \\pi)` after every predict, update, and
+wrap \\(\\mu\\) to \\([-\\pi, \\pi)\\) after every predict, update, and
 smooth step.
 
 The lower-level functions (prefixed with ``_``) mirror ``KalmanFilter``
@@ -62,22 +62,27 @@ class KalmanFilter:
     a one-off compilation time.
 
     The Kalman dynamics equations are as follows:
-    z_t = F @ z_t-1 + B @ u_t + q_t
-    y_t = H @ z_t + r_t
-    where z_t is the hidden state, y_t is the observation, u_t is the
-    control input, F is the state transition matrix, B is the control
-    matrix, H is the observation matrix, q_t ~ N(0, Q) is the state
-    transition noise, and r_t ~ N(0, R) is the observation noise.
+
+    $$
+    z_t = F \\, z_{t-1} + B \\, u_t + q_t, \\qquad y_t = H \\, z_t + r_t
+    $$
+
+    where \\(z_t\\) is the hidden state, \\(y_t\\) is the observation, \\(u_t\\) is the
+    control input, \\(F\\) is the state transition matrix, \\(B\\) is the control
+    matrix, \\(H\\) is the observation matrix, \\(q_t \\sim \\mathcal{N}(0, Q)\\) is the state
+    transition noise, and \\(r_t \\sim \\mathcal{N}(0, R)\\) is the observation noise.
 
     Kalman _filtering_ takes observations and estimates the _causal_
     posterior distribution of the hidden state given the observations.
     Kalman _smoothing_ takes the filtered estimates and estimates the
     _posterior_ distribution of the hidden state given all the
     observations.
-    mu_filter_t = E[z_t | y_1:t, u_1:t]
-    sigma_filter_t = Cov[z_t | y_1:t, u_1:t]
-    mu_smooth_t = E[z_t | y_1:T, u_1:T]
-    sigma_smooth_t = Cov[z_t | y_1:T, u_1:T]
+
+    \\(\\mu_{\\textrm{filter},t} = \\mathbb{E}[z_t \\mid y_{1:t}, u_{1:t}]\\),
+    \\(\\Sigma_{\\textrm{filter},t} = \\textrm{Cov}[z_t \\mid y_{1:t}, u_{1:t}]\\)
+
+    \\(\\mu_{\\textrm{smooth},t} = \\mathbb{E}[z_t \\mid y_{1:T}, u_{1:T}]\\),
+    \\(\\Sigma_{\\textrm{smooth},t} = \\textrm{Cov}[z_t \\mid y_{1:T}, u_{1:T}]\\)
     """
 
     def __init__(
@@ -369,10 +374,10 @@ class KalmanFilter:
         smoothed). This can be done analytically (see page 361 of the
         Advanced Murphy book).
 
-        P(Y) = Normal(Y | Y_hat, S) where
-        S = H @ sigma @ H.T + R (the posterior observation covariance
-        combined with the observation noise covariance)
-        Y_hat = H @ mu (the predicted observation).
+        \\(P(Y) = \\mathcal{N}(Y \\mid \\hat{Y}, S)\\) where
+        \\(S = H \\Sigma H^\\top + R\\) (the posterior observation covariance
+        combined with the observation noise covariance) and
+        \\(\\hat{Y} = H \\mu\\) (the predicted observation).
 
         Parameters
         ----------
@@ -666,6 +671,10 @@ def _kalman_predict(
 ) -> tuple[jax.Array, jax.Array]:
     """Predicts the next state of the system given the current state and the state transition matrix.
 
+    $$
+    \\mu_{\\textrm{predict}} = F \\mu + B u, \\quad \\Sigma_{\\textrm{predict}} = F \\Sigma F^\\top + Q
+    $$
+
     Parameters
     ----------
     mu : jax.Array, shape (dim_Z,)
@@ -703,6 +712,11 @@ def _kalman_update(
 ) -> tuple[jax.Array, jax.Array]:
     """Updates the state estimate given an observation.
 
+    Innovation: \\(v = y - H\\mu\\),
+    Kalman gain: \\(K = \\Sigma H^\\top S^{-1}\\),
+    Posterior: \\(\\mu_{\\textrm{post}} = \\mu + Kv\\),
+    \\(\\Sigma_{\\textrm{post}} = (I - KH)\\Sigma\\).
+
     Parameters
     ----------
     mu : jax.Array, shape (dim_Z,)
@@ -738,7 +752,7 @@ def _kalman_update(
 
 
 def _calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Array:
-    """Calculates the S matrix for the Kalman filter.
+    """Calculates the S matrix, \\(S = H \\Sigma H^\\top + R\\), for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
     for readability and I vmap it later.
@@ -761,7 +775,7 @@ def _calculate_S_matrix(sigma: jax.Array, H: jax.Array, R: jax.Array) -> jax.Arr
 
 
 def _calculate_K_matrix(sigma: jax.Array, H: jax.Array, S: jax.Array) -> jax.Array:
-    """Calculates the K matrix for the Kalman filter.
+    """Calculates the Kalman gain matrix, \\(K = \\Sigma H^\\top S^{-1}\\), for the Kalman filter.
 
     This doesn't really need to be it's own function but it's useful
     for readability and I vmap it later.
@@ -792,20 +806,24 @@ def _fit_parameters(
     Assuming a training set exists where hidden states Z and
     observations Y are known, this function returns those parameters
     that maximise the likelihood of the data and the state:
-    L(Theta) = log({z},{y} | Theta). These solutions are (relatively)
-    easy to derive, I took them from Byron Yu's lecture notes (they
-    look a lot like linear regression solutions):
+    \\(\\mathcal{L}(\\Theta) = \\log p(\\{z\\}, \\{y\\} \\mid \\Theta)\\).
+    These solutions are (relatively) easy to derive, I took them from
+    Byron Yu's lecture notes (they look a lot like linear regression solutions):
 
     **NOTE: This function assumes NO control input (B=0).** Fitting B
     would require U as an input and a different regression setup
-    (e.g., regressing z_t+1 on [z_t, u_t]).
+    (e.g., regressing \\(z_{t+1}\\) on \\([z_t, u_t]\\)).
 
-    mu0 = (1/T) sum{zt}
-    sigma0 = (1/T) sum{zt - mu0}{zt - mu0}.T
-    F = sum{zt+1 @ zt.T} sum{zt zt.T}^-1
-    Q = (1/T-1) sum{zt - F @ zt-1}{zt - F @ zt-1}.T
-    H = sum{yt @ zt.T} sum{zt zt.T}^-1
-    R = (1/T) sum{yt - H @ zt}{yt - H @ zt}.T
+    $$
+    \\begin{aligned}
+    \\mu_0 &= \\frac{1}{T} \\sum_t z_t \\\\
+    \\Sigma_0 &= \\frac{1}{T} \\sum_t (z_t - \\mu_0)(z_t - \\mu_0)^\\top \\\\
+    F &= \\left(\\sum_t z_{t+1} z_t^\\top\\right) \\left(\\sum_t z_t z_t^\\top\\right)^{-1} \\\\
+    Q &= \\frac{1}{T-1} \\sum_t (z_t - F z_{t-1})(z_t - F z_{t-1})^\\top \\\\
+    H &= \\left(\\sum_t y_t z_t^\\top\\right) \\left(\\sum_t z_t z_t^\\top\\right)^{-1} \\\\
+    R &= \\frac{1}{T} \\sum_t (y_t - H z_t)(y_t - H z_t)^\\top
+    \\end{aligned}
+    $$
 
     Parameters
     ----------

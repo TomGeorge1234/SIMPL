@@ -1,6 +1,6 @@
 """Spatial environment discretisation for SIMPL.
 
-The :class:`Environment` manages the spatial grid over which receptive fields
+The ``Environment`` manages the spatial grid over which receptive fields
 are defined.  It supports arbitrary dimensionality (1-D through n-D) and
 provides coordinate arrays, discretised meshgrids, and plotting helpers.
 
