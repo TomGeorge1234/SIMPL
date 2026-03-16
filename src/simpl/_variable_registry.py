@@ -1,7 +1,7 @@
 """Variable metadata registry for the SIMPL results ``xarray.Dataset``.
 
 Every variable stored in the SIMPL results dataset has an entry in the
-registry built by :func:`_build_variable_info_dict`.  Each entry is a dict
+registry built by ``_build_variable_info_dict``.  Each entry is a dict
 with the following keys:
 
 * **name** — human-readable display name
@@ -28,7 +28,7 @@ def _dict_to_dataset(data: dict, variable_info_dict: dict, coords: dict) -> xr.D
     data : dict
         Dictionary of variable_name -> array.
     variable_info_dict : dict
-        Variable metadata dictionary (from :func:`_build_variable_info_dict`).
+        Variable metadata dictionary (from ``_build_variable_info_dict``).
     coords : dict
         Coordinate arrays.
 

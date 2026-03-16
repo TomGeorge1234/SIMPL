@@ -1,7 +1,7 @@
 """Plotting functions for SIMPL results.
 
 All functions accept an ``xr.Dataset`` (the ``results_`` attribute of a fitted
-:class:`~simpl.simpl.SIMPL` model) and return matplotlib ``Axes`` so users can
+``SIMPL`` model) and return matplotlib ``Axes`` so users can
 customise further.  ``matplotlib`` is imported lazily inside each function so
 the rest of the package stays lightweight.
 """
@@ -326,7 +326,7 @@ def plot_prediction(
     Parameters
     ----------
     prediction_results : xr.Dataset
-        The ``prediction_results_`` Dataset from :meth:`SIMPL.predict`.
+        The ``prediction_results_`` Dataset from ``SIMPL.predict``.
     Xb : np.ndarray, optional
         Behavioral positions for the prediction window, shape ``(T, D)``.
     Xt : np.ndarray, optional
