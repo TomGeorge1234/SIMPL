@@ -496,9 +496,19 @@ def plot_receptive_fields(
 
     if is_polar:
         return _plot_receptive_fields_polar(
-            results, epochs, neurons, has_baselines, baseline_label,
-            dim_names, n_cols_per_neuron, n_neuron_cols, n_neuron_rows,
-            total_cols, total_rows, col_labels, **plot_kwargs,
+            results,
+            epochs,
+            neurons,
+            has_baselines,
+            baseline_label,
+            dim_names,
+            n_cols_per_neuron,
+            n_neuron_cols,
+            n_neuron_rows,
+            total_cols,
+            total_rows,
+            col_labels,
+            **plot_kwargs,
         )
 
     # Width ratios: data columns are 1, spacer columns are 0.3
@@ -595,9 +605,19 @@ def plot_receptive_fields(
 
 
 def _plot_receptive_fields_polar(
-    results, epochs, neurons, has_baselines, baseline_label,
-    dim_names, n_cols_per_neuron, n_neuron_cols, n_neuron_rows,
-    total_cols, total_rows, col_labels, **plot_kwargs,
+    results,
+    epochs,
+    neurons,
+    has_baselines,
+    baseline_label,
+    dim_names,
+    n_cols_per_neuron,
+    n_neuron_cols,
+    n_neuron_rows,
+    total_cols,
+    total_rows,
+    col_labels,
+    **plot_kwargs,
 ):
     """Polar plot variant of ``plot_receptive_fields`` for 1-D angular data."""
     from matplotlib.gridspec import GridSpec
