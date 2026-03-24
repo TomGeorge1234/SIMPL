@@ -416,7 +416,6 @@ class SIMPL:
         self.prediction_results_ = _dict_to_dataset(E, self.variable_info_dict_, pred_coords)
         self.prediction_results_.attrs = self._build_dataset_attrs(
             trial_boundaries=trial_boundaries if trial_boundaries is not None else [0],
-            trial_slices=trial_slices,
         )
 
         return X_decoded
@@ -1302,9 +1301,7 @@ class SIMPL:
 
         # ── Initialise empty results datasets ──
         self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
-        self.results_.attrs = self._build_dataset_attrs(
-            trial_boundaries=self.trial_boundaries_, trial_slices=self.trial_slices_
-        )
+        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
             [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
@@ -1374,7 +1371,6 @@ class SIMPL:
                 "Xb": xr.DataArray(self.Xb_, dims=["time", "dim"], coords={"time": self.time_}),
             }
         )
-        data["trial_slices"] = self.trial_slices_
         Xb_np = np.asarray(self.Xb_)
         env = self.environment_
         Xb_extent_str = " x ".join(f"[{Xb_np[:, i].min():.2f}, {Xb_np[:, i].max():.2f}]" for i in range(self.D_))
@@ -1663,14 +1659,13 @@ class SIMPL:
             sigma0_all = sigma0_all.at[trial_slice.start].set(sigma)
         return mu0_all, sigma0_all
 
-    def _build_dataset_attrs(self, trial_boundaries, trial_slices) -> dict:
+    def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""
         return {
             "env_extent": self.environment_.extent,
             "env_pad": self.environment_.pad,
             "bin_size": self.environment_.bin_size,
             "trial_boundaries": trial_boundaries,
-            "trial_slices": trial_slices,
             "kernel_bandwidth": self.kernel_bandwidth,
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),

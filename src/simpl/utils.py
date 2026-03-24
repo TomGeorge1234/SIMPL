@@ -691,7 +691,7 @@ def print_data_summary(data: xr.Dataset) -> None:
         return "=" * max(1, int(frac / max_frac * max_bar))
 
     # Number of trials
-    n_trials = len(data.trial_slices.values)
+    n_trials = len(data.attrs.get("trial_boundaries", [0]))
 
     print("DATA SUMMARY:")
     print(f"  Neurons:    {N_neurons}")
@@ -734,18 +734,6 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     for var in results.data_vars:
         if "reshape" in results[var].attrs:
             results[var].attrs["reshape"] = int(results[var].attrs["reshape"])
-    # Convert trial_slices (list of slice objects) to a serializable 1D array
-    # Format: [start0, stop0, start1, stop1, ...] with -1 for None
-    if "trial_slices" in results.attrs:
-        slices = results.attrs["trial_slices"]
-        if isinstance(slices, np.ndarray):
-            pass  # already serialized
-        else:
-            flat = []
-            for s in slices:
-                flat.append(s.start if s.start is not None else -1)
-                flat.append(s.stop if s.stop is not None else -1)
-            results.attrs["trial_slices"] = np.array(flat, dtype=np.int64)
     results.to_netcdf(path)
 
 
@@ -775,14 +763,6 @@ def load_results(path: str) -> xr.Dataset:
             results[var].attrs["reshape"] = bool(results[var].attrs["reshape"])
 
     results["spike_mask"] = results["spike_mask"].astype("bool")
-
-    # Convert trial_slices back from flat 1D array to list of slice objects
-    if "trial_slices" in results.attrs:
-        arr = results.attrs["trial_slices"]
-        results.attrs["trial_slices"] = [
-            slice(int(arr[i]) if arr[i] != -1 else None, int(arr[i + 1]) if arr[i + 1] != -1 else None)
-            for i in range(0, len(arr), 2)
-        ]
 
     return results
 
