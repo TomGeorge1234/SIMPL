@@ -283,7 +283,7 @@ class TestSaveResultsSham:
                     attrs={"reshape": True},
                 ),
             },
-            attrs={"trial_slices": [slice(0, T)]},
+            attrs={"trial_boundaries": np.array([0])},
         )
         path = str(tmp_path / "sham.nc")
         save_results_to_netcdf(ds, path)
@@ -292,20 +292,21 @@ class TestSaveResultsSham:
         assert "F" in loaded
         assert "spike_mask" in loaded
 
-    def test_sham_results_save_already_serialized_slices(self, tmp_path):
-        """trial_slices that are already a numpy array should not crash."""
+    def test_sham_results_save_with_trial_boundaries(self, tmp_path):
+        """trial_boundaries stored as a numpy array should serialize cleanly."""
         T, N = 20, 3
         ds = xr.Dataset(
             {
                 "Y": xr.DataArray(np.random.poisson(1, (T, N)), dims=["time", "neuron"]),
                 "spike_mask": xr.DataArray(np.ones((T, N), dtype=bool), dims=["time", "neuron"]),
             },
-            attrs={"trial_slices": np.array([0, T], dtype=np.int64)},
+            attrs={"trial_boundaries": np.array([0, 10], dtype=np.int64)},
         )
-        path = str(tmp_path / "sham_pre_serialized.nc")
+        path = str(tmp_path / "sham_boundaries.nc")
         save_results_to_netcdf(ds, path)
         loaded = load_results(path)
         assert "Y" in loaded
+        np.testing.assert_array_equal(loaded.attrs["trial_boundaries"], [0, 10])
 
 
 class TestCalculateSpatialInformation:
@@ -407,7 +408,7 @@ class TestPrintDataSummary:
                 "Xb": xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time}),
             }
         )
-        data["trial_slices"] = [slice(0, 500)]
+        data.attrs["trial_boundaries"] = np.array([0])
         print_data_summary(data)
         captured = capsys.readouterr().out
         assert "DATA SUMMARY" in captured
