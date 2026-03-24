@@ -169,6 +169,16 @@ src/simpl/
 └── data/              # Bundled demo data
 ```
 
+## Data attribution
+
+Demo datasets are downloaded on first use via `simpl.load_demo_data()` and cached locally in `~/.simpl/data/`.
+
+| Dataset | Description | Source |
+|---------|-------------|--------|
+| `gridcells_synthetic.npz` | Synthetic grid cell data | Generated |
+| `placecells_tanni2022.npz` | Hippocampal place cell recordings | [Tanni, Chancey & Bhatt et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/) |
+| `headdirectioncells_vollan2025.npz` | Head direction cell recordings | [Vollan et al. (2025)](https://www.nature.com/articles/s41586-024-08527-1) |
+
 ## Development
 
 ```bash
