@@ -571,9 +571,7 @@ def _kalman_filter(
         mu_u = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_u), mu_u)
         return (mu_u, sigma_u), (mu_u, sigma_u)  # carry, output
 
-    _, (mu_all, sigma_all) = jax.lax.scan(
-        loop, (mu0, sigma0), (Y, U, F, B, Q, H, R, is_boundary, mu0_all, sigma0_all)
-    )
+    _, (mu_all, sigma_all) = jax.lax.scan(loop, (mu0, sigma0), (Y, U, F, B, Q, H, R, is_boundary, mu0_all, sigma0_all))
     return jnp.stack(mu_all), jnp.stack(sigma_all)
 
 

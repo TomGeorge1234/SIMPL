@@ -899,11 +899,19 @@ class SIMPL:
 
         # Single-pass filter and smooth
         mu_f, sigma_f = self.kalman_filter_.filter(
-            mu0=mu0_all[0], sigma0=sigma0_all[0], Y=mode_l, U=U, R=observation_noise,
-            is_boundary=is_boundary, mu0_all=mu0_all, sigma0_all=sigma0_all,
+            mu0=mu0_all[0],
+            sigma0=sigma0_all[0],
+            Y=mode_l,
+            U=U,
+            R=observation_noise,
+            is_boundary=is_boundary,
+            mu0_all=mu0_all,
+            sigma0_all=sigma0_all,
         )
         mu_s, sigma_s = self.kalman_filter_.smooth(
-            mus_f=mu_f, sigmas_f=sigma_f, is_trial_end=is_trial_end,
+            mus_f=mu_f,
+            sigmas_f=sigma_f,
+            is_trial_end=is_trial_end,
         )
 
         # Likelihoods (full arrays, single sum)
