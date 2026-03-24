@@ -83,6 +83,17 @@ class KalmanFilter:
 
     \\(\\mu_{\\textrm{smooth},t} = \\mathbb{E}[z_t \\mid y_{1:T}, u_{1:T}]\\),
     \\(\\Sigma_{\\textrm{smooth},t} = \\textrm{Cov}[z_t \\mid y_{1:T}, u_{1:T}]\\)
+
+    Multi-trial support
+    -------------------
+    Both ``filter()`` and ``smooth()`` support processing multiple
+    concatenated trials in a single pass. Trial boundaries are specified via
+    boolean arrays (``is_boundary`` / ``is_trial_end``) that mark where one
+    trial ends and the next begins. At these points the filter state is reset
+    to per-trial initial conditions (``mu0_all``, ``sigma0_all``), and the
+    smoother treats each trial independently by resetting its backward carry
+    to the filtered terminal state. This avoids a Python-level loop over
+    trials and keeps the full computation inside a single ``jax.lax.scan``.
     """
 
     def __init__(
@@ -192,42 +203,58 @@ class KalmanFilter:
         Q: jax.Array | None = None,
         H: jax.Array | None = None,
         R: jax.Array | None = None,
+        is_boundary: jax.Array | None = None,
+        mu0_all: jax.Array | None = None,
+        sigma0_all: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Takes sequences of observations, control inputs, and noise covariances and runs the Kalman filter.
+        """Run the Kalman filter, optionally over multiple concatenated trials.
 
         If parameters are not passed in, the class defaults are used.
         If they are passed in, they must have shape
-        (T, *param_shape,) where T is the number of time steps - this
+        ``(T, *param_shape)`` where *T* is the number of time steps — this
         allows for time-varying parameters.
+
+        For multi-trial data, pass ``is_boundary``, ``mu0_all``, and
+        ``sigma0_all``.  At every timestep where ``is_boundary[t]`` is True
+        the filter carry is reset to ``(mu0_all[t], sigma0_all[t])`` before
+        the predict/update step, so each trial is filtered independently
+        within a single ``jax.lax.scan`` pass.
 
         Parameters
         ----------
         Y : jax.Array, shape (T, dim_Y)
-            The observation means
+            The observation means.
         U : jax.Array, shape (T, dim_U), optional
-            The control inputs (defaults to zeros if not provided)
-        mu0 : jax.Array, shape (dim_Z,)
-            The initial state mean, optional (default is provided at initialisation)
-        sigma0 : jax.Array, shape (dim_Z, dim_Z)
-            The initial state covariance, optional (default is provided at initialisation)
-        F : jax.Array, shape (T, dim_Z, dim_Z)
-            The state transition matrix, optional (default is provided at initialisation)
-        B : jax.Array, shape (T, dim_Z, dim_U)
-            The control matrix, optional (default is provided at initialisation)
-        Q : jax.Array, shape (T, dim_Z, dim_Z)
-            The state transition noise covariance, optional (default is provided at initialisation)
-        H : jax.Array, shape (T, dim_Z, dim_Z)
-            The observation matrix, optional (default is provided at initialisation)
-        R : jax.Array, shape (T, dim_Z, dim_Z)
-            The observation noise covariances, optional (default is provided at initialisation)
-
+            The control inputs (defaults to zeros if not provided).
+        mu0 : jax.Array, shape (dim_Z,), optional
+            The initial state mean (default is provided at initialisation).
+        sigma0 : jax.Array, shape (dim_Z, dim_Z), optional
+            The initial state covariance (default is provided at initialisation).
+        F : jax.Array, shape (T, dim_Z, dim_Z), optional
+            The state transition matrix (default is provided at initialisation).
+        B : jax.Array, shape (T, dim_Z, dim_U), optional
+            The control matrix (default is provided at initialisation).
+        Q : jax.Array, shape (T, dim_Z, dim_Z), optional
+            The state transition noise covariance (default is provided at initialisation).
+        H : jax.Array, shape (T, dim_Y, dim_Z), optional
+            The observation matrix (default is provided at initialisation).
+        R : jax.Array, shape (T, dim_Y, dim_Y), optional
+            The observation noise covariances (default is provided at initialisation).
+        is_boundary : jax.Array, shape (T,), optional
+            Boolean array. True at the first timestep of each trial. The filter
+            state is reset to ``mu0_all[t]``, ``sigma0_all[t]`` at these points.
+            If None, no resets occur (single-trial behaviour).
+        mu0_all : jax.Array, shape (T, dim_Z), optional
+            Per-timestep initial means (only read where ``is_boundary`` is True).
+        sigma0_all : jax.Array, shape (T, dim_Z, dim_Z), optional
+            Per-timestep initial covariances (only read where ``is_boundary`` is True).
 
         Returns
         -------
         mus_f : jax.Array, shape (T, dim_Z)
-            The filtered means
+            The filtered means.
         sigmas_f : jax.Array, shape (T, dim_Z, dim_Z)
-            The filtered covariances
+            The filtered covariances.
         """
         assert Y.ndim == 2
         assert Y.shape[1] == self.dim_Y
@@ -262,6 +289,11 @@ class KalmanFilter:
             assert U.shape[0] == T
             assert U.shape[1] == self.dim_U
 
+        if is_boundary is None:
+            is_boundary = jnp.zeros(T, dtype=bool)
+            mu0_all = jnp.zeros((T, self.dim_Z))
+            sigma0_all = jnp.zeros((T, self.dim_Z, self.dim_Z))
+
         mus_f, sigmas_f = [], []  # filtered means and covariances
 
         N_batch = math.ceil(T / self.batch_size)
@@ -279,6 +311,9 @@ class KalmanFilter:
                 H=H[start:end],
                 R=R[start:end],
                 is_1D_angular=self.is_1D_angular,
+                is_boundary=is_boundary[start:end],
+                mu0_all=mu0_all[start:end],
+                sigma0_all=sigma0_all[start:end],
             )
             mus_f.append(mu)
             sigmas_f.append(sigma)
@@ -296,36 +331,48 @@ class KalmanFilter:
         F: jax.Array | None = None,
         B: jax.Array | None = None,
         Q: jax.Array | None = None,
+        is_trial_end: jax.Array | None = None,
     ) -> tuple[jax.Array, jax.Array]:
-        """Takes the filtered means, covariances, and control inputs and runs the Kalman smoother on the data.
+        """Run the Rauch-Tung-Striebel smoother, optionally over multiple concatenated trials.
+
+        For multi-trial data, pass ``is_trial_end``.  At every timestep where
+        ``is_trial_end[t]`` is True the smoothed output is set to the filtered
+        value (terminal condition) and the backward carry is reset, so each
+        trial is smoothed independently within a single backward
+        ``jax.lax.scan`` pass.
 
         Parameters
         ----------
         mus_f : jax.Array, shape (T, dim_Z)
-            The filtered means
+            The filtered means.
         sigmas_f : jax.Array, shape (T, dim_Z, dim_Z)
-            The filtered covariances
+            The filtered covariances.
         U : jax.Array, shape (T, dim_U), optional
-            The control inputs (defaults to zeros if not provided)
-        F : jax.Array, shape (T, dim_Z, dim_Z)
-            The state transition matrix, optional
-        B : jax.Array, shape (T, dim_Z, dim_U)
-            The control matrix, optional
-        Q : jax.Array, shape (T, dim_Z, dim_Z)
-            The state transition noise covariance, optional
+            The control inputs (defaults to zeros if not provided).
+        F : jax.Array, shape (T, dim_Z, dim_Z), optional
+            The state transition matrix.
+        B : jax.Array, shape (T, dim_Z, dim_U), optional
+            The control matrix.
+        Q : jax.Array, shape (T, dim_Z, dim_Z), optional
+            The state transition noise covariance.
+        is_trial_end : jax.Array, shape (T,), optional
+            Boolean array. True at the last timestep of each trial. At these
+            points the smoothed state is set to the filtered state (terminal
+            condition) and the carry is reset for the next trial's backward
+            pass.  If None, only the final timestep is treated as a trial end
+            (single-trial behaviour).
 
         Returns
         -------
         mus_s : jax.Array, shape (T, dim_Z)
-            The smoothed means
+            The smoothed means.
         sigmas_s : jax.Array, shape (T, dim_Z, dim_Z)
-            The smoothed covariances
+            The smoothed covariances.
         """
 
         T = len(mus_f)
         muT = mus_f[-1]
         sigmaT = sigmas_f[-1]
-        mus_s, sigmas_s = [jnp.array([muT])], [jnp.array([sigmaT])]
 
         F = self._verify_and_tile(F, self.F, T, (self.dim_Z, self.dim_Z))
         B = self._verify_and_tile(B, self.B, T, (self.dim_Z, self.dim_U))
@@ -338,9 +385,14 @@ class KalmanFilter:
             assert U.shape[0] == T
             assert U.shape[1] == self.dim_U
 
-        for i in range(math.ceil((T - 1) / (self.batch_size))):
-            start = max(0, T - 1 - (i + 1) * self.batch_size)
-            end = T - 1 - i * self.batch_size
+        if is_trial_end is None:
+            is_trial_end = jnp.zeros(T, dtype=bool).at[-1].set(True)
+
+        mus_s, sigmas_s = [], []
+
+        for i in range(math.ceil(T / self.batch_size)):
+            start = max(0, T - (i + 1) * self.batch_size)
+            end = T - i * self.batch_size
             mu, sigma = _kalman_smoother(
                 mu=mus_f[start:end],
                 sigma=sigmas_f[start:end],
@@ -351,6 +403,7 @@ class KalmanFilter:
                 B=B[start:end],
                 Q=Q[start:end],
                 is_1D_angular=self.is_1D_angular,
+                is_trial_end=is_trial_end[start:end],
             )
             mus_s.insert(0, mu)
             sigmas_s.insert(0, sigma)
@@ -455,6 +508,9 @@ def _kalman_filter(
     H: jax.Array,
     R: jax.Array,
     is_1D_angular: jax.Array = jnp.array(False),
+    is_boundary: jax.Array | None = None,
+    mu0_all: jax.Array | None = None,
+    sigma0_all: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Kalman filters a batch of observation data, Y.
 
@@ -481,6 +537,13 @@ def _kalman_filter(
     is_1D_angular : jax.Array, optional
         Scalar bool. If True, wrap mu to [-pi, pi) after predict and update steps
         and wrap the innovation for angular data. By default False.
+    is_boundary : jax.Array, shape (T,), optional
+        Boolean array. True at the first timestep of each trial. When True, the
+        filter state is reset to ``mu0_all[t]``, ``sigma0_all[t]``.
+    mu0_all : jax.Array, shape (T, dim_Z), optional
+        Per-timestep initial means (only used where ``is_boundary`` is True).
+    sigma0_all : jax.Array, shape (T, dim_Z, dim_Z), optional
+        Per-timestep initial covariances (only used where ``is_boundary`` is True).
 
     Returns
     -------
@@ -489,25 +552,28 @@ def _kalman_filter(
     sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The filtered posterior state covariances
     """
+    T = Y.shape[0]
+    dim_Z = mu0.shape[0]
+    if is_boundary is None:
+        is_boundary = jnp.zeros(T, dtype=bool)
+        mu0_all = jnp.zeros((T, dim_Z))
+        sigma0_all = jnp.zeros((T, dim_Z, dim_Z))
 
     def loop(carry, inputs):
         mu, sigma = carry
-        (
-            Y,
-            u,
-            F,
-            B,
-            Q,
-            H,
-            R,
-        ) = inputs
+        Y, u, F, B, Q, H, R, is_bound, mu0_t, sigma0_t = inputs
+        # Reset state at trial boundaries
+        mu = jnp.where(is_bound, mu0_t, mu)
+        sigma = jnp.where(is_bound, sigma0_t, sigma)
         mu_p, sigma_p = _kalman_predict(mu, sigma, F, Q, B, u)
         mu_p = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_p), mu_p)
         mu_u, sigma_u = _kalman_update(mu_p, sigma_p, H, R, Y, is_1D_angular=is_1D_angular)
         mu_u = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_u), mu_u)
         return (mu_u, sigma_u), (mu_u, sigma_u)  # carry, output
 
-    _, (mu_all, sigma_all) = jax.lax.scan(loop, (mu0, sigma0), (Y, U, F, B, Q, H, R))
+    _, (mu_all, sigma_all) = jax.lax.scan(
+        loop, (mu0, sigma0), (Y, U, F, B, Q, H, R, is_boundary, mu0_all, sigma0_all)
+    )
     return jnp.stack(mu_all), jnp.stack(sigma_all)
 
 
@@ -522,6 +588,7 @@ def _kalman_smoother(
     B: jax.Array,
     Q: jax.Array,
     is_1D_angular: jax.Array = jnp.array(False),
+    is_trial_end: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Runs the Kalman smoother on the data.
 
@@ -551,6 +618,10 @@ def _kalman_smoother(
     is_1D_angular : jax.Array, optional
         Scalar bool. If True, wrap mu and angular differences to [-pi, pi)
         during smoothing. By default False.
+    is_trial_end : jax.Array, shape (T,), optional
+        Boolean array. True at the last timestep of each trial. At these points
+        the smoothed state is set to the filtered state (terminal condition) and
+        the carry is reset for the next trial's backward pass.
 
     Returns
     -------
@@ -559,22 +630,31 @@ def _kalman_smoother(
     sigma_smooth : jax.Array, shape (T, dim_Z, dim_Z)
         The smoothed state covariances
     """
+    T = mu.shape[0]
+    if is_trial_end is None:
+        is_trial_end = jnp.zeros(T, dtype=bool)
 
     def loop(carry, inputs):
-        mu, sigma = carry
-        mu_, sigma_, u, F, B, Q = inputs
-        mu_predict, sigma_predict = _kalman_predict(mu_, sigma_, F, Q, B, u)
+        mu_s_next, sigma_s_next = carry
+        mu_f_t, sigma_f_t, u, F, B, Q, is_end = inputs
+        # Standard RTS smoother step
+        mu_predict, sigma_predict = _kalman_predict(mu_f_t, sigma_f_t, F, Q, B, u)
         mu_predict = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_predict), mu_predict)
-        J = sigma_ @ F.T @ jnp.linalg.inv(sigma_predict)
-        diff = mu - mu_predict
+        J = sigma_f_t @ F.T @ jnp.linalg.inv(sigma_predict)
+        diff = mu_s_next - mu_predict
         diff = jnp.where(is_1D_angular, _wrap_minuspi_pi(diff), diff)
-        mu_smoothed = mu_ + J @ diff
+        mu_smoothed = mu_f_t + J @ diff
         mu_smoothed = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_smoothed), mu_smoothed)
-        sigma_smoothed = sigma_ + J @ (sigma - sigma_predict) @ J.T
-        return (mu_smoothed, sigma_smoothed), (mu_smoothed, sigma_smoothed)
+        sigma_smoothed = sigma_f_t + J @ (sigma_s_next - sigma_predict) @ J.T
+        # At trial ends: override with filtered value (terminal condition)
+        mu_out = jnp.where(is_end, mu_f_t, mu_smoothed)
+        sigma_out = jnp.where(is_end, sigma_f_t, sigma_smoothed)
+        return (mu_out, sigma_out), (mu_out, sigma_out)
 
     _, (mus_all, sigmas_all) = jax.lax.scan(
-        loop, (muT, sigmaT), (mu[::-1], sigma[::-1], U[::-1], F[::-1], B[::-1], Q[::-1])
+        loop,
+        (muT, sigmaT),
+        (mu[::-1], sigma[::-1], U[::-1], F[::-1], B[::-1], Q[::-1], is_trial_end[::-1]),
     )
     mus_all = mus_all[::-1]
     sigmas_all = sigmas_all[::-1]  # reverse the order back to forward
