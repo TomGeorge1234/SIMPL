@@ -654,8 +654,14 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
                 mb_total = total_size / 1_000_000
                 print(f"\r  {pct:3d}% ({mb_done:.1f}/{mb_total:.1f} MB)", end="", file=sys.stderr)
 
+        import os
+
         api_url = "https://api.github.com/repos/TomGeorge1234/SIMPL/releases"
-        req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(api_url, headers=headers)
         with urllib.request.urlopen(req) as resp:
             releases = json.loads(resp.read())
 
