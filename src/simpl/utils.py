@@ -641,12 +641,10 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
     cached_path = cache_dir / name
 
     if not cached_path.exists():
-        # 3. Download from GitHub release
+        # 3. Download from GitHub releases (search through releases for the file)
+        import json
         import sys
         import urllib.request
-
-        url = f"https://github.com/TomGeorge1234/simpl/releases/latest/download/{name}"
-        print(f"Downloading {name} from {url} ...", file=sys.stderr)
 
         def _reporthook(block_num, block_size, total_size):
             if total_size > 0:
@@ -656,8 +654,32 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
                 mb_total = total_size / 1_000_000
                 print(f"\r  {pct:3d}% ({mb_done:.1f}/{mb_total:.1f} MB)", end="", file=sys.stderr)
 
+        import os
+
+        api_url = "https://api.github.com/repos/TomGeorge1234/SIMPL/releases"
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(api_url, headers=headers)
+        with urllib.request.urlopen(req) as resp:
+            releases = json.loads(resp.read())
+
+        download_url = None
+        for release in releases:
+            for asset in release.get("assets", []):
+                if asset["name"] == name:
+                    download_url = asset["browser_download_url"]
+                    break
+            if download_url:
+                break
+
+        if download_url is None:
+            raise FileNotFoundError(f'Could not find "{name}" in any GitHub release at {api_url}')
+
+        print(f"Downloading {name} from {download_url} ...", file=sys.stderr)
         try:
-            urllib.request.urlretrieve(url, cached_path, reporthook=_reporthook)
+            urllib.request.urlretrieve(download_url, cached_path, reporthook=_reporthook)
         except Exception:
             cached_path.unlink(missing_ok=True)
             raise
