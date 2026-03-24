@@ -219,6 +219,7 @@ def _plot_trajectory_panel(
     Xt: np.ndarray | None,
     dim_names: list[str],
     title: str | None = None,
+    trial_boundary_times: np.ndarray | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
     """Shared implementation for trajectory plots (one subplot per spatial dim).
@@ -235,6 +236,9 @@ def _plot_trajectory_panel(
         Spatial dimension names (e.g. ``["x", "y"]``).
     title : str or None
         Optional ``fig.suptitle``.
+    trial_boundary_times : array or None
+        Time values at trial boundaries (excluding the first trial).
+        A shaded band is drawn at each boundary to indicate the gap.
     **plot_kwargs
         Forwarded to ``ax.plot``.
     """
@@ -246,6 +250,9 @@ def _plot_trajectory_panel(
 
     for i, d in enumerate(dim_names):
         ax = axes[i]
+        if trial_boundary_times is not None:
+            for tb in trial_boundary_times:
+                ax.axvspan(tb[0], tb[1], color="0.85", zorder=0)
         for X, style in traces:
             ax.plot(t, X[:, i], **style, **plot_kwargs)
         if Xt is not None:
@@ -311,7 +318,22 @@ def plot_latent_trajectory(
         )
 
     Xt = results.Xt.sel(time=tslice).values if (include_ground_truth and "Xt" in results) else None
-    return _plot_trajectory_panel(t, traces, Xt, dim_names, **plot_kwargs)
+
+    # Extract trial boundary times (shaded bands between end of one trial and start of next)
+    trial_boundary_times = None
+    tb_indices = results.attrs.get("trial_boundaries", None)
+    if tb_indices is not None and len(tb_indices) > 1:
+        all_t = results.time.values
+        pairs = []
+        for b in tb_indices[1:]:
+            t_end = all_t[b - 1]  # last timestep of previous trial
+            t_start = all_t[b]  # first timestep of next trial
+            if t_start >= time_range[0] and t_end <= time_range[1]:
+                pairs.append((t_end, t_start))
+        if pairs:
+            trial_boundary_times = np.array(pairs)
+
+    return _plot_trajectory_panel(t, traces, Xt, dim_names, trial_boundary_times=trial_boundary_times, **plot_kwargs)
 
 
 def plot_prediction(
@@ -367,7 +389,32 @@ def plot_prediction(
     )
 
     Xt_sliced = Xt[mask] if Xt is not None else None
-    return _plot_trajectory_panel(t, traces, Xt_sliced, dim_names, title="Prediction on held-out data", **plot_kwargs)
+
+    # Extract trial boundary times if available
+    trial_boundary_times = None
+    tb_indices = prediction_results.attrs.get("trial_boundaries", None)
+    if tb_indices is not None and len(tb_indices) > 1:
+        all_t = prediction_results.time.values
+        t0 = t[0] if len(t) > 0 else -np.inf
+        t1 = t[-1] if len(t) > 0 else np.inf
+        pairs = []
+        for b in tb_indices[1:]:
+            t_end = all_t[b - 1]
+            t_start = all_t[b]
+            if t_start >= t0 and t_end <= t1:
+                pairs.append((t_end, t_start))
+        if pairs:
+            trial_boundary_times = np.array(pairs)
+
+    return _plot_trajectory_panel(
+        t,
+        traces,
+        Xt_sliced,
+        dim_names,
+        title="Prediction on held-out data",
+        trial_boundary_times=trial_boundary_times,
+        **plot_kwargs,
+    )
 
 
 def plot_receptive_fields(
