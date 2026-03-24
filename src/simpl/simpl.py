@@ -397,13 +397,13 @@ class SIMPL:
         Y_jax = jnp.array(Y)
         T_new = Y_jax.shape[0]
 
-        _, trial_slices = self._validate_trial_boundaries(trial_boundaries, T_new)
+        trial_boundaries_validated, trial_slices, _, _ = self._validate_trial_boundaries(trial_boundaries, T_new)
 
         # Decode using fitted receptive fields, no behavior input (mask=None → all spikes)
         E = self._decode(
             Y=Y_jax,
             F=self.F_,
-            trial_slices=trial_slices,
+            trial_boundaries=trial_boundaries_validated,
         )
 
         X_decoded = np.array(E["mu_s"])
@@ -774,9 +774,9 @@ class SIMPL:
         E = self._decode(
             Y=Y,
             F=F,
+            trial_boundaries=self.trial_boundaries_,
+            U=self.Xb_,
             mask=self.spike_mask_,
-            trial_slices=self.trial_slices_,
-            Xb=self.Xb_,
         )
 
         # Manifold alignment (fit-time only)
@@ -843,13 +843,15 @@ class SIMPL:
         self,
         Y: jax.Array,
         F: jax.Array,
-        trial_slices: list,
+        trial_boundaries: np.ndarray,
+        U: jax.Array | None = None,
         mask: jax.Array | None = None,
-        Xb: jax.Array | None = None,
     ) -> dict:
         """Core decoding: likelihood maps -> Gaussian fit -> Kalman filter/smooth.
 
         Shared by ``_E_step`` (fit-time) and ``predict`` (inference-time).
+        Trial boundary masks and per-trial initial states are computed
+        internally from ``trial_boundaries`` and the likelihood modes.
 
         Parameters
         ----------
@@ -857,12 +859,12 @@ class SIMPL:
             Spike counts.
         F : jnp.ndarray, shape (N_neurons, N_bins)
             Place fields.
-        trial_slices : list[slice]
-            Trial boundaries as slices.
+        trial_boundaries : np.ndarray
+            Array of indices where new trials start, e.g. ``[0, 1000, 2000]``.
+        U : jnp.ndarray or None, shape (T, D)
+            Control inputs (Xb at fit-time, None/zeros at predict-time).
         mask : jnp.ndarray or None, shape (T, N_neurons)
             Boolean mask (True = use for likelihood). If None, all spikes are used.
-        Xb : jnp.ndarray or None, shape (T, D)
-            Behavioral positions. If None, Kalman runs with U=0 (pure smoother).
 
         Returns
         -------
@@ -870,8 +872,13 @@ class SIMPL:
             Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
             logPYF, logPYF_val, and optionally logPYXF_maps.
         """
+        T = Y.shape[0]
         if mask is None:
             mask = jnp.ones(Y.shape, dtype=bool)
+        if U is None:
+            U = jnp.zeros((T, self.D_))
+
+        _, trial_slices, is_boundary, is_trial_end = self._validate_trial_boundaries(trial_boundaries, T)
 
         # Log-likelihood maps
         logPYXF_maps = poisson_log_likelihood(Y, F, mask=mask)
@@ -887,62 +894,33 @@ class SIMPL:
             sigma_l,
         )
 
-        # Process each trial
-        mu_f_list, sigma_f_list, mu_s_list, sigma_s_list = [], [], [], []
-        logPYF_list, logPYF_val_list = [], []
+        # Per-trial initial states (mean and covariance of likelihood modes over each trial)
+        mu0_all, sigma0_all = self._per_trial_initial_states(mode_l, trial_slices)
 
-        for trial_slice in trial_slices:
-            _mode_l = mode_l[trial_slice]
-            _R = observation_noise[trial_slice]
-            _Y = Y[trial_slice]
-            _mask = mask[trial_slice]
-            T_trial = _mode_l.shape[0]
+        # Single-pass filter and smooth
+        mu_f, sigma_f = self.kalman_filter_.filter(
+            mu0=mu0_all[0], sigma0=sigma0_all[0], Y=mode_l, U=U, R=observation_noise,
+            is_boundary=is_boundary, mu0_all=mu0_all, sigma0_all=sigma0_all,
+        )
+        mu_s, sigma_s = self.kalman_filter_.smooth(
+            mus_f=mu_f, sigmas_f=sigma_f, is_trial_end=is_trial_end,
+        )
 
-            # Control input: behavior if available, zeros otherwise
-            if Xb is not None:
-                _U = Xb[trial_slice]
-                _mu0 = _U.mean(axis=0)
-                _sigma0 = (1 / len(_U)) * (((_U - _mu0).T) @ (_U - _mu0))
-            else:
-                _U = jnp.zeros((T_trial, self.D_))
-                # Initialise from first few likelihood modes
-                _mu0 = _mode_l[: min(10, T_trial)].mean(axis=0)
-                _sigma0 = jnp.eye(self.D_) * 1.0
+        # Likelihoods (full arrays, single sum)
+        logPYF = self.kalman_filter_.loglikelihood(Y=mode_l, R=observation_noise, mu=mu_s, sigma=sigma_s).sum()
 
-            # Filter and smooth
-            mu_f, sigma_f = self.kalman_filter_.filter(mu0=_mu0, sigma0=_sigma0, Y=_mode_l, U=_U, R=_R)
-            mu_s, sigma_s = self.kalman_filter_.smooth(mus_f=mu_f, sigmas_f=sigma_f)
-
-            # Likelihoods
-            logPYF = self.kalman_filter_.loglikelihood(Y=_mode_l, R=_R, mu=mu_s, sigma=sigma_s).sum()
-
-            # Validation likelihood
-            logPYXF_maps_val = poisson_log_likelihood(_Y, F, mask=~_mask)
-            no_spikes_val = jnp.sum(_Y * ~_mask, axis=1) == 0
-            _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
-            observation_noise_val = jnp.where(
-                no_spikes_val[:, None, None],
-                jnp.eye(self.D_) * 1e6,
-                sigma_l_val,
-            )
-            logPYF_val = self.kalman_filter_.loglikelihood(
-                Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
-            ).sum()
-
-            mu_f_list.append(mu_f)
-            sigma_f_list.append(sigma_f)
-            mu_s_list.append(mu_s)
-            sigma_s_list.append(sigma_s)
-            logPYF_list.append(logPYF)
-            logPYF_val_list.append(logPYF_val)
-
-        # Concatenate
-        mu_f = jnp.concatenate(mu_f_list, axis=0)
-        sigma_f = jnp.concatenate(sigma_f_list, axis=0)
-        mu_s = jnp.concatenate(mu_s_list, axis=0)
-        sigma_s = jnp.concatenate(sigma_s_list, axis=0)
-        logPYF = sum(logPYF_list)
-        logPYF_val = sum(logPYF_val_list)
+        # Validation likelihood
+        logPYXF_maps_val = poisson_log_likelihood(Y, F, mask=~mask)
+        no_spikes_val = jnp.sum(Y * ~mask, axis=1) == 0
+        _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
+        observation_noise_val = jnp.where(
+            no_spikes_val[:, None, None],
+            jnp.eye(self.D_) * 1e6,
+            sigma_l_val,
+        )
+        logPYF_val = self.kalman_filter_.loglikelihood(
+            Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
+        ).sum()
 
         E = {
             "mu_l": mu_l,
@@ -1264,7 +1242,7 @@ class SIMPL:
             )
 
         # ── Set up Kalman filter, masks, and alignment ──
-        self.trial_boundaries_, self.trial_slices_ = self._validate_trial_boundaries(trial_boundaries, self.T_)
+        self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
 
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
@@ -1602,12 +1580,13 @@ class SIMPL:
 
     @staticmethod
     def _validate_trial_boundaries(trial_boundaries, T):
-        """Validate trial boundaries and create trial slices.
+        """Validate trial boundaries and build boolean masks for the Kalman filter.
 
         Parameters
         ----------
         trial_boundaries : np.ndarray or None
-            Trial start indices. If None, treats all data as one trial.
+            Trial start indices, e.g. ``[0, 1000, 2000]``.  If None, treats
+            all data as one trial.
         T : int
             Total number of time bins.
 
@@ -1617,6 +1596,10 @@ class SIMPL:
             Validated boundaries array.
         trial_slices : list[slice]
             List of slice objects for each trial.
+        is_boundary : jax.Array, shape (T,)
+            True at the first timestep of each trial.
+        is_trial_end : jax.Array, shape (T,)
+            True at the last timestep of each trial.
         """
         if trial_boundaries is None:
             trial_boundaries = np.array([0])
@@ -1632,7 +1615,45 @@ class SIMPL:
 
         trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
         trial_slices.append(slice(trial_boundaries[-1], T))
-        return trial_boundaries, trial_slices
+
+        is_boundary = jnp.zeros(T, dtype=bool)
+        is_trial_end = jnp.zeros(T, dtype=bool)
+        for trial_slice in trial_slices:
+            is_boundary = is_boundary.at[trial_slice.start].set(True)
+            is_trial_end = is_trial_end.at[trial_slice.stop - 1].set(True)
+        return trial_boundaries, trial_slices, is_boundary, is_trial_end
+
+    @staticmethod
+    def _per_trial_initial_states(mode_l, trial_slices):
+        """Compute per-trial initial states from likelihood modes.
+
+        For each trial, the initial mean is the average of the likelihood modes
+        over the trial, and the initial covariance is the sample covariance.
+
+        Parameters
+        ----------
+        mode_l : jax.Array, shape (T, D)
+            Likelihood modes at each timestep.
+        trial_slices : list[slice]
+            Trial boundaries as slices.
+
+        Returns
+        -------
+        mu0_all : jax.Array, shape (T, D)
+            Per-timestep initial means (meaningful only at trial starts).
+        sigma0_all : jax.Array, shape (T, D, D)
+            Per-timestep initial covariances (meaningful only at trial starts).
+        """
+        T, D = mode_l.shape
+        mu0_all = jnp.zeros((T, D))
+        sigma0_all = jnp.zeros((T, D, D))
+        for trial_slice in trial_slices:
+            modes = mode_l[trial_slice]
+            mu = modes.mean(axis=0)
+            sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
+            mu0_all = mu0_all.at[trial_slice.start].set(mu)
+            sigma0_all = sigma0_all.at[trial_slice.start].set(sigma)
+        return mu0_all, sigma0_all
 
     def _build_dataset_attrs(self, trial_boundaries, trial_slices) -> dict:
         """Build the standard attrs dict for results datasets."""
