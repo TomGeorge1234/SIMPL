@@ -407,7 +407,10 @@ def plot_prediction(
             trial_boundary_times = np.array(pairs)
 
     return _plot_trajectory_panel(
-        t, traces, Xt_sliced, dim_names,
+        t,
+        traces,
+        Xt_sliced,
+        dim_names,
         title="Prediction on held-out data",
         trial_boundary_times=trial_boundary_times,
         **plot_kwargs,
