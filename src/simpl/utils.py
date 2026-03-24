@@ -567,9 +567,34 @@ def create_speckled_mask(
     return jnp.array(mask)
 
 
+def find_time_jumps(
+    time: np.ndarray,
+    threshold_multiplier: float = 2.0,
+) -> np.ndarray:
+    """Find indices where the time step jumps significantly.
+
+    Parameters
+    ----------
+    time : np.ndarray, shape (T,)
+        Time stamps.
+    threshold_multiplier : float, optional
+        A time step is considered a jump if it exceeds
+        ``threshold_multiplier * median(dt)``.  Default: 2.0.
+
+    Returns
+    -------
+    jump_indices : np.ndarray
+        Indices where jumps were detected (the last index before each gap).
+    """
+    dt = np.diff(time)
+    median_dt = np.median(dt)
+    return np.where(dt > threshold_multiplier * median_dt)[0]
+
+
 _AVAILABLE_DEMO_DATA = [
     "gridcells_synthetic.npz",
-    "placecells_real_tanni2022.npz",
+    "placecells_tanni2022.npz",
+    "headdirectioncells_vollan2025.npz",
 ]
 
 

@@ -492,6 +492,25 @@ def plot_receptive_fields(
     total_cols = n_neuron_cols * n_cols_per_neuron + (n_neuron_cols - 1)
     total_rows = n_neuron_rows
 
+    is_polar = bool(results.attrs.get("is_1D_angular", 0)) and D == 1
+
+    if is_polar:
+        return _plot_receptive_fields_polar(
+            results,
+            epochs,
+            neurons,
+            has_baselines,
+            baseline_label,
+            dim_names,
+            n_cols_per_neuron,
+            n_neuron_cols,
+            n_neuron_rows,
+            total_cols,
+            total_rows,
+            col_labels,
+            **plot_kwargs,
+        )
+
     # Width ratios: data columns are 1, spacer columns are 0.3
     width_ratios = []
     for g in range(n_neuron_cols):
@@ -579,6 +598,121 @@ def plot_receptive_fields(
                 ax.set_xticks([])
                 ax.set_yticks([])
             else:
+                ax.axis("off")
+
+    fig.tight_layout()
+    return axes
+
+
+def _plot_receptive_fields_polar(
+    results,
+    epochs,
+    neurons,
+    has_baselines,
+    baseline_label,
+    dim_names,
+    n_cols_per_neuron,
+    n_neuron_cols,
+    n_neuron_rows,
+    total_cols,
+    total_rows,
+    col_labels,
+    **plot_kwargs,
+):
+    """Polar plot variant of ``plot_receptive_fields`` for 1-D angular data."""
+    from matplotlib.gridspec import GridSpec
+
+    last_epoch = int(_non_negative_epochs(results)[-1])
+
+    # Width ratios: data columns are 1, spacer columns are 0.3
+    width_ratios = []
+    for g in range(n_neuron_cols):
+        width_ratios.extend([1] * n_cols_per_neuron)
+        if g < n_neuron_cols - 1:
+            width_ratios.append(0.3)
+
+    fig = plt.figure(figsize=(FIG_WIDTH / 4 * n_neuron_cols * n_cols_per_neuron, FIG_WIDTH / 4 * total_rows))
+    gs = GridSpec(total_rows, total_cols, figure=fig, width_ratios=width_ratios)
+
+    axes = np.empty((total_rows, total_cols), dtype=object)
+
+    group_col_starts = []
+    for g in range(n_neuron_cols):
+        group_col_starts.append(g * (n_cols_per_neuron + 1))
+
+    used_axes = set()
+    theta = results[dim_names[0]].values
+
+    # Close the polar curve by appending the first point
+    theta_closed = np.concatenate([theta, [theta[0]]])
+
+    def _style_polar_ax(ax, rmax):
+        """Apply consistent styling to a polar axis."""
+        ax.set_ylim(0, rmax)
+        ax.set_xticks([0, np.pi / 2, np.pi, 3 * np.pi / 2])
+        ax.set_xticklabels(["0", "π/2", "π", "3π/2"], fontsize=6)
+        ax.set_yticks([rmax])
+        ax.set_yticklabels([f"{rmax:.1f}"], fontsize=5)
+        ax.tick_params(pad=1)
+
+    for idx, n in enumerate(neurons):
+        row = idx // n_neuron_cols
+        group = idx % n_neuron_cols
+        col_base = group_col_starts[group]
+
+        # Pre-compute max firing rate across all epochs (and baseline) for this neuron
+        rmax = 0.0
+        for ep in epochs:
+            F_ep = results.F.sel(epoch=ep, neuron=n).values
+            rmax = max(rmax, float(np.nanmax(F_ep)))
+        if has_baselines:
+            if "Ft" in results:
+                rmax = max(rmax, float(np.nanmax(results.Ft.sel(neuron=n).values)))
+            elif -1 in results.epoch.values:
+                rmax = max(rmax, float(np.nanmax(results.F.sel(epoch=-1, neuron=n).values)))
+        if rmax == 0:
+            rmax = 1.0
+
+        col_offset = 0
+
+        for ep in epochs:
+            pos = (row, col_base + col_offset)
+            ax = fig.add_subplot(gs[pos[0], pos[1]], projection="polar")
+            axes[pos[0], pos[1]] = ax
+            used_axes.add(pos)
+            color = _epoch_color(ep, last_epoch)
+            F_ep = results.F.sel(epoch=ep, neuron=n).values
+            r_closed = np.concatenate([F_ep, [F_ep[0]]])
+            ax.plot(theta_closed, r_closed, color=color, **plot_kwargs)
+            ax.fill(theta_closed, r_closed, alpha=0.3, color=color)
+            _style_polar_ax(ax, rmax)
+            if row == 0:
+                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)"
+                ax.set_title(label, fontsize=8, pad=12)
+            col_offset += 1
+
+        if has_baselines:
+            pos = (row, col_base + col_offset)
+            ax = fig.add_subplot(gs[pos[0], pos[1]], projection="polar")
+            axes[pos[0], pos[1]] = ax
+            used_axes.add(pos)
+            if "Ft" in results:
+                F_base = results.Ft.sel(neuron=n).values
+            else:
+                F_base = results.F.sel(epoch=-1, neuron=n).values
+            r_closed = np.concatenate([F_base, [F_base[0]]])
+            ax.plot(theta_closed, r_closed, color="grey", **plot_kwargs)
+            ax.fill(theta_closed, r_closed, alpha=0.3, color="grey")
+            _style_polar_ax(ax, rmax)
+            if row == 0:
+                ax.set_title(baseline_label, fontsize=8, pad=12)
+
+    # Turn off unused/spacer cells
+    for r in range(total_rows):
+        for c in range(total_cols):
+            if (r, c) not in used_axes:
+                ax = fig.add_subplot(gs[r, c])
+                axes[r, c] = ax
                 ax.axis("off")
 
     fig.tight_layout()
