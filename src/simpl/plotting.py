@@ -423,6 +423,7 @@ def plot_receptive_fields(
     epochs: int | tuple[int, ...] | None = None,
     neurons: list[int] | np.ndarray | None = None,
     include_baselines: bool = False,
+    sort_by_spatial_information: bool = False,
     ncols: int = 4,
     **plot_kwargs,
 ) -> np.ndarray:
@@ -441,6 +442,9 @@ def plot_receptive_fields(
         Subset of neuron indices.  Default: all neurons.
     include_baselines : bool
         Show ground-truth fields (``Ft``) if present.
+    sort_by_spatial_information : bool
+        If ``True``, reorder neurons so that the most spatially informative
+        appear first (uses the last training epoch).
     ncols : int
         Maximum number of neuron-columns in the grid.
     **plot_kwargs
@@ -460,6 +464,9 @@ def plot_receptive_fields(
     if neurons is None:
         neurons = results.neuron.values
     neurons = np.asarray(neurons)
+
+    if sort_by_spatial_information:
+        neurons = _sort_neurons_by_si(results, neurons)
 
     if len(neurons) > 50:
         warnings.warn(f"Plotting {len(neurons)} neurons — this may be slow.", stacklevel=2)
@@ -717,6 +724,103 @@ def _plot_receptive_fields_polar(
 
     fig.tight_layout()
     return axes
+
+
+def _sort_neurons_by_si(results: xr.Dataset, neurons: np.ndarray) -> np.ndarray:
+    """Return *neurons* sorted by spatial information (highest first).
+
+    Uses the last non-negative epoch.  Falls back to the original order
+    if ``spatial_information`` is not present.
+    """
+    if "spatial_information" not in results:
+        warnings.warn("spatial_information not found in results — neurons left unsorted.", stacklevel=3)
+        return neurons
+    last_ep = _last_non_negative_epoch(results)
+    si = results.spatial_information.sel(epoch=last_ep, neuron=neurons).values
+    return neurons[np.argsort(si)[::-1]]
+
+
+def plot_spikes(
+    results: xr.Dataset,
+    time_range: tuple[float, float] | None = None,
+    neurons: list[int] | np.ndarray | None = None,
+    sort_by_spatial_information: bool = False,
+    cmap: str = "Greys",
+    **plot_kwargs,
+) -> matplotlib.axes.Axes:
+    """Visualise spike counts as a heatmap (time × neurons).
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        The ``results_`` Dataset from a fitted SIMPL model.
+    time_range : tuple, optional
+        ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+    neurons : array-like, optional
+        Subset of neuron indices to display.  Default: all neurons.
+    sort_by_spatial_information : bool
+        If ``True``, reorder neurons so that the most spatially informative
+        appear at the top of the heatmap (uses the last training epoch).
+    cmap : str
+        Colormap for ``imshow``.  Default: ``"Greys"``.
+    **plot_kwargs
+        Forwarded to ``ax.imshow``.
+
+    Returns
+    -------
+    ax : matplotlib Axes
+    """
+    if "Y" not in results:
+        raise ValueError("results Dataset does not contain 'Y' (spike counts).")
+
+    Y = results.Y
+    t = results.time.values
+
+    # Default to first 120 s (same as plot_latent_trajectory)
+    if time_range is None:
+        t0 = float(t[0])
+        time_range = (t0, t0 + 120)
+
+    tslice = slice(*time_range)
+    Y = Y.sel(time=tslice)
+    t = Y.time.values
+
+    # Neuron subset
+    if neurons is not None:
+        neurons = np.asarray(neurons)
+    else:
+        neurons = results.neuron.values
+
+    if sort_by_spatial_information:
+        neurons = _sort_neurons_by_si(results, neurons)
+
+    Y = Y.sel(neuron=neurons)
+    data = np.array(Y.values)  # (T, N)
+
+    fig, ax = plt.subplots(
+        1,
+        1,
+        figsize=(FIG_WIDTH, FIG_WIDTH * 0.35),
+        layout="constrained",
+    )
+
+    extent = [float(t[0]), float(t[-1]), -0.5, data.shape[1] - 0.5]
+    imkw = dict(
+        cmap=cmap,
+        aspect="auto",
+        interpolation="none",
+        origin="lower",
+        extent=extent,
+    )
+    imkw.update(plot_kwargs)
+    im = ax.imshow(data.T, **imkw)
+    fig.colorbar(im, ax=ax, label="Spike count", shrink=0.8, pad=0.02)
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Neuron")
+    outset_axes(ax)
+
+    return ax
 
 
 def plot_all_metrics(

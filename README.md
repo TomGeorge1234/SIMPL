@@ -94,6 +94,10 @@ model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific epochs
 # Receptive fields (epoch 0 + last by default)
 model.plot_receptive_fields(neurons=[0, 5, 10])
 
+# Spike raster heatmap (time × neurons)
+model.plot_spikes()
+model.plot_spikes(time_range=(0, 60))
+
 # Auto-discover and plot all per-epoch metrics
 model.plot_all_metrics(show_neurons=False)
 
