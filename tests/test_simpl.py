@@ -138,6 +138,16 @@ class TestSIMPLFit:
                 n_epochs=0,
             )
 
+    def test_fit_validates_early_stopping_min_delta(self):
+        model = SIMPL(early_stopping_min_delta=-0.1)
+        with pytest.raises(ValueError, match="early_stopping_min_delta"):
+            model.fit(
+                Y=np.zeros((10, 5)),
+                Xb=np.zeros((10, 2)),
+                time=np.arange(10) * 0.05,
+                n_epochs=0,
+            )
+
     def test_fit_validates_speckle_block_size_duration(self):
         model = SIMPL(speckle_block_size_seconds=1.0)
         with pytest.raises(ValueError, match="shorter than the recording duration"):
@@ -216,6 +226,52 @@ class TestSIMPLTrainImprovesLikelihood:
         assert ll_last >= ll_0 - 0.1
 
 
+class TestSIMPLEarlyStopping:
+    def _make_stub_model(self, history, future, min_delta=0.0):
+        model = SIMPL(early_stopping_min_delta=min_delta)
+        model.epoch_ = len(history) - 1
+        model.loglikelihoods_ = xr.Dataset(
+            {"logPYXF_val": ("epoch", np.asarray(history, dtype=float))},
+            coords={"epoch": np.arange(len(history), dtype=int)},
+        )
+        future_iter = iter(future)
+
+        def _fit_epoch():
+            model.epoch_ += 1
+            val_ll = float(next(future_iter))
+            update = xr.Dataset({"logPYXF_val": ("epoch", [val_ll])}, coords={"epoch": [model.epoch_]})
+            model.loglikelihoods_ = xr.concat([model.loglikelihoods_, update], dim="epoch", data_vars="minimal")
+
+        model._fit_epoch = _fit_epoch
+        model._print_epoch_summary = lambda: None
+        return model
+
+    def test_stops_after_three_declines_from_epoch_zero(self):
+        model = self._make_stub_model(history=[10.0], future=[9.0, 8.0, 7.0, 6.0])
+        model._fit_N_epochs(10, early_stopping=True, verbose=False)
+        assert model.epoch_ == 3
+
+    def test_stops_after_three_plateau_epochs_from_epoch_zero(self):
+        model = self._make_stub_model(history=[10.0], future=[10.0, 10.0, 10.0, 10.0])
+        model._fit_N_epochs(10, early_stopping=True, verbose=False)
+        assert model.epoch_ == 3
+
+    def test_resume_keeps_existing_no_improvement_streak(self):
+        model = self._make_stub_model(history=[10.0, 12.0, 12.0, 12.0], future=[12.0, 12.0])
+        model._fit_N_epochs(10, early_stopping=True, verbose=False)
+        assert model.epoch_ == 4
+
+    def test_small_gains_do_not_reset_patience_when_below_min_delta(self):
+        model = self._make_stub_model(history=[10.0], future=[10.01, 10.02, 10.03, 10.2], min_delta=0.05)
+        model._fit_N_epochs(10, early_stopping=True, verbose=False)
+        assert model.epoch_ == 3
+
+    def test_meaningful_gain_resets_patience_when_above_min_delta(self):
+        model = self._make_stub_model(history=[10.0], future=[10.01, 10.12, 10.13, 10.14], min_delta=0.05)
+        model._fit_N_epochs(4, early_stopping=True, verbose=False)
+        assert model.epoch_ == 4
+
+
 class TestSIMPLEvaluateEpoch:
     def test_metrics_dict_keys(self, small_simpl_model):
         model = small_simpl_model
@@ -292,6 +348,7 @@ class TestSIMPLSaveLoadResults:
             val_frac=0.2,
             speckle_block_size_seconds=2.0,
             random_seed=7,
+            early_stopping_min_delta=0.05,
         )
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
@@ -312,6 +369,7 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["val_frac"] == 0.2
         assert model.results_.attrs["speckle_block_size_seconds"] == 2.0
         assert model.results_.attrs["random_seed"] == 7
+        assert model.results_.attrs["early_stopping_min_delta"] == 0.05
 
         path = str(tmp_path / "test_results.nc")
         model.save_results(path)
@@ -322,6 +380,7 @@ class TestSIMPLSaveLoadResults:
         assert loaded.attrs["kernel_bandwidth"] == 0.03
         assert loaded.attrs["use_kalman_smoothing"] == 0
         np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
+        assert loaded.attrs["early_stopping_min_delta"] == 0.05
 
 
 class TestSIMPLInterpolateFiringRates:

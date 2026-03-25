@@ -63,6 +63,7 @@ class SIMPL:
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
+        early_stopping_min_delta: float = 0.0,
     ) -> None:
         """Initialise the SIMPL model with hyperparameters only (no data, no computation).
 
@@ -154,6 +155,10 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
+        early_stopping_min_delta : float, optional
+            Minimum increase in validation log-likelihood required to count as an
+            improvement for early stopping. Smaller gains are treated as no
+            improvement. By default 0.0.
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
@@ -178,6 +183,7 @@ class SIMPL:
         self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
+        self.early_stopping_min_delta = early_stopping_min_delta
 
         # Fitted flag
         self.is_fitted_ = False
@@ -262,7 +268,9 @@ class SIMPL:
             unaffected and stored for every epoch regardless. By default False.
         early_stopping : bool, optional
             If True, training stops early when the validation log-likelihood has not improved
-            for 3 consecutive epochs. By default True.
+            relative to the best epoch seen so far (including epoch 0) for 3 consecutive
+            epochs. Unchanged validation log-likelihood and gains smaller than
+            ``early_stopping_min_delta`` count as no improvement. By default True.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -1035,8 +1043,8 @@ class SIMPL:
         if N <= 0:
             return
         patience = 3
-        best_val_ll = -np.inf
-        epochs_without_improvement = 0
+        min_delta = float(self.early_stopping_min_delta)
+        best_val_ll, epochs_without_improvement = self._get_early_stopping_state()
         self._print_epoch_summary()
         for _ in range(N):
             try:
@@ -1045,21 +1053,51 @@ class SIMPL:
                     self._print_epoch_summary()
                 if early_stopping:
                     val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=self.epoch_).values)
-                    if val_ll > best_val_ll:
+                    if self._is_meaningful_validation_improvement(val_ll, best_val_ll):
                         best_val_ll = val_ll
                         epochs_without_improvement = 0
                     else:
                         epochs_without_improvement += 1
                         if epochs_without_improvement >= patience:
                             if verbose:
-                                print(
-                                    f"  Early stopping: validation log-likelihood has not "
-                                    f"improved for {patience} epochs."
-                                )
+                                if min_delta > 0:
+                                    print(
+                                        f"  Early stopping: validation log-likelihood has not "
+                                        f"improved by at least {min_delta:g} for {patience} consecutive epochs."
+                                    )
+                                else:
+                                    print(
+                                        f"  Early stopping: validation log-likelihood has not "
+                                        f"improved for {patience} consecutive epochs."
+                                    )
                             break
             except KeyboardInterrupt:
                 print(f"Training interrupted after {self.epoch_} epochs.")
                 break
+
+    def _get_early_stopping_state(self) -> tuple[float, int]:
+        """Return the best validation LL so far and the trailing no-improvement streak."""
+        if "logPYXF_val" not in self.loglikelihoods_:
+            return -np.inf, 0
+
+        val_history = np.asarray(self.loglikelihoods_.logPYXF_val.values, dtype=float)
+        if val_history.size == 0:
+            return -np.inf, 0
+
+        best_val_ll = -np.inf
+        epochs_without_improvement = 0
+        for val_ll in val_history:
+            if self._is_meaningful_validation_improvement(float(val_ll), best_val_ll):
+                best_val_ll = float(val_ll)
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+        return best_val_ll, epochs_without_improvement
+
+    def _is_meaningful_validation_improvement(self, val_ll: float, best_val_ll: float) -> bool:
+        """Return True when validation LL improves by more than the early-stopping tolerance."""
+        return val_ll > best_val_ll + float(self.early_stopping_min_delta)
 
     def _run_epoch_zero(self, verbose: bool) -> None:
         """Run epoch 0 (M-step on behavioral trajectory) and print diagnostics."""
@@ -1171,6 +1209,8 @@ class SIMPL:
             )
         if not 0 < self.val_frac < 1:
             raise ValueError(f"val_frac must be between 0 and 1 (exclusive), got {self.val_frac}")
+        if self.early_stopping_min_delta < 0:
+            raise ValueError(f"early_stopping_min_delta must be non-negative, got {self.early_stopping_min_delta}")
         if self.speckle_block_size_seconds <= 0:
             raise ValueError(
                 "speckle_block_size_seconds must be positive so the held-out mask spans at least one time bin"
@@ -1675,6 +1715,7 @@ class SIMPL:
             "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "random_seed": self.random_seed,
+            "early_stopping_min_delta": self.early_stopping_min_delta,
         }
 
 
