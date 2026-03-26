@@ -1461,8 +1461,10 @@ class SIMPL:
         train_mask = self.spike_mask_
         val_mask = ~self.spike_mask_
 
-        logPYXF = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum() / train_mask.sum()
-        logPYXF_val = poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum() / val_mask.sum()
+        ll_model_train = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum()
+        ll_model_val = poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum()
+        logPYXF = ll_model_train / train_mask.sum()
+        logPYXF_val = ll_model_val / val_mask.sum()
         LLs["logPYXF"] = logPYXF
         LLs["logPYXF_val"] = logPYXF_val
 
@@ -1470,8 +1472,10 @@ class SIMPL:
         mean_FX = (Y * train_mask).sum(axis=0, keepdims=True) / train_mask.sum(axis=0, keepdims=True)
         mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
 
+        ll_model_by_suffix = {"": ll_model_train, "_val": ll_model_val}
+
         for mask, suffix in [(train_mask, ""), (val_mask, "_val")]:
-            ll_model = poisson_log_likelihood_trajectory(Y, FX, mask=mask).sum()
+            ll_model = ll_model_by_suffix[suffix]
             ll_baseline = poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
             n_spikes = (Y * mask).sum()
             bps = jnp.where(n_spikes > 0, (ll_model - ll_baseline) / (n_spikes * jnp.log(2.0)), 0.0)
