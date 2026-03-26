@@ -458,6 +458,76 @@ class SIMPL:
 
         return X_decoded
 
+    def analyse_place_fields(self, epochs: list[int] | None = None) -> "SIMPL":
+        """Run place field morphology analysis and add results to ``self.results_``.
+
+        Identifies individual place fields in each neuron's receptive field
+        using connected-component labelling and computes per-field statistics
+        (size, position, roundness, peak firing rate, etc.). Only applicable to
+        2D environments.
+
+        This analysis uses scipy and scikit-image and can be slow for large
+        neuron counts, which is why it is not run automatically during
+        ``fit()``. Results are added to ``self.results_`` in-place.
+
+        Parameters
+        ----------
+        epochs : list of int, optional
+            Which epochs to analyse. If None (default), analyses only the
+            final epoch.
+
+        Returns
+        -------
+        self : SIMPL
+            The model instance (for method chaining).
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fitted yet.
+        ValueError
+            If the environment is not 2D.
+
+        Examples
+        --------
+        >>> model = SIMPL(speed_prior=0.4)
+        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.analyse_place_fields()
+        >>> print(model.results_["place_field_count"])
+        """
+        if not self.is_fitted_:
+            raise RuntimeError("Model has not been fitted yet. Call fit() first.")
+        if self.environment_.D != 2:
+            raise ValueError("Place field analysis is only supported for 2D environments.")
+
+        if epochs is None:
+            epochs = [int(self.results_.epoch.values[-1])]
+
+        for epoch in epochs:
+            F = self.results_["F"].sel(epoch=epoch).values
+            F_jax = jnp.array(F)
+            pf_data = analyse_place_fields(
+                F_jax,
+                N_neurons=self.N_neurons_,
+                N_PFmax=self.N_PFmax_,
+                D=self.D_,
+                xF_shape=self.xF_shape_,
+                xF=self.xF_,
+                dt=self.dt_,
+                bin_size=self.environment_.bin_size,
+                n_bins=self.N_bins_,
+            )
+            pf_ds = _dict_to_dataset(
+                pf_data, self.variable_info_dict_, self.coordinates_dict_
+            ).expand_dims({"epoch": [epoch]})
+            for var in pf_ds.data_vars:
+                if var in self.results_:
+                    self.results_[var] = pf_ds[var]
+                else:
+                    self.results_[var] = pf_ds[var]
+
+        return self
+
     def add_baselines(
         self,
         Xt: np.ndarray,
@@ -1647,21 +1717,6 @@ class SIMPL:
             cross_corr = corr[: self.N_neurons_, self.N_neurons_ :]
             stability = jnp.diag(cross_corr)
             metrics["stability"] = stability
-
-        if F is not None and self.environment_.D == 2:
-            metrics.update(
-                analyse_place_fields(
-                    F,
-                    N_neurons=self.N_neurons_,
-                    N_PFmax=self.N_PFmax_,
-                    D=self.D_,
-                    xF_shape=self.xF_shape_,
-                    xF=self.xF_,
-                    dt=self.dt_,
-                    bin_size=self.environment_.bin_size,
-                    n_bins=self.N_bins_,
-                )
-            )
 
         if F_prev is not None and F is not None:
             delta_F = jnp.linalg.norm(F - F_prev, axis=1)
