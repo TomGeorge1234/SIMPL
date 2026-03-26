@@ -317,11 +317,15 @@ class KalmanFilter:
 
         # Move to CPU if requested (avoids GPU kernel-launch overhead for
         # the sequential scan with tiny per-step matrices).
-        src_device = Y.devices().pop() if hasattr(Y, 'devices') else None
+        src_device = Y.devices().pop() if hasattr(Y, "devices") else None
         if self.force_cpu and src_device is not None and src_device.platform != "cpu":
             Y, U, mu0, sigma0 = self._to_cpu(Y), self._to_cpu(U), self._to_cpu(mu0), self._to_cpu(sigma0)
             F, B, Q, H, R = self._to_cpu(F), self._to_cpu(B), self._to_cpu(Q), self._to_cpu(H), self._to_cpu(R)
-            is_boundary, mu0_all, sigma0_all = self._to_cpu(is_boundary), self._to_cpu(mu0_all), self._to_cpu(sigma0_all)
+            is_boundary, mu0_all, sigma0_all = (
+                self._to_cpu(is_boundary),
+                self._to_cpu(mu0_all),
+                self._to_cpu(sigma0_all),
+            )
             is_1D_angular = self._to_cpu(self.is_1D_angular)
         else:
             src_device = None  # signal: no transfer back needed
@@ -426,7 +430,7 @@ class KalmanFilter:
             is_trial_end = jnp.zeros(T, dtype=bool).at[-1].set(True)
 
         # Move to CPU if requested
-        src_device = mus_f.devices().pop() if hasattr(mus_f, 'devices') else None
+        src_device = mus_f.devices().pop() if hasattr(mus_f, "devices") else None
         if self.force_cpu and src_device is not None and src_device.platform != "cpu":
             mus_f, sigmas_f = self._to_cpu(mus_f), self._to_cpu(sigmas_f)
             muT, sigmaT = self._to_cpu(muT), self._to_cpu(sigmaT)
