@@ -650,6 +650,7 @@ class SIMPL:
         epochs: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
         include_baselines: bool = False,
+        sort_by_spatial_information: bool = False,
         ncols: int = 4,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -664,6 +665,9 @@ class SIMPL:
             Subset of neuron indices.  Default: all neurons.
         include_baselines : bool
             Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
+        sort_by_spatial_information : bool
+            If ``True``, reorder neurons so that the most spatially informative
+            appear first (uses the last training epoch).
         ncols : int
             Maximum number of neuron-columns in the grid.
         **plot_kwargs
@@ -685,6 +689,7 @@ class SIMPL:
             epochs=epochs,
             neurons=neurons,
             include_baselines=include_baselines,
+            sort_by_spatial_information=sort_by_spatial_information,
             ncols=ncols,
             **plot_kwargs,
         )
@@ -714,6 +719,46 @@ class SIMPL:
 
         self._check_fitted()
         return plot_all_metrics(self.results_, show_neurons=show_neurons, ncols=ncols, **plot_kwargs)
+
+    def plot_spikes(
+        self,
+        time_range: tuple[float, float] | None = None,
+        neurons: list[int] | np.ndarray | None = None,
+        sort_by_spatial_information: bool = False,
+        cmap: str = "Greys",
+        **plot_kwargs,
+    ) -> np.ndarray:
+        """Visualise spike counts as a heatmap (time × neurons).
+
+        Parameters
+        ----------
+        time_range : tuple, optional
+            ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+        neurons : array-like, optional
+            Subset of neuron indices to display.  Default: all neurons.
+        sort_by_spatial_information : bool
+            If ``True``, reorder neurons so that the most spatially informative
+            appear at the top of the heatmap (uses the last training epoch).
+        cmap : str
+            Colormap for ``imshow``.  Default: ``"Greys"``.
+        **plot_kwargs
+            Forwarded to ``ax.imshow``.
+
+        Returns
+        -------
+        ax : matplotlib Axes
+        """
+        from simpl.plotting import plot_spikes
+
+        self._check_fitted()
+        return plot_spikes(
+            self.results_,
+            time_range=time_range,
+            neurons=neurons,
+            sort_by_spatial_information=sort_by_spatial_information,
+            cmap=cmap,
+            **plot_kwargs,
+        )
 
     def plot_prediction(
         self,
@@ -1167,7 +1212,7 @@ class SIMPL:
             self.use_kalman_smoothing
             and dt_median > 0
             and np.max(np.abs(dt - dt_median)) / dt_median > 0.01
-            and self.trial_boundaries_ is None
+            and trial_boundaries is None
         ):
             warnings.warn(
                 f"time is not uniformly spaced (dt varies by more than 1% around the median dt={dt_median:.6g}s). "
