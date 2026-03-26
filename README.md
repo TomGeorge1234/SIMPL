@@ -137,6 +137,33 @@ model.fit(Y, Xb, time, n_epochs=5)  # Xb should be in radians, [-pi, pi)
 
 > **Note:** The wrapped Kalman filter assumes a tight posterior (σ ≪ 2π). If posterior uncertainty is large relative to the circular domain, decoding accuracy may degrade.
 
+### GPU acceleration
+
+SIMPL is built on JAX and supports GPU acceleration out of the box. When a GPU is available, compute-heavy steps (KDE receptive field fitting, Poisson log-likelihood maps, Gaussian fitting) are automatically offloaded to the GPU, giving speedups on very large datasets.
+
+```python
+# Default: uses GPU if available, otherwise CPU
+model = SIMPL(use_gpu="if_available") # can be forced with True or False
+```
+
+> **Note — Kalman on CPU:** The Kalman filter/smoother is always run on the CPU, even when `use_gpu=True`. The Kalman scan operates on tiny matrices (D×D, typically 2×2) at each of T sequential steps, which is bottlenecked by GPU kernel-launch overhead rather than arithmetic. In practice CPU execution is ~20× faster for this step; data is transparently transferred to CPU and back.
+
+> **Note — JIT compilation cache:** The first GPU run includes JAX JIT compilation of GPU kernels, which can take ~20s. SIMPL automatically enables a persistent compilation cache (`~/.simpl/jax_cache/`) so that subsequent runs (even across sessions) start near-instantly.
+
+To install JAX with GPU support, follow the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html). A benchmark script is included for profiling:
+
+```bash
+# Compare GPU vs CPU performance
+python examples/gpu_benchmark.py --device gpu
+python examples/gpu_benchmark.py --device cpu
+
+# Larger data to see GPU advantages
+python examples/gpu_benchmark.py --device gpu --T 20000 --N 300
+
+# Per-component timing breakdown
+python examples/gpu_benchmark.py --device gpu --breakdown
+```
+
 ### Data preprocessing utilities
 
 ```python
