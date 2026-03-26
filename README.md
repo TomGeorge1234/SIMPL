@@ -150,19 +150,6 @@ model = SIMPL(use_gpu="if_available") # can be forced with True or False
 
 > **Note — JIT compilation cache:** The first GPU run includes JAX JIT compilation of GPU kernels, which can take ~20s. SIMPL automatically enables a persistent compilation cache (`~/.simpl/jax_cache/`) so that subsequent runs (even across sessions) start near-instantly.
 
-To install JAX with GPU support, follow the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html). A benchmark script is included for profiling:
-
-```bash
-# Compare GPU vs CPU performance
-python examples/gpu_benchmark.py --device gpu
-python examples/gpu_benchmark.py --device cpu
-
-# Larger data to see GPU advantages
-python examples/gpu_benchmark.py --device gpu --T 20000 --N 300
-
-# Per-component timing breakdown
-python examples/gpu_benchmark.py --device gpu --breakdown
-```
 
 ### Data preprocessing utilities
 
