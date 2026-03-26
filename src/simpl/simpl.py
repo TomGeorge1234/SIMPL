@@ -16,13 +16,8 @@ Each EM epoch proceeds as:
 """
 
 # Jax, for the majority of the calculations
-import os
 import threading
 import warnings
-from pathlib import Path
-
-# Suppress noisy PjRt version-compatibility warnings from XLA
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
 import jax
 import jax.numpy as jnp
@@ -214,10 +209,6 @@ class SIMPL:
         if self.use_gpu_:
             device = jax.devices("gpu")[0]
             print(f"SIMPL: Using GPU ({device.device_kind})")
-            # Enable persistent compilation cache so JIT-compiled GPU kernels are
-            # reused across sessions. First run is slow (~20s); subsequent runs are
-            # near-instant. Has no effect on CPU (compilation is already fast).
-            jax.config.update("jax_compilation_cache_dir", str(Path.home() / ".simpl" / "jax_cache"))
         else:
             print("SIMPL: Using CPU")
 

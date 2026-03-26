@@ -148,9 +148,6 @@ model = SIMPL(use_gpu="if_available") # can be forced with True or False
 
 > **Note — Kalman on CPU:** The Kalman filter/smoother is always run on the CPU, even when `use_gpu=True`. The Kalman scan operates on tiny matrices (D×D, typically 2×2) at each of T sequential steps, which is bottlenecked by GPU kernel-launch overhead rather than arithmetic. In practice CPU execution is ~20× faster for this step; data is transparently transferred to CPU and back.
 
-> **Note — JIT compilation cache:** The first GPU run includes JAX JIT compilation of GPU kernels, which can take ~20s. SIMPL automatically enables a persistent compilation cache (`~/.simpl/jax_cache/`) so that subsequent runs (even across sessions) start near-instantly.
-
-
 ### Data preprocessing utilities
 
 ```python
