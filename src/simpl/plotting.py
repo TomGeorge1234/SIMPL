@@ -880,18 +880,26 @@ def plot_all_metrics(
         is_scalar = len(other_dims) == 0
         has_place_field = "place_field" in other_dims
 
+        # Only plot epochs that have data for this variable (skip all-NaN epochs)
+        var_epochs = []
+        for e in epochs:
+            vals_e = da.sel(epoch=e)
+            if not np.all(np.isnan(vals_e.values)):
+                var_epochs.append(e)
+        var_epochs = np.array(var_epochs) if var_epochs else epochs
+
         if is_scalar:
             # line plot
             val_name = f"{var_name}_val"
             has_val = val_name in results.data_vars
-            vals = [float(da.sel(epoch=e)) for e in epochs]
-            vals_v = [float(results[val_name].sel(epoch=e)) for e in epochs] if has_val else None
-            for j in range(len(epochs)):
-                c = _epoch_color(epochs[j], last_epoch)
-                ax.scatter(epochs[j], vals[j], color=c, zorder=5, **plot_kwargs)
+            vals = [float(da.sel(epoch=e)) for e in var_epochs]
+            vals_v = [float(results[val_name].sel(epoch=e)) for e in var_epochs] if has_val else None
+            for j in range(len(var_epochs)):
+                c = _epoch_color(var_epochs[j], last_epoch)
+                ax.scatter(var_epochs[j], vals[j], color=c, zorder=5, **plot_kwargs)
                 if has_val:
                     ax.scatter(
-                        epochs[j],
+                        var_epochs[j],
                         vals_v[j],
                         color=c,
                         marker="o",
@@ -900,18 +908,18 @@ def plot_all_metrics(
                         zorder=5,
                         **plot_kwargs,
                     )
-            for j in range(len(epochs) - 1):
-                c = _epoch_color(epochs[j + 1], last_epoch)
-                ax.plot(epochs[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
+            for j in range(len(var_epochs) - 1):
+                c = _epoch_color(var_epochs[j + 1], last_epoch)
+                ax.plot(var_epochs[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
                 if has_val:
-                    ax.plot(epochs[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
+                    ax.plot(var_epochs[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
             # baseline: only epoch -1 ("best model")
             if -1 in baselines:
                 ax.axhline(float(da.sel(epoch=-1)), color="k", ls="--", lw=0.8)
         else:
             # per-neuron (possibly mean over place_field first)
             means = []
-            for e in epochs:
+            for e in var_epochs:
                 c = _epoch_color(e, last_epoch)
                 vals_e = da.sel(epoch=e)
                 if has_place_field:
@@ -925,11 +933,11 @@ def plot_all_metrics(
                 else:
                     means.append(float(np.nanmean(v)))
                 ax.scatter(e, means[-1], color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
-            for j in range(len(epochs) - 1):
-                c = _epoch_color(epochs[j + 1], last_epoch)
-                ax.plot(epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
+            for j in range(len(var_epochs) - 1):
+                c = _epoch_color(var_epochs[j + 1], last_epoch)
+                ax.plot(var_epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
 
-        ax.set(xlabel="Epoch", ylabel=ylabel)
+        ax.set(xlabel="Epoch", ylabel=ylabel, xlim=(-0.5, int(epochs[-1]) + 0.5))
         outset_axes(ax)
         ax.spines["bottom"].set_bounds(0, int(epochs[-1]))
 

@@ -101,8 +101,9 @@ class KalmanFilter:
         dim_Z: int,
         dim_Y: int,
         dim_U: int = 0,
-        batch_size: int = 100,
+        batch_size: int = 36000,
         is_1D_angular: bool = False,
+        force_cpu: bool = True,
         # optional parameters
         mu0: jax.Array | None = None,
         sigma0: jax.Array | None = None,
@@ -158,6 +159,11 @@ class KalmanFilter:
             The observation matrix
         R : jax.Array, shape (dim_X, dim_X)
             The observation noise covariance
+        force_cpu : bool, optional
+            If True, the filter and smoother move all data to CPU before
+            running the sequential scan, then move results back to the
+            original device. This avoids GPU kernel-launch overhead for
+            the small per-step operations. By default True.
         """
         if is_1D_angular and dim_Z != 1:
             raise ValueError("is_1D_angular=True requires dim_Z == 1")
@@ -167,6 +173,7 @@ class KalmanFilter:
         self.dim_Y = dim_Y
         self.dim_U = dim_U
         self.batch_size = batch_size
+        self.force_cpu = force_cpu
 
         # Optionally set parameters and initial conditions now
         if mu0 is not None:
@@ -191,6 +198,20 @@ class KalmanFilter:
         self.Q = Q
         self.H = H
         self.R = R
+
+    @staticmethod
+    def _to_cpu(x):
+        """Move a JAX array to CPU."""
+        if x is None:
+            return x
+        return jax.device_put(x, jax.devices("cpu")[0])
+
+    @staticmethod
+    def _to_device(x, device):
+        """Move a JAX array to the given device."""
+        if x is None:
+            return x
+        return jax.device_put(x, device)
 
     def filter(
         self,
@@ -294,6 +315,22 @@ class KalmanFilter:
             mu0_all = jnp.zeros((T, self.dim_Z))
             sigma0_all = jnp.zeros((T, self.dim_Z, self.dim_Z))
 
+        # Move to CPU if requested (avoids GPU kernel-launch overhead for
+        # the sequential scan with tiny per-step matrices).
+        src_device = Y.devices().pop() if hasattr(Y, "devices") else None
+        if self.force_cpu and src_device is not None and src_device.platform != "cpu":
+            Y, U, mu0, sigma0 = self._to_cpu(Y), self._to_cpu(U), self._to_cpu(mu0), self._to_cpu(sigma0)
+            F, B, Q, H, R = self._to_cpu(F), self._to_cpu(B), self._to_cpu(Q), self._to_cpu(H), self._to_cpu(R)
+            is_boundary, mu0_all, sigma0_all = (
+                self._to_cpu(is_boundary),
+                self._to_cpu(mu0_all),
+                self._to_cpu(sigma0_all),
+            )
+            is_1D_angular = self._to_cpu(self.is_1D_angular)
+        else:
+            src_device = None  # signal: no transfer back needed
+            is_1D_angular = self.is_1D_angular
+
         mus_f, sigmas_f = [], []  # filtered means and covariances
 
         N_batch = math.ceil(T / self.batch_size)
@@ -310,7 +347,7 @@ class KalmanFilter:
                 Q=Q[start:end],
                 H=H[start:end],
                 R=R[start:end],
-                is_1D_angular=self.is_1D_angular,
+                is_1D_angular=is_1D_angular,
                 is_boundary=is_boundary[start:end],
                 mu0_all=mu0_all[start:end],
                 sigma0_all=sigma0_all[start:end],
@@ -320,6 +357,10 @@ class KalmanFilter:
             mu0, sigma0 = mu[-1], sigma[-1]  # update initial conditions for next batch
         mus_f = jnp.concatenate(mus_f)
         sigmas_f = jnp.concatenate(sigmas_f)
+
+        if src_device is not None:
+            mus_f = self._to_device(mus_f, src_device)
+            sigmas_f = self._to_device(sigmas_f, src_device)
 
         return mus_f, sigmas_f
 
@@ -388,6 +429,18 @@ class KalmanFilter:
         if is_trial_end is None:
             is_trial_end = jnp.zeros(T, dtype=bool).at[-1].set(True)
 
+        # Move to CPU if requested
+        src_device = mus_f.devices().pop() if hasattr(mus_f, "devices") else None
+        if self.force_cpu and src_device is not None and src_device.platform != "cpu":
+            mus_f, sigmas_f = self._to_cpu(mus_f), self._to_cpu(sigmas_f)
+            muT, sigmaT = self._to_cpu(muT), self._to_cpu(sigmaT)
+            U, F, B, Q = self._to_cpu(U), self._to_cpu(F), self._to_cpu(B), self._to_cpu(Q)
+            is_trial_end = self._to_cpu(is_trial_end)
+            is_1D_angular = self._to_cpu(self.is_1D_angular)
+        else:
+            src_device = None
+            is_1D_angular = self.is_1D_angular
+
         mus_s, sigmas_s = [], []
 
         for i in range(math.ceil(T / self.batch_size)):
@@ -402,7 +455,7 @@ class KalmanFilter:
                 F=F[start:end],
                 B=B[start:end],
                 Q=Q[start:end],
-                is_1D_angular=self.is_1D_angular,
+                is_1D_angular=is_1D_angular,
                 is_trial_end=is_trial_end[start:end],
             )
             mus_s.insert(0, mu)
@@ -410,6 +463,10 @@ class KalmanFilter:
             muT, sigmaT = mu[0], sigma[0]
         mus_s = jnp.concatenate(mus_s)
         sigmas_s = jnp.concatenate(sigmas_s)
+
+        if src_device is not None:
+            mus_s = self._to_device(mus_s, src_device)
+            sigmas_s = self._to_device(sigmas_s, src_device)
 
         return mus_s, sigmas_s
 
