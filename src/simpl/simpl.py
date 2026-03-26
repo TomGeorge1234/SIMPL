@@ -16,9 +16,13 @@ Each EM epoch proceeds as:
 """
 
 # Jax, for the majority of the calculations
+import os
 import threading
 import warnings
 from pathlib import Path
+
+# Suppress noisy PjRt version-compatibility warnings from XLA
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
 import jax
 import jax.numpy as jnp
