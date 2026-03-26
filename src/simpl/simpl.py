@@ -63,6 +63,8 @@ class SIMPL:
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
+        # Device
+        use_gpu: bool | str = "if_available",
     ) -> None:
         """Initialise the SIMPL model with hyperparameters only (no data, no computation).
 
@@ -154,6 +156,12 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
+        use_gpu : bool or str, optional
+            Controls GPU usage. ``True`` forces GPU and raises an error if none is
+            available. ``False`` forces CPU even when a GPU is present.
+            ``"if_available"`` (default) uses GPU when one is detected, otherwise
+            falls back to CPU.
+
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
@@ -181,6 +189,36 @@ class SIMPL:
 
         # Fitted flag
         self.is_fitted_ = False
+
+        # Device setup
+        gpu_available = jax.default_backend() == "gpu"
+        if use_gpu is True:
+            if not gpu_available:
+                raise RuntimeError(
+                    "use_gpu=True but no GPU is available. "
+                    "Install a GPU-enabled JAX build or use use_gpu='if_available'."
+                )
+            self.use_gpu_ = True
+        elif use_gpu is False:
+            self.use_gpu_ = False
+        elif use_gpu == "if_available":
+            self.use_gpu_ = gpu_available
+        else:
+            raise ValueError(
+                f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}"
+            )
+
+        if self.use_gpu_:
+            device = jax.devices("gpu")[0]
+            print(f"SIMPL: Using GPU ({device.device_kind})")
+        else:
+            print("SIMPL: Using CPU")
+
+    def _jax_device(self):
+        """Return the JAX device to place arrays on."""
+        if self.use_gpu_:
+            return jax.devices("gpu")[0]
+        return jax.devices("cpu")[0]
 
     def fit(
         self,
@@ -394,7 +432,7 @@ class SIMPL:
         if Y.shape[1] != self.N_neurons_:
             raise ValueError(f"Y has {Y.shape[1]} neurons but model was fitted with {self.N_neurons_}")
 
-        Y_jax = jnp.array(Y)
+        Y_jax = jax.device_put(jnp.array(Y), self._jax_device())
         T_new = Y_jax.shape[0]
 
         trial_boundaries_validated, trial_slices, _, _ = self._validate_trial_boundaries(trial_boundaries, T_new)
@@ -1276,12 +1314,13 @@ class SIMPL:
                 "Consider increasing `env_pad` or adjusting `env_lims`."
             )
 
-        # ── Convert data to JAX arrays ──
+        # ── Convert data to JAX arrays (on the chosen device) ──
         neurons = np.arange(self.N_neurons_)
-        self.Y_ = jnp.array(Y)
-        self.Xb_ = jnp.array(Xb)
-        self.time_ = jnp.array(time)
-        self.neuron_ = jnp.array(neurons)
+        device = self._jax_device()
+        self.Y_ = jax.device_put(jnp.array(Y), device)
+        self.Xb_ = jax.device_put(jnp.array(Xb), device)
+        self.time_ = jax.device_put(jnp.array(time), device)
+        self.neuron_ = jax.device_put(jnp.array(neurons), device)
         self.dt_ = float(np.median(dt))
 
         self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
@@ -1398,12 +1437,14 @@ class SIMPL:
             dim_Z=self.D_,
             dim_Y=self.D_,
             dim_U=self.D_,
+            batch_size=self.T_, # i.e. one long batch.
             F=F,
             B=B,
             Q=Q,
             H=H,
             R=None,
             is_1D_angular=self.is_1D_angular,
+            force_cpu=True, # Kalman almost always faster on CPU due to low per-step compute and GPU kernel overhead
         )
 
     # ──────────────────────────────────────────────────────────────────────────
