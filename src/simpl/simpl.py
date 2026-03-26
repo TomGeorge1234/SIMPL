@@ -204,9 +204,7 @@ class SIMPL:
         elif use_gpu == "if_available":
             self.use_gpu_ = gpu_available
         else:
-            raise ValueError(
-                f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}"
-            )
+            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
             device = jax.devices("gpu")[0]
@@ -517,9 +515,9 @@ class SIMPL:
                 bin_size=self.environment_.bin_size,
                 n_bins=self.N_bins_,
             )
-            pf_ds = _dict_to_dataset(
-                pf_data, self.variable_info_dict_, self.coordinates_dict_
-            ).expand_dims({"epoch": [epoch]})
+            pf_ds = _dict_to_dataset(pf_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+                {"epoch": [epoch]}
+            )
             for var in pf_ds.data_vars:
                 if var in self.results_:
                     self.results_[var] = pf_ds[var]
@@ -1507,14 +1505,14 @@ class SIMPL:
             dim_Z=self.D_,
             dim_Y=self.D_,
             dim_U=self.D_,
-            batch_size=self.T_, # i.e. one long batch.
+            batch_size=self.T_,  # i.e. one long batch.
             F=F,
             B=B,
             Q=Q,
             H=H,
             R=None,
             is_1D_angular=self.is_1D_angular,
-            force_cpu=True, # Kalman almost always faster on CPU due to low per-step compute and GPU kernel overhead
+            force_cpu=True,  # Kalman almost always faster on CPU due to low per-step compute and GPU kernel overhead
         )
 
     # ──────────────────────────────────────────────────────────────────────────
