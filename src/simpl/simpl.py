@@ -38,7 +38,7 @@ from simpl.utils import (
     cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
-    fit_gaussian,
+    fit_gaussian_batched,
     get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
@@ -1035,7 +1035,7 @@ class SIMPL:
         no_spikes = jnp.sum(Y * mask, axis=1) == 0
 
         # Fit Gaussians
-        mu_l, mode_l, sigma_l = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps))
+        mu_l, mode_l, sigma_l = fit_gaussian_batched(self.xF_, jnp.exp(logPYXF_maps))
 
         # Observation noise (inflated when no spikes)
         observation_noise = jnp.where(
@@ -1070,7 +1070,7 @@ class SIMPL:
         # Validation likelihood
         logPYXF_maps_val = poisson_log_likelihood(Y, F, mask=~mask)
         no_spikes_val = jnp.sum(Y * ~mask, axis=1) == 0
-        _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
+        _, mode_l_val, sigma_l_val = fit_gaussian_batched(self.xF_, jnp.exp(logPYXF_maps_val))
         observation_noise_val = jnp.where(
             no_spikes_val[:, None, None],
             jnp.eye(self.D_) * 1e6,

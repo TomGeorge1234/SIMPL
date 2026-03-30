@@ -174,11 +174,54 @@ def fit_gaussian(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Ar
     return mu, mode, cov
 
 
+@jax.jit
+def fit_gaussian_batched(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fits a multivariate-Gaussian to each row of a batch of likelihood arrays.
+
+    Batched version of ``fit_gaussian`` using pure matrix operations and JIT
+    compilation. Uses the identity ``Cov = E[xx^T] - mu mu^T`` to avoid creating
+    a ``(T, N_bins, D)`` intermediate.
+
+    Parameters
+    ----------
+    x : jnp.ndarray, shape (N_bins, D)
+        The position bins (shared across all time steps).
+    likelihoods : jnp.ndarray, shape (T, N_bins)
+        Likelihood values at each bin for each time step.
+
+    Returns
+    -------
+    means : jnp.ndarray, shape (T, D)
+        The mean of each fitted Gaussian.
+    modes : jnp.ndarray, shape (T, D)
+        The mode of each fitted Gaussian.
+    covariances : jnp.ndarray, shape (T, D, D)
+        The covariance of each fitted Gaussian.
+    """
+    sums = likelihoods.sum(axis=1)  # (T,)
+
+    # Mean: weighted average via matmul
+    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
+
+    # Mode: position of max likelihood
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
+
+    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
+    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
+    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
+    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
+
+    return mu, mode, cov
+
+
 def fit_gaussian_vmap(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to each row of a batch of likelihood arrays.
 
     This is the vmapped version of ``fit_gaussian``: it accepts likelihoods of
     shape ``(T, N_bins)`` and returns batched means, modes, and covariances.
+
+    .. deprecated::
+        Use :func:`fit_gaussian_batched` instead for better performance.
 
     Parameters
     ----------
