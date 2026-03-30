@@ -56,3 +56,4 @@ nav:
     - KDE: api/kde.md
     - Plotting: api/plotting.md
     - Utilities: api/utils.md
+    - Variable Registry: api/variable_registry.md

@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser(description="SIMPL GPU benchmark")
 parser.add_argument("--device", type=str, default=None, help="Force 'cpu' or 'gpu'. Env var SIMPL_DEVICE also works.")
 parser.add_argument("--T", type=int, default=3000, help="Number of timesteps")
 parser.add_argument("--N", type=int, default=100, help="Number of neurons")
-parser.add_argument("--n_epochs", type=int, default=3, help="Number of EM epochs")
+parser.add_argument("--n_iterations", type=int, default=3, help="Number of EM iterations")
 parser.add_argument("--bin_size", type=float, default=0.03, help="Spatial bin size")
 parser.add_argument("--breakdown", action="store_true", help="Run per-component timing breakdown")
 args = parser.parse_args()
@@ -91,7 +91,7 @@ def run_breakdown(Xb, Y, time_arr):
 
     # Setup: build environment bins
     model = SIMPL(kernel_bandwidth=0.04, speed_prior=0.3, bin_size=args.bin_size, env_pad=0.05)
-    model.fit(Y, Xb, time_arr, n_epochs=0, verbose=False)
+    model.fit(Y, Xb, time_arr, n_iterations=0, verbose=False)
     bins = model.xF_
     N_bins = bins.shape[0]
     print(f"  Grid: {N_bins} bins, {T} timesteps, {N} neurons, {D}D")
@@ -171,7 +171,7 @@ def main():
     print(f"JAX backend : {backend}")
     print(f"JAX devices : {devices}")
     print(f"Data size   : T={args.T}, N_neurons={args.N}, bin_size={args.bin_size}")
-    print(f"Epochs      : {args.n_epochs}")
+    print(f"Iterations  : {args.n_iterations}")
     print()
 
     # Generate data
@@ -190,21 +190,21 @@ def main():
     # Warm-up (includes JIT compilation)
     print("\nWarm-up run (includes JIT compilation)...")
     t0 = time.perf_counter()
-    model.fit(Y, Xb, time_arr, n_epochs=1, verbose=False)
+    model.fit(Y, Xb, time_arr, n_iterations=1, verbose=False)
     jax.block_until_ready(model.X_)
     t_warmup = time.perf_counter() - t0
     print(f"  Warm-up: {t_warmup:.2f}s (includes JIT compilation)")
 
     # Timed run
-    print(f"\nTimed run ({args.n_epochs} epochs)...")
+    print(f"\nTimed run ({args.n_iterations} iterations)...")
     t0 = time.perf_counter()
-    model.fit(Y, Xb, time_arr, n_epochs=args.n_epochs, verbose=False)
+    model.fit(Y, Xb, time_arr, n_iterations=args.n_iterations, verbose=False)
     jax.block_until_ready(model.X_)
     t_fit = time.perf_counter() - t0
 
-    per_epoch = t_fit / args.n_epochs
+    per_iteration = t_fit / args.n_iterations
     print(f"  Total   : {t_fit:.2f}s")
-    print(f"  Per epoch: {per_epoch:.2f}s")
+    print(f"  Per iteration: {per_iteration:.2f}s")
 
     # Predict
     print("\nPredict (decode new spikes)...")
@@ -216,8 +216,8 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"SUMMARY  [{backend.upper()}]")
-    print(f"  Warm-up (1 epoch + JIT) : {t_warmup:.2f}s")
-    print(f"  Fit ({args.n_epochs} epochs)         : {t_fit:.2f}s  ({per_epoch:.2f}s/epoch)")
+    print(f"  Warm-up (1 iteration + JIT) : {t_warmup:.2f}s")
+    print(f"  Fit ({args.n_iterations} iterations)         : {t_fit:.2f}s  ({per_iteration:.2f}s/iteration)")
     print(f"  Predict                 : {t_pred:.2f}s")
     print("=" * 60)
 

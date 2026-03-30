@@ -5,7 +5,7 @@ follows scikit-learn conventions: ``__init__`` stores hyperparameters only,
 ``fit()`` accepts data and runs the EM algorithm, and ``predict()`` decodes new
 spike data using the fitted receptive fields.
 
-Each EM epoch proceeds as:
+Each EM iteration proceeds as:
 
 1. **E-step** — Kalman filter/smoother decodes latent positions from spike
    observations.
@@ -86,8 +86,8 @@ class SIMPL:
            latent trajectory.
 
         This procedure is reminiscent of (indeed, theoretically equivalent to, see paper) the
-        EM algorithm for latent variable optimisation. Epoch 0 runs the M-step only on the
-        behavioral initialisation trajectory ``Xb``. Subsequent epochs alternate E-step and
+        EM algorithm for latent variable optimisation. Iteration 0 runs the M-step only on the
+        behavioral initialisation trajectory ``Xb``. Subsequent iterations alternate E-step and
         M-step.
 
         Terminology
@@ -165,7 +165,7 @@ class SIMPL:
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
-        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.fit(Y, Xb, time, n_iterations=5)
         >>> print(model.X_.shape)  # decoded latent positions
         >>> print(model.F_.shape)  # fitted receptive fields
         """
@@ -223,7 +223,7 @@ class SIMPL:
         Y: np.ndarray,
         Xb: np.ndarray,
         time: np.ndarray,
-        n_epochs: int = 5,
+        n_iterations: int = 5,
         trial_boundaries: np.ndarray | None = None,
         align_to_behavior: bool | str = "trajectory",
         resume: bool = False,
@@ -237,20 +237,20 @@ class SIMPL:
 
         1. **Setup** — validates inputs, creates the ``Environment`` (spatial discretisation
            grid), sets up the Kalman filter, and builds the speckled validation mask.
-        2. **Epoch 0** — runs the M-step only on the behavioral trajectory ``Xb`` to produce
+        2. **Iteration 0** — runs the M-step only on the behavioral trajectory ``Xb`` to produce
            the initial receptive fields. Prints a data summary and spatial information
            diagnostics (if ``verbose=True``).
-        3. **Epochs 1..n_epochs** — alternates E-step (Kalman decoding using current receptive
+        3. **Iterations 1..n_iterations** — alternates E-step (Kalman decoding using current receptive
            fields) and M-step (KDE re-fitting of receptive fields from updated trajectory).
 
         After fitting, results are available via:
 
         - ``self.X_`` — the final decoded latent positions, shape (T, D).
         - ``self.F_`` — the final receptive fields, shape (N_neurons, N_bins).
-        - ``self.results_`` — full ``xarray.Dataset`` with all epochs, metrics, and
+        - ``self.results_`` — full ``xarray.Dataset`` with all iterations, metrics, and
           intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
           stability, etc.).
-        - ``self.loglikelihoods_`` — per-epoch train/validation log-likelihoods.
+        - ``self.loglikelihoods_`` — per-iteration train/validation log-likelihoods.
 
         Parameters
         ----------
@@ -265,9 +265,9 @@ class SIMPL:
             Time stamps (in seconds) for each time bin. Values should be uniformly
             increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically
             inferred as ``median(diff(time))``.
-        n_epochs : int, optional
-            Number of EM epochs to train after epoch 0. Set to 0 to run only the initial
-            M-step (useful for manual epoch control via ``_fit_epoch()``). By default 5.
+        n_iterations : int, optional
+            Number of EM iterations to train after iteration 0. Set to 0 to run only the initial
+            M-step (useful for manual iteration control via ``_fit_iteration()``). By default 5.
         trial_boundaries : np.ndarray or None, optional
             Array of indices where new trials start, e.g. ``[0, 1000, 2000]``. The first
             element must be 0. The Kalman filter runs independently within each trial to
@@ -291,14 +291,14 @@ class SIMPL:
             By default False.
         save_full_history : bool, optional
             Controls storage of large per-timestep arrays. When False
-            (the default), the per-epoch firing rate trajectories ``FX`` are not stored and ``logPYXF_maps`` is
-            not stored at all. When True, ``FX`` is stored for every epoch and
-            ``logPYXF_maps`` is stored for the last epoch only (due to its huge size).
+            (the default), the per-iteration firing rate trajectories ``FX`` are not stored and ``logPYXF_maps`` is
+            not stored at all. When True, ``FX`` is stored for every iteration and
+            ``logPYXF_maps`` is stored for the last iteration only (due to its huge size).
             Metrics, receptive fields, decoded trajectories, and Kalman outputs are
-            unaffected and stored for every epoch regardless. By default False.
+            unaffected and stored for every iteration regardless. By default False.
         early_stopping : bool, optional
             If True, training stops early when the validation log-likelihood has not improved
-            for 3 consecutive epochs. By default True.
+            for 3 consecutive iterations. By default True.
         verbose : bool or None, optional
             Override the instance-level ``verbose`` setting for this call. If None, uses the
             value set at ``__init__``. By default None.
@@ -319,43 +319,43 @@ class SIMPL:
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4)
-        >>> model.fit(Y, Xb, time, n_epochs=5)
-        >>> print(model.results_)  # xarray Dataset with all epochs
+        >>> model.fit(Y, Xb, time, n_iterations=5)
+        >>> print(model.results_)  # xarray Dataset with all iterations
 
-        Resume training for more epochs:
+        Resume training for more iterations:
 
-        >>> model.fit(Y, Xb, time, n_epochs=3, resume=True)
+        >>> model.fit(Y, Xb, time, n_iterations=3, resume=True)
         """
         self.save_full_history_ = save_full_history
 
         if resume:
             if not self.is_fitted_:
                 raise RuntimeError("Cannot resume: model has not been fitted yet. Call fit() first.")
-            self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
-            self.results_["FX_lastepoch"] = _dict_to_dataset(
-                {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-            )["FX_lastepoch"]
+            self._fit_N_iterations(n_iterations, early_stopping=early_stopping, verbose=verbose)
+            self.results_["FX_last_iteration"] = _dict_to_dataset(
+                {"FX_last_iteration": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+            )["FX_last_iteration"]
             self.X_ = self.E_["X"]
             self.F_ = self.M_["F"]
             return self
 
         self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior, verbose)
 
-        # ── Run epoch 0 (M-step on behavioral trajectory) ──
-        self._run_epoch_zero(verbose)
+        # ── Run iteration 0 (M-step on behavioral trajectory) ──
+        self._run_iteration_zero(verbose)
 
-        # ── Train for n_epochs ──
-        self._fit_N_epochs(n_epochs, early_stopping=early_stopping, verbose=verbose)
+        # ── Train for n_iterations ──
+        self._fit_N_iterations(n_iterations, early_stopping=early_stopping, verbose=verbose)
 
-        # ── Attach FX_firstepoch and FX_lastepoch (always, without epoch dim) ──
-        self.results_["FX_firstepoch"] = _dict_to_dataset(
-            {"FX_firstepoch": self.FX_firstepoch_}, self.variable_info_dict_, self.coordinates_dict_
-        )["FX_firstepoch"]
-        self.results_["FX_lastepoch"] = _dict_to_dataset(
-            {"FX_lastepoch": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
-        )["FX_lastepoch"]
+        # ── Attach FX_first_iteration and FX_last_iteration (always, without iteration dim) ──
+        self.results_["FX_first_iteration"] = _dict_to_dataset(
+            {"FX_first_iteration": self.FX_first_iteration_}, self.variable_info_dict_, self.coordinates_dict_
+        )["FX_first_iteration"]
+        self.results_["FX_last_iteration"] = _dict_to_dataset(
+            {"FX_last_iteration": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
+        )["FX_last_iteration"]
 
-        # ── Attach logPYXF_maps for the final epoch only (too large to store per epoch) ──
+        # ── Attach logPYXF_maps for the final iteration only (too large to store per iteration) ──
         if self.save_full_history_:
             self.results_["logPYXF_maps"] = _dict_to_dataset(
                 {"logPYXF_maps": self.E_["logPYXF_maps"]}, self.variable_info_dict_, self.coordinates_dict_
@@ -366,7 +366,7 @@ class SIMPL:
         self.F_ = self.M_["F"]
         self.is_fitted_ = True
 
-        # ── Compute baseline epochs if ground truth was registered before fit ──
+        # ── Compute baseline iterations if ground truth was registered before fit ──
         if self.ground_truth_available_:
             self._apply_baselines_to_results()
 
@@ -421,7 +421,7 @@ class SIMPL:
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4)
-        >>> model.fit(Y_train, Xb_train, time_train, n_epochs=5)
+        >>> model.fit(Y_train, Xb_train, time_train, n_iterations=5)
         >>> X_decoded = model.predict(Y_test)
         >>> sigma = model.prediction_results_["sigma_s"]  # smoothed covariances
         """
@@ -456,7 +456,7 @@ class SIMPL:
 
         return X_decoded
 
-    def analyse_place_fields(self, epochs: list[int] | None = None) -> "SIMPL":
+    def analyse_place_fields(self, iterations: list[int] | None = None) -> "SIMPL":
         """Run place field morphology analysis and add results to ``self.results_``.
 
         Identifies individual place fields in each neuron's receptive field
@@ -470,9 +470,9 @@ class SIMPL:
 
         Parameters
         ----------
-        epochs : list of int, optional
-            Which epochs to analyse. If None (default), analyses only the
-            final epoch.
+        iterations : list of int, optional
+            Which iterations to analyse. If None (default), analyses only the
+            final iteration.
 
         Returns
         -------
@@ -489,7 +489,7 @@ class SIMPL:
         Examples
         --------
         >>> model = SIMPL(speed_prior=0.4)
-        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.fit(Y, Xb, time, n_iterations=5)
         >>> model.analyse_place_fields()
         >>> print(model.results_["place_field_count"])
         """
@@ -498,11 +498,11 @@ class SIMPL:
         if self.environment_.D != 2:
             raise ValueError("Place field analysis is only supported for 2D environments.")
 
-        if epochs is None:
-            epochs = [int(self.results_.epoch.values[-1])]
+        if iterations is None:
+            iterations = [int(self.results_.iteration.values[-1])]
 
-        for epoch in epochs:
-            F = self.results_["F"].sel(epoch=epoch).values
+        for iteration in iterations:
+            F = self.results_["F"].sel(iteration=iteration).values
             F_jax = jnp.array(F)
             pf_data = analyse_place_fields(
                 F_jax,
@@ -516,7 +516,7 @@ class SIMPL:
                 n_bins=self.N_bins_,
             )
             pf_ds = _dict_to_dataset(pf_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-                {"epoch": [epoch]}
+                {"iteration": [iteration]}
             )
             for var in pf_ds.data_vars:
                 if var in self.results_:
@@ -536,17 +536,17 @@ class SIMPL:
 
         Can be called **before** or **after** ``fit()``:
 
-        - **Before fit** — ground truth positions ``Xt`` are stored so that per-epoch
+        - **Before fit** — ground truth positions ``Xt`` are stored so that per-iteration
           metrics like ``X_R2`` and ``X_err`` are computed during training. Baseline
-          epochs (-1, -2) are computed automatically at the end of ``fit()``.
-        - **After fit** — baseline epochs are computed immediately and appended to
+          iterations (-1, -2) are computed automatically at the end of ``fit()``.
+        - **After fit** — baseline iterations are computed immediately and appended to
           ``self.results_``.
 
-        Two special baseline epochs are created:
+        Two special baseline iterations are created:
 
-        - **Epoch -1 ("best")** — Receptive fields fit via KDE to the *true* positions
+        - **Iteration -1 ("best")** — Receptive fields fit via KDE to the *true* positions
           ``Xt``, representing the best KDE model given perfect position knowledge.
-        - **Epoch -2 ("exact")** — The exact ground truth fields ``Ft`` are used directly
+        - **Iteration -2 ("exact")** — The exact ground truth fields ``Ft`` are used directly
           (only if provided).
 
         Parameters
@@ -572,12 +572,12 @@ class SIMPL:
 
         >>> model = SIMPL()
         >>> model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"x": xbins, "y": ybins})
-        >>> model.fit(Y, Xb, time, n_epochs=5)
-        >>> print(model.results_.X_R2)  # R² vs ground truth, per epoch
+        >>> model.fit(Y, Xb, time, n_iterations=5)
+        >>> print(model.results_.X_R2)  # R² vs ground truth, per iteration
 
-        Or call after fit (baseline epochs computed immediately):
+        Or call after fit (baseline iterations computed immediately):
 
-        >>> model.fit(Y, Xb, time, n_epochs=5)
+        >>> model.fit(Y, Xb, time, n_iterations=5)
         >>> model.add_baselines(Xt=Xt)
         """
         # Store raw arrays (processed later in _apply_baselines_to_results)
@@ -603,7 +603,7 @@ class SIMPL:
         self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
 
     def _apply_baselines_to_results(self) -> None:
-        """Process stored ground truth and compute baseline epochs."""
+        """Process stored ground truth and compute baseline iterations."""
         Xt = self._Xt_raw
         if Xt.shape[0] != self.T_:
             raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
@@ -645,7 +645,7 @@ class SIMPL:
         # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
         M_best = self._M_step(self.Y_, self.Xt_)
         E_best = self._E_step(self.Y_, M_best["F"])
-        self._append_baseline_epoch(M_best, E_best, epoch_id=-1)
+        self._append_baseline_iteration(M_best, E_best, iteration_id=-1)
 
         if self.Ft_ is not None:
             # EXACT MODEL: Ft (use the exact receptive fields)
@@ -655,27 +655,30 @@ class SIMPL:
                 "PX": M_best["PX"],
             }
             E_exact = self._E_step(self.Y_, self.Ft_)
-            self._append_baseline_epoch(M_exact, E_exact, epoch_id=-2)
-            self.results_ = self.results_.sortby("epoch")
+            self._append_baseline_iteration(M_exact, E_exact, iteration_id=-2)
+            self.results_ = self.results_.sortby("iteration")
         else:
             warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
 
-        # Backfill F_err for training epochs now that Ft_ is available
+        # Backfill F_err for training iterations now that Ft_ is available
         if self.Ft_ is not None and "F_err" in self.results_:
             f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
-            for i, ep in enumerate(self.results_.epoch.values):
+            for i, ep in enumerate(self.results_.iteration.values):
                 if ep >= 0:
-                    F_ep = jnp.array(self.results_.F.sel(epoch=ep).values.reshape(self.N_neurons_, self.N_bins_))
+                    F_ep = jnp.array(self.results_.F.sel(iteration=ep).values.reshape(self.N_neurons_, self.N_bins_))
                     f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
             self.results_["F_err"] = xr.DataArray(
-                f_err_vals, dims=("epoch",), coords={"epoch": self.results_.epoch}, attrs=self.results_["F_err"].attrs
+                f_err_vals,
+                dims=("iteration",),
+                coords={"iteration": self.results_.iteration},
+                attrs=self.results_["F_err"].attrs,
             )
 
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
 
         The saved file can be loaded back with ``simpl.load_results(path)``, which returns
-        an ``xarray.Dataset`` with all epochs, metrics, and fitted variables.
+        an ``xarray.Dataset`` with all iterations, metrics, and fitted variables.
 
         Parameters
         ----------
@@ -718,7 +721,7 @@ class SIMPL:
     def plot_latent_trajectory(
         self,
         time_range: tuple[float, float] | None = None,
-        epochs: int | tuple[int, ...] | None = None,
+        iterations: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -728,9 +731,9 @@ class SIMPL:
         ----------
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-        epochs : int or tuple of ints, optional
-            Which epoch(s) to show.  Negative values index from the end
-            (``-1`` = last epoch).  Default: all epochs.
+        iterations : int or tuple of ints, optional
+            Which iteration(s) to show.  Negative values index from the end
+            (``-1`` = last iteration).  Default: all iterations.
         include_ground_truth : bool
             Show ``Xt`` as ``"k--"`` if present.
         **plot_kwargs
@@ -746,14 +749,14 @@ class SIMPL:
         return plot_latent_trajectory(
             self.results_,
             time_range=time_range,
-            epochs=epochs,
+            iterations=iterations,
             include_ground_truth=include_ground_truth,
             **plot_kwargs,
         )
 
     def plot_receptive_fields(
         self,
-        epochs: int | tuple[int, ...] | None = None,
+        iterations: int | tuple[int, ...] | None = None,
         neurons: list[int] | np.ndarray | None = None,
         include_baselines: bool = False,
         sort_by_spatial_information: bool = False,
@@ -764,16 +767,16 @@ class SIMPL:
 
         Parameters
         ----------
-        epochs : int or tuple of int, optional
-            Which epoch(s) to show.  Negative values index from the end
-            (``-1`` = last epoch).  Default: ``(0, -1)``.
+        iterations : int or tuple of int, optional
+            Which iteration(s) to show.  Negative values index from the end
+            (``-1`` = last iteration).  Default: ``(0, -1)``.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
         include_baselines : bool
-            Show ground-truth fields (``Ft``) if present, else ``F`` at epoch -1.
+            Show ground-truth fields (``Ft``) if present, else ``F`` at iteration -1.
         sort_by_spatial_information : bool
             If ``True``, reorder neurons so that the most spatially informative
-            appear first (uses the last training epoch).
+            appear first (uses the last training iteration).
         ncols : int
             Maximum number of neuron-columns in the grid.
         **plot_kwargs
@@ -792,7 +795,7 @@ class SIMPL:
         return plot_receptive_fields(
             self.results_,
             extent=extent,
-            epochs=epochs,
+            iterations=iterations,
             neurons=neurons,
             include_baselines=include_baselines,
             sort_by_spatial_information=sort_by_spatial_information,
@@ -806,7 +809,7 @@ class SIMPL:
         ncols: int = 3,
         **plot_kwargs,
     ) -> np.ndarray:
-        """Auto-discover and plot all per-epoch metrics.
+        """Auto-discover and plot all per-iteration metrics.
 
         Parameters
         ----------
@@ -844,7 +847,7 @@ class SIMPL:
             Subset of neuron indices to display.  Default: all neurons.
         sort_by_spatial_information : bool
             If ``True``, reorder neurons so that the most spatially informative
-            appear at the top of the heatmap (uses the last training epoch).
+            appear at the top of the heatmap (uses the last training iteration).
         cmap : str
             Colormap for ``imshow``.  Default: ``"Greys"``.
         **plot_kwargs
@@ -1020,7 +1023,7 @@ class SIMPL:
         -------
         dict
             Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
-            logPYF, logPYF_val, and optionally logPYXF_maps.
+            and optionally logPYXF_maps.
         """
         T = Y.shape[0]
         if mask is None:
@@ -1064,22 +1067,6 @@ class SIMPL:
             is_trial_end=is_trial_end,
         )
 
-        # Likelihoods (full arrays, single sum)
-        logPYF = self.kalman_filter_.loglikelihood(Y=mode_l, R=observation_noise, mu=mu_s, sigma=sigma_s).sum()
-
-        # Validation likelihood
-        logPYXF_maps_val = poisson_log_likelihood(Y, F, mask=~mask)
-        no_spikes_val = jnp.sum(Y * ~mask, axis=1) == 0
-        _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
-        observation_noise_val = jnp.where(
-            no_spikes_val[:, None, None],
-            jnp.eye(self.D_) * 1e6,
-            sigma_l_val,
-        )
-        logPYF_val = self.kalman_filter_.loglikelihood(
-            Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
-        ).sum()
-
         E = {
             "mu_l": mu_l,
             "mode_l": mode_l,
@@ -1088,8 +1075,6 @@ class SIMPL:
             "sigma_f": sigma_f,
             "mu_s": mu_s,
             "sigma_s": sigma_s,
-            "logPYF": logPYF,
-            "logPYF_val": logPYF_val,
         }
         E["logPYXF_maps"] = logPYXF_maps
 
@@ -1099,16 +1084,16 @@ class SIMPL:
     # Training loop
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _fit_epoch(self) -> None:
-        """Run a single epoch of the EM algorithm (E-step then M-step).
+    def _fit_iteration(self) -> None:
+        """Run a single iteration of the EM algorithm (E-step then M-step).
 
-        This is the low-level method for manual epoch control. It increments the epoch
-        counter, runs the E-step (Kalman decoding — skipped at epoch 0), then the M-step
+        This is the low-level method for manual iteration control. It increments the iteration
+        counter, runs the E-step (Kalman decoding — skipped at iteration 0), then the M-step
         (KDE receptive field fitting), and stores the results. The convenience attributes
         ``self.X_`` and ``self.F_`` are updated after each call.
 
         Must be called after ``fit()`` has been called at least once (at minimum with
-        ``n_epochs=0`` to set up all internal state).
+        ``n_iterations=0`` to set up all internal state).
 
         Raises
         ------
@@ -1118,11 +1103,11 @@ class SIMPL:
         if not hasattr(self, "Y_"):
             raise RuntimeError("Model has not been fitted yet. Call fit() first.")
 
-        # ── Increment epoch ──
-        self.epoch_ += 1
+        # ── Increment iteration ──
+        self.iteration_ += 1
 
         # ── E-step ──
-        if self.epoch_ == 0:
+        if self.iteration_ == 0:
             self.E_ = {"X": self.Xb_}
         else:
             assert self.lastF_ is not None
@@ -1133,18 +1118,18 @@ class SIMPL:
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
         # ── Evaluate and save results ──
-        self._evaluate_epoch()
+        self._evaluate_iteration()
         ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
         loglikelihoods = _dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-            {"epoch": [self.epoch_]}
+            {"iteration": [self.iteration_]}
         )
         self.loglikelihoods_ = xr.concat(
             [self.loglikelihoods_, loglikelihoods],
-            dim="epoch",
+            dim="iteration",
             data_vars="minimal",
         )
 
-        # ── Store for next epoch ──
+        # ── Store for next iteration ──
         self.lastF_ = self.M_["F"]
         self.lastX_ = self.E_["X"]
 
@@ -1152,12 +1137,12 @@ class SIMPL:
         self.X_ = self.E_["X"]
         self.F_ = self.M_["F"]
 
-    def _evaluate_epoch(self) -> None:
-        """Evaluate the current epoch's metrics and append to the results Dataset.
+    def _evaluate_iteration(self) -> None:
+        """Evaluate the current iteration's metrics and append to the results Dataset.
 
         Computes log-likelihoods, spatial information, stability, place field analysis,
         and (if ground truth is available) R², trajectory error, and field error. The
-        results are stored under the current epoch in ``self.results_``.
+        results are stored under the current iteration in ``self.results_``.
         """
         evals = self._get_metrics(
             X=self.E_["X"],
@@ -1172,64 +1157,64 @@ class SIMPL:
             Ft=self.Ft_,
             PX=self.M_["PX"],
         )
-        epoch_data = {**self.M_, **self.E_, **evals}
+        iteration_data = {**self.M_, **self.E_, **evals}
         if not self.save_full_history_:
-            epoch_data.pop("FX", None)
-        epoch_data.pop("logPYXF_maps", None)
-        results = _dict_to_dataset(epoch_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-            {"epoch": [self.epoch_]}
+            iteration_data.pop("FX", None)
+        iteration_data.pop("logPYXF_maps", None)
+        results = _dict_to_dataset(iteration_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+            {"iteration": [self.iteration_]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
 
-    def _fit_N_epochs(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
-        """Train for N epochs with KeyboardInterrupt and early stopping support."""
+    def _fit_N_iterations(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
+        """Train for N iterations with KeyboardInterrupt and early stopping support."""
         if N <= 0:
             return
         patience = 3
         best_val_ll = -np.inf
-        epochs_without_improvement = 0
-        self._print_epoch_summary()
+        iterations_without_improvement = 0
+        self._print_iteration_summary()
         for _ in range(N):
             try:
-                self._fit_epoch()
+                self._fit_iteration()
                 if verbose:
-                    self._print_epoch_summary()
+                    self._print_iteration_summary()
                 if early_stopping:
-                    val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=self.epoch_).values)
+                    val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=self.iteration_).values)
                     if val_ll > best_val_ll:
                         best_val_ll = val_ll
-                        epochs_without_improvement = 0
+                        iterations_without_improvement = 0
                     else:
-                        epochs_without_improvement += 1
-                        if epochs_without_improvement >= patience:
+                        iterations_without_improvement += 1
+                        if iterations_without_improvement >= patience:
                             if verbose:
                                 print(
                                     f"  Early stopping: validation log-likelihood has not "
-                                    f"improved for {patience} epochs."
+                                    f"improved for {patience} iterations."
                                 )
                             break
             except KeyboardInterrupt:
-                print(f"Training interrupted after {self.epoch_} epochs.")
+                print(f"Training interrupted after {self.iteration_} iterations.")
                 break
 
-    def _run_epoch_zero(self, verbose: bool) -> None:
-        """Run epoch 0 (M-step on behavioral trajectory) and print diagnostics."""
-        _epoch0_done = threading.Event()
+    def _run_iteration_zero(self, verbose: bool) -> None:
+        """Run iteration 0 (M-step on behavioral trajectory) and print diagnostics."""
+        _iter0_done = threading.Event()
 
         def _delayed_message():
-            if not _epoch0_done.wait(3):
-                print("  ...[estimating spatial receptive fields from Xb (epoch 0)]")
+            if not _iter0_done.wait(3):
+                print("  ...[estimating spatial receptive fields from Xb (iteration 0)]")
 
         _timer = threading.Thread(target=_delayed_message, daemon=True)
         _timer.start()
-        self._fit_epoch()
-        self.FX_firstepoch_ = self.M_["FX"]
+        self._fit_iteration()
+        self.FX_first_iteration_ = self.M_["FX"]
         if self.align_mode_ == "fields":
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
-        _epoch0_done.set()
+        _iter0_done.set()
 
         if verbose:
-            si = np.array(self.results_.spatial_information.sel(epoch=0))
+            si = np.array(self.results_.spatial_information.sel(iteration=0))
             info_rate = float(si.sum())
             si_min = float(si.min())
             si_q25 = float(np.percentile(si, 25))
@@ -1264,8 +1249,8 @@ class SIMPL:
                     "spike density, or add more neurons."
                 )
 
-    def _append_baseline_epoch(self, M: dict, E: dict, epoch_id: int) -> None:
-        """Evaluate a baseline model and append it as a single epoch to results."""
+    def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
+        """Evaluate a baseline model and append it as a single iteration to results."""
         evals = self._get_metrics(
             X=E["X"],
             F=M["F"],
@@ -1284,9 +1269,9 @@ class SIMPL:
             data.pop("FX", None)
         data.pop("logPYXF_maps", None)
         results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-            {"epoch": [epoch_id]}
+            {"iteration": [iteration_id]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="epoch", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Initialisation
@@ -1442,7 +1427,7 @@ class SIMPL:
         self._kde = kde_angular if self.is_1D_angular else kde
 
         self.lastF_, self.lastX_ = None, None
-        self.epoch_ = -1
+        self.iteration_ = -1
 
         # ── Build coordinate system and variable registry ──
         self.dim_ = self.environment_.dim
@@ -1457,14 +1442,14 @@ class SIMPL:
         }
 
         # ── Initialise empty results datasets ──
-        self.results_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
+        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
         self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
             [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
             compat="override",
         )
-        self.loglikelihoods_ = xr.Dataset(coords={"epoch": jnp.array([], dtype=int)})
+        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
 
         # Preserve ground truth if add_baselines was called before fit
         if not getattr(self, "ground_truth_available_", False):
@@ -1542,27 +1527,27 @@ class SIMPL:
         print()
         print_data_summary(data)
 
-    def _print_epoch_summary(self) -> None:
-        """Print a one-line summary of the current epoch's metrics."""
-        e = self.epoch_
+    def _print_iteration_summary(self) -> None:
+        """Print a one-line summary of the current iteration's metrics."""
+        e = self.iteration_
         try:
-            train_ll = float(self.loglikelihoods_.logPYXF.sel(epoch=e).values)
-            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=e).values)
-            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(epoch=e).values)
-            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(epoch=e).values)
-            si = float(self.results_.spatial_information.sel(epoch=e).mean().values)
+            train_ll = float(self.loglikelihoods_.logPYXF.sel(iteration=e).values)
+            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
+            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
+            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
+            si = float(self.results_.spatial_information.sel(iteration=e).mean().values)
             parts = [
-                f"Epoch {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
+                f"Iteration {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
                 f"bits/spike(train={bps_train:.4f}, val={bps_val:.4f})",
                 f"spatial_info={si:.4f} bits/s/neuron",
             ]
             print("     ".join(parts))
             if e > 0:
-                epoch0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(epoch=0).values)
-                if val_ll < epoch0_val_ll:
-                    print("    WARNING: validation LL below epoch 0. Model may be overfitting.")
+                iter0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values)
+                if val_ll < iter0_val_ll:
+                    print("    WARNING: validation LL below iteration 0. Model may be overfitting.")
         except Exception:
-            print(f"Epoch {e}")
+            print(f"Iteration {e}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Utilities and static methods
@@ -1651,7 +1636,7 @@ class SIMPL:
         Ft: jax.Array | None = None,
         PX: jax.Array | None = None,
     ) -> dict:
-        """Calculate metrics on the current epoch's results.
+        """Calculate metrics on the current iteration's results.
 
         This is a relaxed function: pass in whatever data you have and it will return
         whatever metrics it can calculate.
@@ -1671,9 +1656,9 @@ class SIMPL:
         F_even_mins : jnp.ndarray, optional
             Place fields from even minutes.
         X_prev : jnp.ndarray, optional
-            Latent positions from previous epoch.
+            Latent positions from previous iteration.
         F_prev : jnp.ndarray, optional
-            Place fields from previous epoch.
+            Place fields from previous iteration.
         Xt : jnp.ndarray, optional
             True latent positions.
         Ft : jnp.ndarray, optional

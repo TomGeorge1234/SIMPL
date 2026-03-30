@@ -12,6 +12,7 @@ from simpl.plotting import (
     plot_latent_trajectory,
     plot_prediction,
     plot_receptive_fields,
+    plot_spikes,
 )
 from simpl.simpl import SIMPL
 
@@ -28,7 +29,7 @@ def fitted_model(demo_data):
         Y=demo_data["Y"][:N, :N_neurons],
         Xb=demo_data["Xb"][:N],
         time=demo_data["time"][:N],
-        n_epochs=1,
+        n_iterations=1,
     )
     return model
 
@@ -74,15 +75,15 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
-    def test_single_epoch(self, results):
-        axes = plot_latent_trajectory(results, epochs=1)
+    def test_single_iteration(self, results):
+        axes = plot_latent_trajectory(results, iterations=1)
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
         plt.close("all")
 
-    def test_epoch_tuple(self, results):
-        axes = plot_latent_trajectory(results, epochs=(0, 1))
+    def test_iteration_tuple(self, results):
+        axes = plot_latent_trajectory(results, iterations=(0, 1))
         assert len(axes) == len(results.dim.values)
         import matplotlib.pyplot as plt
 
@@ -106,52 +107,52 @@ class TestPlotReceptiveFields:
         plt.close("all")
 
     @pytest.mark.filterwarnings("ignore:Exact place fields not provided")
-    def test_include_baselines_fallback_epoch_minus1(self, demo_data):
-        """When Ft is absent but epoch -1 exists, should show 'Best' column from F.sel(epoch=-1)."""
+    def test_include_baselines_fallback_iteration_minus1(self, demo_data):
+        """When Ft is absent but iteration -1 exists, should show 'Best' column from F.sel(iteration=-1)."""
         import matplotlib.pyplot as plt
 
         N, N_neurons = 2000, 10
         model = SIMPL(bin_size=0.02, env_pad=0.0)
-        # add_baselines with Xt only (no Ft) so epoch -1 is computed but Ft is not stored
+        # add_baselines with Xt only (no Ft) so iteration -1 is computed but Ft is not stored
         model.add_baselines(Xt=demo_data["Xb"][:N])
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
             time=demo_data["time"][:N],
-            n_epochs=1,
+            n_iterations=1,
         )
         res = model.results_
         assert "Ft" not in res, "Ft should not be in results when only Xt is provided"
-        assert -1 in res.epoch.values, "Epoch -1 should exist from add_baselines(Xt=...)"
+        assert -1 in res.iteration.values, "Iteration -1 should exist from add_baselines(Xt=...)"
 
-        # include_baselines=True should use the F.sel(epoch=-1) fallback
+        # include_baselines=True should use the F.sel(iteration=-1) fallback
         axes = plot_receptive_fields(res, neurons=[0], include_baselines=True)
         # 3 columns: Ep 0 + Ep 1 + Best
         assert axes.shape == (1, 3)
         plt.close("all")
 
-    def test_single_epoch_int(self, results):
-        """Single int epoch should show one epoch column per neuron."""
-        axes = plot_receptive_fields(results, neurons=[0], epochs=1)
-        # columns: Beh + Ep 1 = 2 (since epoch=1, include_behavior adds Beh)
+    def test_single_iteration_int(self, results):
+        """Single int iteration should show one iteration column per neuron."""
+        axes = plot_receptive_fields(results, neurons=[0], iterations=1)
+        # columns: Beh + Ep 1 = 2 (since iteration=1, include_behavior adds Beh)
         import matplotlib.pyplot as plt
 
         assert axes.ndim == 2
         plt.close("all")
 
-    def test_epoch_tuple(self, results):
-        """Tuple of epochs should show one column per epoch per neuron."""
-        axes = plot_receptive_fields(results, neurons=[0], epochs=(0, 1))
-        # columns: Ep 0 (behavior) + Ep 1 = 2 (0 is in epochs, so no extra Beh col)
+    def test_iteration_tuple(self, results):
+        """Tuple of iterations should show one column per iteration per neuron."""
+        axes = plot_receptive_fields(results, neurons=[0], iterations=(0, 1))
+        # columns: Ep 0 (behavior) + Ep 1 = 2 (0 is in iterations, so no extra Beh col)
         import matplotlib.pyplot as plt
 
         assert axes.ndim == 2
         plt.close("all")
 
-    def test_epoch_none_shows_first_and_last(self, results):
-        """Default epoch=None should show epoch 0 and last."""
+    def test_iteration_none_shows_first_and_last(self, results):
+        """Default iteration=None should show iteration 0 and last."""
         axes = plot_receptive_fields(results, neurons=[0])
-        # epoch=None -> (0, 1), no extra Beh col since 0 in epochs -> 2 data cols
+        # iteration=None -> (0, 1), no extra Beh col since 0 in iterations -> 2 data cols
         import matplotlib.pyplot as plt
 
         assert axes.ndim == 2
@@ -159,8 +160,8 @@ class TestPlotReceptiveFields:
 
     def test_spacer_and_unused_axes_off(self, results):
         """With multiple neuron groups, spacer and trailing axes should be turned off."""
-        axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, epochs=1)
-        # epochs=1 → 1 col per neuron, ncols=2 → 2 neuron groups per row
+        axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, iterations=1)
+        # iterations=1 → 1 col per neuron, ncols=2 → 2 neuron groups per row
         # total cols = 2*1 + 1 spacer = 3, total rows = 2
         import matplotlib.pyplot as plt
 
@@ -185,6 +186,30 @@ class TestPlotAllMetrics:
         assert axes.size > 0
         import matplotlib.pyplot as plt
 
+        plt.close("all")
+
+
+class TestPlotSpikes:
+    def test_returns_axes(self, results):
+        ax = plot_spikes(results)
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
+        plt.close("all")
+
+    def test_custom_time_range(self, results):
+        t0 = float(results.time.values[0])
+        ax = plot_spikes(results, time_range=(t0, t0 + 10))
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
+        plt.close("all")
+
+    def test_neuron_subset(self, results):
+        ax = plot_spikes(results, neurons=[0, 1])
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
         plt.close("all")
 
     def test_custom_ncols(self, results):
@@ -301,7 +326,7 @@ class TestHighDimensionalError:
 
         # Build a minimal fake 3D dataset
         fake = xr.Dataset(
-            coords={"dim": ["x", "y", "z"], "epoch": [0], "neuron": [0]},
+            coords={"dim": ["x", "y", "z"], "iteration": [0], "neuron": [0]},
         )
         with pytest.raises(ValueError, match="only supports 1-D and 2-D"):
             plot_receptive_fields(fake, neurons=[0])
