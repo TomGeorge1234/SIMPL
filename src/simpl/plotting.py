@@ -252,7 +252,7 @@ def _plot_trajectory_panel(
         ax = axes[i]
         if trial_boundary_times is not None:
             for tb in trial_boundary_times:
-                ax.axvspan(tb[0], tb[1], color="0.85", zorder=0)
+                ax.axvspan(tb[0], tb[1], color="0.85", zorder=3)
         for X, style in traces:
             ax.plot(t, X[:, i], **style, **plot_kwargs)
         if Xt is not None:
