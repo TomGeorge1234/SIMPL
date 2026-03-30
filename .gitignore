@@ -17,3 +17,7 @@ uv.lock
 site/
 _version.py
 *.npz
+*.mov
+*.mp4
+*.gif
+!simpl.gif
