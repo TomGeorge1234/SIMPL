@@ -15,11 +15,8 @@ every variable that SIMPL can produce.
 ::: simpl._variable_registry
     options:
       show_root_heading: false
-      show_module_summary: true
       members:
         - _build_variable_info_dict
         - _dict_to_dataset
       show_if_no_docstring: false
       docstring_style: numpy
-      filters:
-        - "!^_(?!build|dict)"
