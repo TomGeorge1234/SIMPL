@@ -12,6 +12,7 @@ from simpl.plotting import (
     plot_latent_trajectory,
     plot_prediction,
     plot_receptive_fields,
+    plot_spikes,
 )
 from simpl.simpl import SIMPL
 
@@ -185,6 +186,30 @@ class TestPlotAllMetrics:
         assert axes.size > 0
         import matplotlib.pyplot as plt
 
+        plt.close("all")
+
+
+class TestPlotSpikes:
+    def test_returns_axes(self, results):
+        ax = plot_spikes(results)
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
+        plt.close("all")
+
+    def test_custom_time_range(self, results):
+        t0 = float(results.time.values[0])
+        ax = plot_spikes(results, time_range=(t0, t0 + 10))
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
+        plt.close("all")
+
+    def test_neuron_subset(self, results):
+        ax = plot_spikes(results, neurons=[0, 1])
+        import matplotlib.pyplot as plt
+
+        assert ax is not None
         plt.close("all")
 
     def test_custom_ncols(self, results):

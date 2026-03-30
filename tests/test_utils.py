@@ -12,12 +12,14 @@ from simpl.utils import (
     _circular_conv_fft_1d,
     _wrap_minuspi_pi,
     accumulate_spikes,
+    analyse_place_fields,
     calculate_spatial_information,
     cca,
     coarsen_dt,
     coefficient_of_determination,
     correlation_at_lag,
     create_speckled_mask,
+    find_time_jumps,
     fit_gaussian,
     fit_gaussian_vmap,
     gaussian_norm_const,
@@ -439,3 +441,108 @@ class TestCircularHelpers:
         k = k.at[0].set(1.0)  # identity kernel
         result = _circular_conv_fft_1d(x, k)
         assert jnp.allclose(result, x, atol=1e-5)
+
+
+class TestCorrelationAtLagNegative:
+    def test_negative_lag(self):
+        """Negative lag should reverse the roles of X1 and X2."""
+        rng = np.random.default_rng(0)
+        X = rng.standard_normal((100, 2))
+        corr_pos = correlation_at_lag(X[:-5], X[5:], lag=0)
+        corr_neg = correlation_at_lag(X, X, lag=-5)
+        assert jnp.allclose(corr_pos, corr_neg, atol=1e-5)
+
+    def test_negative_lag_shape(self):
+        X1 = jnp.ones((50, 1))
+        X2 = jnp.ones((50, 1))
+        result = correlation_at_lag(X1, X2, lag=-3)
+        assert jnp.isfinite(result)
+
+
+class TestFindTimeJumps:
+    def test_uniform_time_no_jumps(self):
+        time = np.linspace(0, 10, 1000)
+        jumps = find_time_jumps(time)
+        assert len(jumps) == 0
+
+    def test_single_gap(self):
+        time = np.concatenate([np.arange(0, 5, 0.01), np.arange(10, 15, 0.01)])
+        jumps = find_time_jumps(time)
+        assert len(jumps) == 1
+        assert jumps[0] == 499  # last index before the gap
+
+    def test_custom_threshold(self):
+        time = np.array([0.0, 1.0, 2.0, 5.0, 6.0])  # gap at index 2
+        jumps = find_time_jumps(time, threshold_multiplier=1.5)
+        assert 2 in jumps
+
+
+class TestCreateSpeckleMaskValidation:
+    def test_invalid_size_raises(self):
+        with pytest.raises(ValueError, match="size must be a pair"):
+            create_speckled_mask(size=(0, 10), sparsity=0.5)
+
+    def test_block_size_too_large_raises(self):
+        with pytest.raises(ValueError, match="block_size"):
+            create_speckled_mask(size=(10, 5), sparsity=0.5, block_size=10)
+
+
+class TestAnalysePlaceFields:
+    def test_single_neuron_2d(self):
+        """A single neuron with a clear 2D bump should be detected as a place field."""
+        nx, ny = 20, 20
+        n_bins = nx * ny
+        D = 2
+        dt = 0.01
+        bin_size = 0.05
+
+        # Build 2D coordinate grid
+        xs = jnp.linspace(0, 1, nx)
+        ys = jnp.linspace(0, 1, ny)
+        gx, gy = jnp.meshgrid(xs, ys, indexing="ij")
+        xF = jnp.stack([gx.ravel(), gy.ravel()], axis=-1)  # (n_bins, 2)
+
+        # Gaussian bump centred at (0.5, 0.5), peak well above 2Hz threshold
+        r2 = (xF[:, 0] - 0.5) ** 2 + (xF[:, 1] - 0.5) ** 2
+        F = 10 * dt * jnp.exp(-r2 / (2 * 0.01))
+        F = F.reshape(1, -1)  # (1, n_bins)
+
+        result = analyse_place_fields(
+            F=F,
+            N_neurons=1,
+            N_PFmax=3,
+            D=D,
+            xF_shape=(nx, ny),
+            xF=xF,
+            dt=dt,
+            bin_size=bin_size,
+            n_bins=n_bins,
+        )
+        assert result["place_field_count"][0] == 1
+        # Peak should be near (0.5, 0.5)
+        pos = result["place_field_position"][0, 0]
+        assert jnp.allclose(pos, jnp.array([0.5, 0.5]), atol=0.15)
+
+    def test_no_place_fields_below_threshold(self):
+        """Very low firing rates should produce zero place fields."""
+        nx, ny = 20, 20
+        n_bins = nx * ny
+        dt = 0.01
+        xs = jnp.linspace(0, 1, nx)
+        ys = jnp.linspace(0, 1, ny)
+        gx, gy = jnp.meshgrid(xs, ys, indexing="ij")
+        xF = jnp.stack([gx.ravel(), gy.ravel()], axis=-1)
+        F = 0.1 * dt * jnp.ones((1, n_bins))  # way below 2Hz threshold
+
+        result = analyse_place_fields(
+            F=F,
+            N_neurons=1,
+            N_PFmax=3,
+            D=2,
+            xF_shape=(nx, ny),
+            xF=xF,
+            dt=dt,
+            bin_size=0.05,
+            n_bins=n_bins,
+        )
+        assert result["place_field_count"][0] == 0
