@@ -184,7 +184,7 @@ def plot_fitting_summary(
             jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(si))
             ax_si.scatter(e + jitter, si, color=c, alpha=0.15, s=5, linewidths=0)
         si_means.append(float(np.mean(si)))
-        ax_si.scatter(e, si_means[-1], color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
+        ax_si.scatter(e, si_means[-1], color=c, s=60, zorder=5, linewidths=0)
 
     # connecting lines
     for i in range(len(epochs) - 1):
@@ -932,7 +932,7 @@ def plot_all_metrics(
                     means.append(np.nan)
                 else:
                     means.append(float(np.nanmean(v)))
-                ax.scatter(e, means[-1], color=c, s=60, zorder=5, edgecolors="k", linewidths=0.5)
+                ax.scatter(e, means[-1], color=c, s=60, zorder=5, linewidths=0)
             for j in range(len(var_epochs) - 1):
                 c = _epoch_color(var_epochs[j + 1], last_epoch)
                 ax.plot(var_epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
