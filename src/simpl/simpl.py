@@ -1020,7 +1020,7 @@ class SIMPL:
         -------
         dict
             Decode results including mu_l, mode_l, sigma_l, mu_f, sigma_f, mu_s, sigma_s,
-            logPYF, logPYF_val, and optionally logPYXF_maps.
+            and optionally logPYXF_maps.
         """
         T = Y.shape[0]
         if mask is None:
@@ -1064,22 +1064,6 @@ class SIMPL:
             is_trial_end=is_trial_end,
         )
 
-        # Likelihoods (full arrays, single sum)
-        logPYF = self.kalman_filter_.loglikelihood(Y=mode_l, R=observation_noise, mu=mu_s, sigma=sigma_s).sum()
-
-        # Validation likelihood
-        logPYXF_maps_val = poisson_log_likelihood(Y, F, mask=~mask)
-        no_spikes_val = jnp.sum(Y * ~mask, axis=1) == 0
-        _, mode_l_val, sigma_l_val = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps_val))
-        observation_noise_val = jnp.where(
-            no_spikes_val[:, None, None],
-            jnp.eye(self.D_) * 1e6,
-            sigma_l_val,
-        )
-        logPYF_val = self.kalman_filter_.loglikelihood(
-            Y=mode_l_val, R=observation_noise_val, mu=mu_s, sigma=sigma_s
-        ).sum()
-
         E = {
             "mu_l": mu_l,
             "mode_l": mode_l,
@@ -1088,8 +1072,6 @@ class SIMPL:
             "sigma_f": sigma_f,
             "mu_s": mu_s,
             "sigma_s": sigma_s,
-            "logPYF": logPYF,
-            "logPYF_val": logPYF_val,
         }
         E["logPYXF_maps"] = logPYXF_maps
 
