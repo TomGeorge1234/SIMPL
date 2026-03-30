@@ -74,7 +74,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
 
         name : str — the name of the variable
         description : str — a brief description of the variable
-        dims : list — the dimensions of the variable (excluding any epoch
+        dims : list — the dimensions of the variable (excluding any iteration
             dimension)
         axis_title : str — the title of the axis when plotting the variable
         formula : str — a formula for the variable (if applicable)
@@ -105,7 +105,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
                 "output of the Kalman filter, scaled to "
                 "correlate maximally with behavior "
                 "(X <-- mu_s, X <-- X @ coef.T + intercept). "
-                "For epoch 0, X == the behavior."
+                "For iteration 0, X == the behavior."
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position",
@@ -157,7 +157,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
                 "latest position estimates and their "
                 "receptive fields. Only stored when "
                 "save_full_history is True. See also "
-                "FX_firstepoch and FX_lastepoch."
+                "FX_first_iteration and FX_last_iteration."
             ),
             "dims": ["time", "neuron"],
             "axis_title": r"Firing rate",
@@ -186,7 +186,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
                 "generated the spikes) at each time step. "
                 "This is the behavior of the agent and acts "
                 "as the starting conditions for the algorithm "
-                "X[epoch=0] == Xb."
+                "X[iteration=0] == Xb."
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position (behavior)",
@@ -221,7 +221,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "name": "Log-likelihoods",
             "description": (
                 "The log-likelihood maps of the spikes, as a function of position, calculated for each time step. "
-                "Only saved when save_full_history is True, and even then only for the last epoch due to its size."
+                "Only saved when save_full_history is True, and even then only for the last iteration due to its size."
             ),
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
@@ -540,14 +540,14 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         },
         "field_change": {
             "name": "Field shift",
-            "description": "The change in the place fields from the last epoch.",
+            "description": "The change in the place fields from the last iteration.",
             "dims": ["neuron"],
             "axis title": "Field change",
             "formula": r"$\|r_{e}(x) - r_{e-1}(x)\|$",
         },
         "trajectory_change": {
             "name": "Latent shift",
-            "description": "The average change in the latent positions from the last epoch.",
+            "description": "The average change in the latent positions from the last iteration.",
             "dims": ["time"],
             "axis title": "Latent change",
             "formula": r"$\|x_{e}(t) - x_{e-1}(t)\|$",
@@ -592,8 +592,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         },
     }
 
-    # FX_firstepoch and FX_lastepoch: same as FX but for a single epoch (no epoch dim)
-    for suffix, label in [("firstepoch", "first epoch (Xb)"), ("lastepoch", "last epoch")]:
+    # FX_first_iteration and FX_last_iteration: same as FX but for a single iteration (no iteration dim)
+    for suffix, label in [("first_iteration", "first iteration (Xb)"), ("last_iteration", "last iteration")]:
         variable_info_dict[f"FX_{suffix}"] = {
             **variable_info_dict["FX"],
             "name": variable_info_dict["FX"]["name"] + f" ({suffix})",
