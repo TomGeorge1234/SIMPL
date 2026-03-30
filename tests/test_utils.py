@@ -21,7 +21,6 @@ from simpl.utils import (
     create_speckled_mask,
     find_time_jumps,
     fit_gaussian,
-    fit_gaussian_vmap,
     gaussian_norm_const,
     gaussian_pdf,
     gaussian_sample,
@@ -87,23 +86,21 @@ class TestFitGaussian:
         x = jnp.linspace(-3, 3, 100)[:, None]
         true_mu = jnp.array([1.0])
         likelihood = jnp.exp(-0.5 * ((x - true_mu) ** 2).sum(axis=1))
-        mu, mode, cov = fit_gaussian(x, likelihood)
-        assert jnp.allclose(mu, true_mu, atol=0.1)
-        assert jnp.allclose(mode, true_mu, atol=0.1)
+        mu, mode, cov = fit_gaussian(x, likelihood[None, :])
+        assert jnp.allclose(mu[0], true_mu, atol=0.1)
+        assert jnp.allclose(mode[0], true_mu, atol=0.1)
 
     def test_returns_correct_shapes(self):
         x = jnp.ones((50, 2))
         x = x.at[:, 0].set(jnp.linspace(-1, 1, 50))
         x = x.at[:, 1].set(jnp.linspace(-1, 1, 50))
         likelihood = jnp.ones(50)
-        mu, mode, cov = fit_gaussian(x, likelihood)
-        assert mu.shape == (2,)
-        assert mode.shape == (2,)
-        assert cov.shape == (2, 2)
+        mu, mode, cov = fit_gaussian(x, likelihood[None, :])
+        assert mu.shape == (1, 2)
+        assert mode.shape == (1, 2)
+        assert cov.shape == (1, 2, 2)
 
-
-class TestFitGaussianVmap:
-    def test_matches_unbatched(self):
+    def test_batched(self):
         x = jnp.linspace(-3, 3, 50)[:, None]
         # Stack two likelihood vectors: peaked at 0 and 1
         L = jnp.stack(
@@ -112,10 +109,10 @@ class TestFitGaussianVmap:
                 jnp.exp(-0.5 * (x[:, 0] - 1.0) ** 2),
             ]
         )
-        mus, modes, covs = fit_gaussian_vmap(x, L)
-        mu0, mode0, cov0 = fit_gaussian(x, L[0])
-        assert jnp.allclose(mus[0], mu0, atol=1e-5)
-        assert jnp.allclose(modes[0], mode0, atol=1e-5)
+        mus, modes, covs = fit_gaussian(x, L)
+        assert mus.shape == (2, 1)
+        assert jnp.allclose(mus[0], jnp.array([0.0]), atol=0.1)
+        assert jnp.allclose(mus[1], jnp.array([1.0]), atol=0.1)
 
 
 class TestGaussianSample:

@@ -38,7 +38,7 @@ from simpl.utils import (
     cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
-    fit_gaussian_batched,
+    fit_gaussian,
     get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
@@ -1038,7 +1038,7 @@ class SIMPL:
         no_spikes = jnp.sum(Y * mask, axis=1) == 0
 
         # Fit Gaussians
-        mu_l, mode_l, sigma_l = fit_gaussian_batched(self.xF_, jnp.exp(logPYXF_maps))
+        mu_l, mode_l, sigma_l = fit_gaussian(self.xF_, jnp.exp(logPYXF_maps))
 
         # Observation noise (inflated when no spikes)
         observation_noise = jnp.where(
@@ -1696,9 +1696,12 @@ class SIMPL:
             metrics["sparsity"] = rho_F
 
         if F_odd_mins is not None and F_even_mins is not None:
-            corr = jnp.corrcoef(F_odd_mins, F_even_mins)
-            cross_corr = corr[: self.N_neurons_, self.N_neurons_ :]
-            stability = jnp.diag(cross_corr)
+            # Per-neuron Pearson correlation (avoids building a full (2N x 2N) matrix)
+            odd_c = F_odd_mins - jnp.mean(F_odd_mins, axis=1, keepdims=True)
+            even_c = F_even_mins - jnp.mean(F_even_mins, axis=1, keepdims=True)
+            num = jnp.sum(odd_c * even_c, axis=1)
+            denom = jnp.sqrt(jnp.sum(odd_c**2, axis=1) * jnp.sum(even_c**2, axis=1))
+            stability = num / (denom + 1e-12)
             metrics["stability"] = stability
 
         if F_prev is not None and F is not None:

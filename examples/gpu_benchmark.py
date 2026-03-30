@@ -116,14 +116,12 @@ def run_breakdown(Xb, Y, time_arr):
 
     ll_maps, t_ll = timed(lambda: poisson_log_likelihood(Y_jax, F, mask=mask), "Poisson log-likelihood maps")
 
-    # ── 3. Gaussian fitting (vmap over T timesteps) ──
+    # ── 3. Gaussian fitting (batched, JIT-compiled) ──
     probs = jnp.exp(ll_maps)
-    _ = jax.vmap(fit_gaussian, in_axes=(None, 0))(bins, probs)
+    _ = fit_gaussian(bins, probs)
     jax.block_until_ready(_[0])
 
-    (mu_l, mode_l, sigma_l), t_gauss = timed(
-        lambda: jax.vmap(fit_gaussian, in_axes=(None, 0))(bins, probs), "Gaussian fitting (vmap over T)"
-    )
+    (mu_l, mode_l, sigma_l), t_gauss = timed(lambda: fit_gaussian(bins, probs), "Gaussian fitting (batched)")
 
     # ── 4. Kalman filter ──
     force_cpu = jax.default_backend() != "cpu"
