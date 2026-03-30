@@ -59,6 +59,9 @@ select = ["E", "F", "W", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=simpl --cov-report=term-missing"
+markers = [
+    "docs: tests that build the documentation",
+]
 filterwarnings = [
     "ignore:numpy.ndarray size changed:RuntimeWarning",
 ]
