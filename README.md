@@ -139,14 +139,14 @@ model.fit(Y, Xb, time, n_epochs=5)  # Xb should be in radians, [-pi, pi)
 
 ### GPU acceleration
 
-SIMPL is built on JAX and supports GPU acceleration out of the box. When a GPU is available, compute-heavy steps (KDE receptive field fitting, Poisson log-likelihood maps, Gaussian fitting) are automatically offloaded to the GPU, giving speedups on very large datasets.
+SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloaded to the GPU, giving speedups on very large datasets.
+
+> **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. Due to JIT-ing overheads it may be faster to turn GPU off unless your dataset is incredibly large or high-dimensional. 
 
 ```python
-# Default: uses GPU if available, otherwise CPU
-model = SIMPL(use_gpu="if_available") # can be forced with True or False
+# Force CPU usage even if GPU is avaiable
+model = SIMPL(use_gpu=False)
 ```
-
-> **Note — Kalman on CPU:** The Kalman filter/smoother is always run on the CPU, even when `use_gpu=True`. The Kalman scan operates on tiny matrices (D×D, typically 2×2) at each of T sequential steps, which is bottlenecked by GPU kernel-launch overhead rather than arithmetic. In practice CPU execution is ~20× faster for this step; data is transparently transferred to CPU and back.
 
 ### Data preprocessing utilities
 
