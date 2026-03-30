@@ -1771,12 +1771,12 @@ class SIMPL:
         trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
         trial_slices.append(slice(trial_boundaries[-1], T))
 
-        is_boundary = jnp.zeros(T, dtype=bool)
-        is_trial_end = jnp.zeros(T, dtype=bool)
-        for trial_slice in trial_slices:
-            is_boundary = is_boundary.at[trial_slice.start].set(True)
-            is_trial_end = is_trial_end.at[trial_slice.stop - 1].set(True)
-        return trial_boundaries, trial_slices, is_boundary, is_trial_end
+        is_boundary = np.zeros(T, dtype=bool)
+        is_boundary[trial_boundaries] = True
+        is_trial_end = np.zeros(T, dtype=bool)
+        trial_ends = np.append(trial_boundaries[1:] - 1, T - 1)
+        is_trial_end[trial_ends] = True
+        return trial_boundaries, trial_slices, jnp.array(is_boundary), jnp.array(is_trial_end)
 
     @staticmethod
     def _per_trial_initial_states(mode_l, trial_slices):
@@ -1800,15 +1800,17 @@ class SIMPL:
             Per-timestep initial covariances (meaningful only at trial starts).
         """
         T, D = mode_l.shape
-        mu0_all = jnp.zeros((T, D))
-        sigma0_all = jnp.zeros((T, D, D))
+        # Convert to numpy for the loop to avoid JAX tracing overhead
+        mode_np = np.array(mode_l)
+        mu0_all = np.zeros((T, D))
+        sigma0_all = np.zeros((T, D, D))
         for trial_slice in trial_slices:
-            modes = mode_l[trial_slice]
+            modes = mode_np[trial_slice]
             mu = modes.mean(axis=0)
             sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
-            mu0_all = mu0_all.at[trial_slice.start].set(mu)
-            sigma0_all = sigma0_all.at[trial_slice.start].set(sigma)
-        return mu0_all, sigma0_all
+            mu0_all[trial_slice.start] = mu
+            sigma0_all[trial_slice.start] = sigma
+        return jnp.array(mu0_all), jnp.array(sigma0_all)
 
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""
