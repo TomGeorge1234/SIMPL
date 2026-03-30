@@ -260,7 +260,7 @@ class TestSaveAndLoadResults:
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
             time=demo_data["time"][:N],
-            n_epochs=1,
+            n_iterations=1,
         )
 
         path = str(tmp_path / "results.nc")

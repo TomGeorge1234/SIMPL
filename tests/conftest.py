@@ -23,6 +23,6 @@ def small_simpl_model(demo_data):
         Y=demo_data["Y"][:N, :N_neurons],
         Xb=demo_data["Xb"][:N],
         time=demo_data["time"][:N],
-        n_epochs=0,
+        n_iterations=0,
     )
     return model

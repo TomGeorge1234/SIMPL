@@ -23,7 +23,7 @@ model = SIMPL(
     bin_size=0.02,
     env_pad=0.0,
 )
-model.fit(Y, Xb, time, n_epochs=5)
+model.fit(Y, Xb, time, n_iterations=5)
 
 model.X_        # decoded positions (T, D)
 model.F_        # fitted receptive fields

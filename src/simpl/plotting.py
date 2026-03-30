@@ -67,7 +67,7 @@ _register_cmap(
 )
 
 # ── Default colormaps ────────────────────────────────────────────────────────
-EPOCH_CMAP = "crest"
+ITERATION_CMAP = "crest"
 FIELD_CMAP = "inferno"
 
 # ── Default figure width (inches) ───────────────────────────────────────────
@@ -83,24 +83,24 @@ def outset_axes(ax, offset_mm: float = 2) -> None:
     ax.spines["left"].set_position(("outward", offset_mm * 72 / 25.4))
 
 
-def _resolve_epochs(
-    epochs: int | tuple[int, ...] | None,
+def _resolve_iterations(
+    iterations: int | tuple[int, ...] | None,
     results: xr.Dataset,
     default: tuple[int, ...] | None = (0, -1),
 ) -> tuple[int, ...]:
-    """Normalise an *epochs* argument to a tuple of concrete epoch values.
+    """Normalise an *iterations* argument to a tuple of concrete iteration values.
 
-    Supports negative indexing: ``-1`` maps to the last non-negative epoch,
+    Supports negative indexing: ``-1`` maps to the last non-negative iteration,
     ``-2`` to the second-last, etc.  Pass ``default=None`` to default to all
-    non-negative epochs.
+    non-negative iterations.
     """
-    nn = _non_negative_epochs(results)
-    if epochs is None:
+    nn = _non_negative_iterations(results)
+    if iterations is None:
         raw = tuple(int(e) for e in nn) if default is None else default
-    elif isinstance(epochs, int):
-        raw = (epochs,)
+    elif isinstance(iterations, int):
+        raw = (iterations,)
     else:
-        raw = tuple(epochs)
+        raw = tuple(iterations)
     resolved = []
     for e in raw:
         if e < 0:
@@ -118,28 +118,28 @@ def _resolve_epochs(
     return tuple(unique)
 
 
-def _epoch_color(epoch: int, last_epoch: int):
-    """Return a colour for *epoch* from EPOCH_CMAP scaled to [0, last_epoch]."""
-    cm = matplotlib.colormaps[EPOCH_CMAP]
-    if last_epoch == 0:
+def _iteration_color(iteration: int, last_iteration: int):
+    """Return a colour for *iteration* from ITERATION_CMAP scaled to [0, last_iteration]."""
+    cm = matplotlib.colormaps[ITERATION_CMAP]
+    if last_iteration == 0:
         return cm(1.0)
-    return cm(epoch / last_epoch)
+    return cm(iteration / last_iteration)
 
 
-def _non_negative_epochs(results: xr.Dataset) -> np.ndarray:
-    """Return epoch values >= 0."""
-    epochs = results.epoch.values
-    return epochs[epochs >= 0]
+def _non_negative_iterations(results: xr.Dataset) -> np.ndarray:
+    """Return iteration values >= 0."""
+    iterations = results.iteration.values
+    return iterations[iterations >= 0]
 
 
-def _last_non_negative_epoch(results: xr.Dataset) -> int:
-    return int(_non_negative_epochs(results)[-1])
+def _last_non_negative_iteration(results: xr.Dataset) -> int:
+    return int(_non_negative_iterations(results)[-1])
 
 
-def _baseline_epochs(results: xr.Dataset) -> np.ndarray:
-    """Return epoch values < 0 (baselines)."""
-    epochs = results.epoch.values
-    return epochs[epochs < 0]
+def _baseline_iterations(results: xr.Dataset) -> np.ndarray:
+    """Return iteration values < 0 (baselines)."""
+    iterations = results.iteration.values
+    return iterations[iterations < 0]
 
 
 # ── Public plot functions ────────────────────────────────────────────────────
@@ -165,21 +165,21 @@ def plot_fitting_summary(
     -------
     axes : np.ndarray of Axes, shape (2,)
     """
-    epochs = _non_negative_epochs(results)
-    last_epoch = int(epochs[-1])
+    iterations = _non_negative_iterations(results)
+    last_iteration = int(iterations[-1])
 
     fig, axes = plt.subplots(1, 2, figsize=(0.7 * FIG_WIDTH, 0.7 * FIG_WIDTH * 0.35), layout="constrained")
     ax_bps, ax_si = axes
 
     bps_train, bps_val, si_means = [], [], []
-    for e in epochs:
-        c = _epoch_color(e, last_epoch)
-        bps_train.append(float(results.bits_per_spike.sel(epoch=e)))
-        bps_val.append(float(results.bits_per_spike_val.sel(epoch=e)))
+    for e in iterations:
+        c = _iteration_color(e, last_iteration)
+        bps_train.append(float(results.bits_per_spike.sel(iteration=e)))
+        bps_val.append(float(results.bits_per_spike_val.sel(iteration=e)))
         ax_bps.scatter(e, bps_train[-1], color=c, zorder=5, **plot_kwargs)
         ax_bps.scatter(e, bps_val[-1], color=c, marker="o", facecolors="none", linewidth=1.5, zorder=5, **plot_kwargs)
 
-        si = results.spatial_information.sel(epoch=e).values
+        si = results.spatial_information.sel(iteration=e).values
         if show_neurons:
             jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(si))
             ax_si.scatter(e + jitter, si, color=c, alpha=0.15, s=5, linewidths=0)
@@ -187,29 +187,29 @@ def plot_fitting_summary(
         ax_si.scatter(e, si_means[-1], color=c, s=60, zorder=5, linewidths=0)
 
     # connecting lines
-    for i in range(len(epochs) - 1):
-        c = _epoch_color(epochs[i + 1], last_epoch)
-        ax_bps.plot(epochs[i : i + 2], bps_train[i : i + 2], color=c, lw=0.8, zorder=3)
-        ax_bps.plot(epochs[i : i + 2], bps_val[i : i + 2], color=c, lw=0.8, ls="--", zorder=3)
-        ax_si.plot(epochs[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
+    for i in range(len(iterations) - 1):
+        c = _iteration_color(iterations[i + 1], last_iteration)
+        ax_bps.plot(iterations[i : i + 2], bps_train[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_bps.plot(iterations[i : i + 2], bps_val[i : i + 2], color=c, lw=0.8, ls="--", zorder=3)
+        ax_si.plot(iterations[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
 
-    # baseline: only epoch -1 ("best model")
-    if -1 in results.epoch.values:
+    # baseline: only iteration -1 ("best model")
+    if -1 in results.iteration.values:
         if "bits_per_spike" in results:
-            ax_bps.axhline(float(results.bits_per_spike.sel(epoch=-1)), color="k", ls="--", lw=0.8)
+            ax_bps.axhline(float(results.bits_per_spike.sel(iteration=-1)), color="k", ls="--", lw=0.8)
         if "spatial_information" in results:
-            ax_si.axhline(float(results.spatial_information.sel(epoch=-1).mean()), color="k", ls="--", lw=0.8)
+            ax_si.axhline(float(results.spatial_information.sel(iteration=-1).mean()), color="k", ls="--", lw=0.8)
 
     # legend on first panel
     ax_bps.plot([], [], color="gray", lw=0.8, label="train")
     ax_bps.plot([], [], color="gray", lw=0.8, ls="--", label="val")
     ax_bps.legend(fontsize="small", frameon=False)
 
-    ax_bps.set(xlabel="Epoch", ylabel="Bits per spike")
-    ax_si.set(xlabel="Epoch", ylabel="Spatial information (bits/s)")
+    ax_bps.set(xlabel="Iteration", ylabel="Bits per spike")
+    ax_si.set(xlabel="Iteration", ylabel="Spatial information (bits/s)")
     for ax in axes:
         outset_axes(ax)
-        ax.spines["bottom"].set_bounds(0, int(epochs[-1]))
+        ax.spines["bottom"].set_bounds(0, int(iterations[-1]))
     return axes
 
 
@@ -273,7 +273,7 @@ def _plot_trajectory_panel(
 def plot_latent_trajectory(
     results: xr.Dataset,
     time_range: tuple[float, float] | None = None,
-    epochs: int | tuple[int, ...] | None = None,
+    iterations: int | tuple[int, ...] | None = None,
     include_ground_truth: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
@@ -284,9 +284,9 @@ def plot_latent_trajectory(
     results : xr.Dataset
     time_range : tuple, optional
         ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-    epochs : int or tuple of ints, optional
-        Which epoch(s) to show.  Negative values index from the end of the
-        non-negative epochs (``-1`` = last epoch).  Default: all epochs.
+    iterations : int or tuple of ints, optional
+        Which iteration(s) to show.  Negative values index from the end of the
+        non-negative iterations (``-1`` = last iteration).  Default: all iterations.
     include_ground_truth : bool
         Show ``Xt`` as ``"k--"`` if present.
     **plot_kwargs
@@ -296,7 +296,7 @@ def plot_latent_trajectory(
     -------
     axes : np.ndarray of Axes, shape (D,)
     """
-    epochs_to_plot = _resolve_epochs(epochs, results, default=None)
+    iterations_to_plot = _resolve_iterations(iterations, results, default=None)
 
     if time_range is None:
         t0 = float(results.time.values[0])
@@ -305,15 +305,15 @@ def plot_latent_trajectory(
     dim_names = list(results.dim.values)
     tslice = slice(*time_range)
     t = results.time.sel(time=tslice).values
-    last_epoch = _last_non_negative_epoch(results)
+    last_iteration = _last_non_negative_iteration(results)
 
     traces = []
-    for ep in epochs_to_plot:
-        label = f"Epoch {ep} (behavior)" if ep == 0 else f"Epoch {ep}"
+    for ep in iterations_to_plot:
+        label = f"Iteration {ep} (behavior)" if ep == 0 else f"Iteration {ep}"
         traces.append(
             (
-                results.X.sel(epoch=ep, time=tslice).values,
-                dict(color=_epoch_color(ep, last_epoch), alpha=0.8, label=label),
+                results.X.sel(iteration=ep, time=tslice).values,
+                dict(color=_iteration_color(ep, last_iteration), alpha=0.8, label=label),
             )
         )
 
@@ -380,11 +380,11 @@ def plot_prediction(
     t = prediction_results.time.sel(time=tslice).values
     traces = []
     if Xb is not None:
-        traces.append((Xb[mask], dict(color=_epoch_color(0, 1), alpha=0.8, label="Behavior")))
+        traces.append((Xb[mask], dict(color=_iteration_color(0, 1), alpha=0.8, label="Behavior")))
     traces.append(
         (
             prediction_results.mu_s.sel(time=tslice).values,
-            dict(color=_epoch_color(1, 1), alpha=0.8, label="Predicted"),
+            dict(color=_iteration_color(1, 1), alpha=0.8, label="Predicted"),
         )
     )
 
@@ -420,7 +420,7 @@ def plot_prediction(
 def plot_receptive_fields(
     results: xr.Dataset,
     extent: tuple | None = None,
-    epochs: int | tuple[int, ...] | None = None,
+    iterations: int | tuple[int, ...] | None = None,
     neurons: list[int] | np.ndarray | None = None,
     include_baselines: bool = False,
     sort_by_spatial_information: bool = False,
@@ -434,17 +434,17 @@ def plot_receptive_fields(
     results : xr.Dataset
     extent : tuple, optional
         Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``.  Used for 2-D imshow.
-    epochs : int or tuple of int, optional
-        Which epoch(s) to show.  Negative values index from the end of the
-        non-negative epochs (``-1`` = last epoch).  Default: ``(0, -1)``
-        (behavior and final epoch).
+    iterations : int or tuple of int, optional
+        Which iteration(s) to show.  Negative values index from the end of the
+        non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
+        (behavior and final iteration).
     neurons : array-like, optional
         Subset of neuron indices.  Default: all neurons.
     include_baselines : bool
         Show ground-truth fields (``Ft``) if present.
     sort_by_spatial_information : bool
         If ``True``, reorder neurons so that the most spatially informative
-        appear first (uses the last training epoch).
+        appear first (uses the last training iteration).
     ncols : int
         Maximum number of neuron-columns in the grid.
     **plot_kwargs
@@ -459,7 +459,7 @@ def plot_receptive_fields(
     if D > 2:
         raise ValueError(f"plot_receptive_fields only supports 1-D and 2-D environments, got {D}-D.")
 
-    epochs = _resolve_epochs(epochs, results)
+    iterations = _resolve_iterations(iterations, results)
 
     if neurons is None:
         neurons = results.neuron.values
@@ -471,21 +471,21 @@ def plot_receptive_fields(
     if len(neurons) > 50:
         warnings.warn(f"Plotting {len(neurons)} neurons — this may be slow.", stacklevel=2)
 
-    # Resolve baseline source: prefer Ft, fall back to F at epoch -1
+    # Resolve baseline source: prefer Ft, fall back to F at iteration -1
     has_baselines = False
     baseline_label = None
     if include_baselines:
         if "Ft" in results:
             has_baselines = True
             baseline_label = "GT"
-        elif -1 in results.epoch.values:
+        elif -1 in results.iteration.values:
             has_baselines = True
             baseline_label = "Best"
 
     # Build column labels per neuron
     col_labels = []
-    for ep in epochs:
-        col_labels.append(f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)")
+    for ep in iterations:
+        col_labels.append(f"It {ep}" if ep != 0 else "It 0 (behavior)")
     if has_baselines:
         col_labels.append(baseline_label)
     n_cols_per_neuron = len(col_labels)
@@ -504,7 +504,7 @@ def plot_receptive_fields(
     if is_polar:
         return _plot_receptive_fields_polar(
             results,
-            epochs,
+            iterations,
             neurons,
             has_baselines,
             baseline_label,
@@ -565,28 +565,28 @@ def plot_receptive_fields(
 
         col_offset = 0
 
-        # epoch columns
-        for ep in epochs:
+        # iteration columns
+        for ep in iterations:
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
-            F_ep = results.F.sel(epoch=ep, neuron=n)
+            F_ep = results.F.sel(iteration=ep, neuron=n)
             if D == 2:
                 ax.imshow(F_ep.values.T, **imkw)
             else:
                 ax.plot(results[dim_names[0]].values, F_ep.values, **plot_kwargs)
             if row == 0:
-                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)"
+                label = f"It {ep}" if ep != 0 else "It 0 (behavior)"
                 ax.set_title(label, fontsize=8)
             col_offset += 1
 
-        # baseline column (Ft if available, else F at epoch -1)
+        # baseline column (Ft if available, else F at iteration -1)
         if has_baselines:
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
             if "Ft" in results:
                 F_base = results.Ft.sel(neuron=n)
             else:
-                F_base = results.F.sel(epoch=-1, neuron=n)
+                F_base = results.F.sel(iteration=-1, neuron=n)
             if D == 2:
                 ax.imshow(F_base.values.T, **imkw)
             else:
@@ -613,7 +613,7 @@ def plot_receptive_fields(
 
 def _plot_receptive_fields_polar(
     results,
-    epochs,
+    iterations,
     neurons,
     has_baselines,
     baseline_label,
@@ -629,7 +629,7 @@ def _plot_receptive_fields_polar(
     """Polar plot variant of ``plot_receptive_fields`` for 1-D angular data."""
     from matplotlib.gridspec import GridSpec
 
-    last_epoch = int(_non_negative_epochs(results)[-1])
+    last_iteration = int(_non_negative_iterations(results)[-1])
 
     # Width ratios: data columns are 1, spacer columns are 0.3
     width_ratios = []
@@ -667,34 +667,34 @@ def _plot_receptive_fields_polar(
         group = idx % n_neuron_cols
         col_base = group_col_starts[group]
 
-        # Pre-compute max firing rate across all epochs (and baseline) for this neuron
+        # Pre-compute max firing rate across all iterations (and baseline) for this neuron
         rmax = 0.0
-        for ep in epochs:
-            F_ep = results.F.sel(epoch=ep, neuron=n).values
+        for ep in iterations:
+            F_ep = results.F.sel(iteration=ep, neuron=n).values
             rmax = max(rmax, float(np.nanmax(F_ep)))
         if has_baselines:
             if "Ft" in results:
                 rmax = max(rmax, float(np.nanmax(results.Ft.sel(neuron=n).values)))
-            elif -1 in results.epoch.values:
-                rmax = max(rmax, float(np.nanmax(results.F.sel(epoch=-1, neuron=n).values)))
+            elif -1 in results.iteration.values:
+                rmax = max(rmax, float(np.nanmax(results.F.sel(iteration=-1, neuron=n).values)))
         if rmax == 0:
             rmax = 1.0
 
         col_offset = 0
 
-        for ep in epochs:
+        for ep in iterations:
             pos = (row, col_base + col_offset)
             ax = fig.add_subplot(gs[pos[0], pos[1]], projection="polar")
             axes[pos[0], pos[1]] = ax
             used_axes.add(pos)
-            color = _epoch_color(ep, last_epoch)
-            F_ep = results.F.sel(epoch=ep, neuron=n).values
+            color = _iteration_color(ep, last_iteration)
+            F_ep = results.F.sel(iteration=ep, neuron=n).values
             r_closed = np.concatenate([F_ep, [F_ep[0]]])
             ax.plot(theta_closed, r_closed, color=color, **plot_kwargs)
             ax.fill(theta_closed, r_closed, alpha=0.3, color=color)
             _style_polar_ax(ax, rmax)
             if row == 0:
-                label = f"Ep {ep}" if ep != 0 else "Ep 0 (behavior)"
+                label = f"It {ep}" if ep != 0 else "It 0 (behavior)"
                 ax.set_title(label, fontsize=8, pad=12)
             col_offset += 1
 
@@ -706,7 +706,7 @@ def _plot_receptive_fields_polar(
             if "Ft" in results:
                 F_base = results.Ft.sel(neuron=n).values
             else:
-                F_base = results.F.sel(epoch=-1, neuron=n).values
+                F_base = results.F.sel(iteration=-1, neuron=n).values
             r_closed = np.concatenate([F_base, [F_base[0]]])
             ax.plot(theta_closed, r_closed, color="grey", **plot_kwargs)
             ax.fill(theta_closed, r_closed, alpha=0.3, color="grey")
@@ -729,14 +729,14 @@ def _plot_receptive_fields_polar(
 def _sort_neurons_by_si(results: xr.Dataset, neurons: np.ndarray) -> np.ndarray:
     """Return *neurons* sorted by spatial information (highest first).
 
-    Uses the last non-negative epoch.  Falls back to the original order
+    Uses the last non-negative iteration.  Falls back to the original order
     if ``spatial_information`` is not present.
     """
     if "spatial_information" not in results:
         warnings.warn("spatial_information not found in results — neurons left unsorted.", stacklevel=3)
         return neurons
-    last_ep = _last_non_negative_epoch(results)
-    si = results.spatial_information.sel(epoch=last_ep, neuron=neurons).values
+    last_it = _last_non_negative_iteration(results)
+    si = results.spatial_information.sel(iteration=last_it, neuron=neurons).values
     return neurons[np.argsort(si)[::-1]]
 
 
@@ -760,7 +760,7 @@ def plot_spikes(
         Subset of neuron indices to display.  Default: all neurons.
     sort_by_spatial_information : bool
         If ``True``, reorder neurons so that the most spatially informative
-        appear at the top of the heatmap (uses the last training epoch).
+        appear at the top of the heatmap (uses the last training iteration).
     cmap : str
         Colormap for ``imshow``.  Default: ``"Greys"``.
     **plot_kwargs
@@ -829,7 +829,7 @@ def plot_all_metrics(
     ncols: int = 3,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Auto-discover and plot all per-epoch metrics.
+    """Auto-discover and plot all per-iteration metrics.
 
     Parameters
     ----------
@@ -845,18 +845,18 @@ def plot_all_metrics(
     -------
     axes : np.ndarray of Axes
     """
-    epochs = _non_negative_epochs(results)
-    last_epoch = int(epochs[-1])
-    baselines = _baseline_epochs(results)
+    iterations = _non_negative_iterations(results)
+    last_iteration = int(iterations[-1])
+    baselines = _baseline_iterations(results)
 
-    # discover metric variables: anything with epoch dim and only neuron/place_field remaining
+    # discover metric variables: anything with iteration dim and only neuron/place_field remaining
     # skip _val variants — they are plotted alongside their train counterpart
     metric_names = []
     for var_name in results.data_vars:
         da = results[var_name]
-        if "epoch" not in da.dims:
+        if "iteration" not in da.dims:
             continue
-        other_dims = set(da.dims) - {"epoch"}
+        other_dims = set(da.dims) - {"iteration"}
         if other_dims <= {"neuron", "place_field"}:
             if var_name.endswith("_val") and var_name[:-4] in results.data_vars:
                 continue  # will be plotted with the train variant
@@ -873,33 +873,33 @@ def plot_all_metrics(
     for i, var_name in enumerate(metric_names):
         ax = axes.flat[i]
         da = results[var_name]
-        other_dims = [d for d in da.dims if d != "epoch"]
+        other_dims = [d for d in da.dims if d != "iteration"]
         attrs = da.attrs
         ylabel = attrs.get("axis_title", attrs.get("axis title", var_name))
 
         is_scalar = len(other_dims) == 0
         has_place_field = "place_field" in other_dims
 
-        # Only plot epochs that have data for this variable (skip all-NaN epochs)
-        var_epochs = []
-        for e in epochs:
-            vals_e = da.sel(epoch=e)
+        # Only plot iterations that have data for this variable (skip all-NaN iterations)
+        var_iterations = []
+        for e in iterations:
+            vals_e = da.sel(iteration=e)
             if not np.all(np.isnan(vals_e.values)):
-                var_epochs.append(e)
-        var_epochs = np.array(var_epochs) if var_epochs else epochs
+                var_iterations.append(e)
+        var_iterations = np.array(var_iterations) if var_iterations else iterations
 
         if is_scalar:
             # line plot
             val_name = f"{var_name}_val"
             has_val = val_name in results.data_vars
-            vals = [float(da.sel(epoch=e)) for e in var_epochs]
-            vals_v = [float(results[val_name].sel(epoch=e)) for e in var_epochs] if has_val else None
-            for j in range(len(var_epochs)):
-                c = _epoch_color(var_epochs[j], last_epoch)
-                ax.scatter(var_epochs[j], vals[j], color=c, zorder=5, **plot_kwargs)
+            vals = [float(da.sel(iteration=e)) for e in var_iterations]
+            vals_v = [float(results[val_name].sel(iteration=e)) for e in var_iterations] if has_val else None
+            for j in range(len(var_iterations)):
+                c = _iteration_color(var_iterations[j], last_iteration)
+                ax.scatter(var_iterations[j], vals[j], color=c, zorder=5, **plot_kwargs)
                 if has_val:
                     ax.scatter(
-                        var_epochs[j],
+                        var_iterations[j],
                         vals_v[j],
                         color=c,
                         marker="o",
@@ -908,20 +908,20 @@ def plot_all_metrics(
                         zorder=5,
                         **plot_kwargs,
                     )
-            for j in range(len(var_epochs) - 1):
-                c = _epoch_color(var_epochs[j + 1], last_epoch)
-                ax.plot(var_epochs[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
+            for j in range(len(var_iterations) - 1):
+                c = _iteration_color(var_iterations[j + 1], last_iteration)
+                ax.plot(var_iterations[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
                 if has_val:
-                    ax.plot(var_epochs[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
-            # baseline: only epoch -1 ("best model")
+                    ax.plot(var_iterations[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
+            # baseline: only iteration -1 ("best model")
             if -1 in baselines:
-                ax.axhline(float(da.sel(epoch=-1)), color="k", ls="--", lw=0.8)
+                ax.axhline(float(da.sel(iteration=-1)), color="k", ls="--", lw=0.8)
         else:
             # per-neuron (possibly mean over place_field first)
             means = []
-            for e in var_epochs:
-                c = _epoch_color(e, last_epoch)
-                vals_e = da.sel(epoch=e)
+            for e in var_iterations:
+                c = _iteration_color(e, last_iteration)
+                vals_e = da.sel(iteration=e)
                 if has_place_field:
                     vals_e = vals_e.mean(dim="place_field", skipna=True)
                 v = vals_e.values
@@ -933,13 +933,13 @@ def plot_all_metrics(
                 else:
                     means.append(float(np.nanmean(v)))
                 ax.scatter(e, means[-1], color=c, s=60, zorder=5, linewidths=0)
-            for j in range(len(var_epochs) - 1):
-                c = _epoch_color(var_epochs[j + 1], last_epoch)
-                ax.plot(var_epochs[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
+            for j in range(len(var_iterations) - 1):
+                c = _iteration_color(var_iterations[j + 1], last_iteration)
+                ax.plot(var_iterations[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
 
-        ax.set(xlabel="Epoch", ylabel=ylabel, xlim=(-0.5, int(epochs[-1]) + 0.5))
+        ax.set(xlabel="Iteration", ylabel=ylabel, xlim=(-0.5, int(iterations[-1]) + 0.5))
         outset_axes(ax)
-        ax.spines["bottom"].set_bounds(0, int(epochs[-1]))
+        ax.spines["bottom"].set_bounds(0, int(iterations[-1]))
 
     # legend on first panel showing train/val distinction
     first_ax = axes.flat[0]
