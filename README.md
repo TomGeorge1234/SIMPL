@@ -1,4 +1,4 @@
-> **⚠️ Git history rewrite (2026-03-24):** Large data files were removed from the git history to reduce repo size. If you cloned or forked this repo before this date, your local copy will be out of sync. Please **re-clone** the repository, or run:
+> **⚠️ Git history rewrite (2026-03-30):** Large data files were removed from the git history to reduce repo size. If you cloned or forked this repo before this date, your local copy will be out of sync. Please **re-clone** the repository, or run:
 > ```bash
 > git fetch --all
 > git reset --hard origin/main
