@@ -51,16 +51,16 @@ model.fit(
     Y,                      # spike counts (T, N_neurons)
     Xb,                     # behavioural initialisation positions (T, D)
     time,                   # timestamps (T,)
-    n_epochs=5,
+    n_iterations=5,
     )
 
 # 3. Access results
 model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, N_bins)
-model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across epochs.
+model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
 # Resume training if not yet converged
-model.fit(Y, Xb, time, n_epochs=5, resume=True)
+model.fit(Y, Xb, time, n_iterations=5, resume=True)
 ```
 
 ### Prediction
@@ -74,11 +74,11 @@ model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-li
 
 ### Ground truth baselines
 
-If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each epoch:
+If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each iteration:
 
 ```python
 model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
-model.fit(Y, Xb, time, n_epochs=5)  # baselines computed automatically
+model.fit(Y, Xb, time, n_iterations=5)  # baselines computed automatically
 ```
 
 ### Plotting
@@ -86,21 +86,21 @@ model.fit(Y, Xb, time, n_epochs=5)  # baselines computed automatically
 Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
 
 ```python
-# Log-likelihood and spatial information across epochs
+# Log-likelihood and spatial information across iterations
 model.plot_fitting_summary()
 
-# Decoded trajectory (all epochs by default)
+# Decoded trajectory (all iterations by default)
 model.plot_latent_trajectory()
-model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific epochs
+model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific iterations
 
-# Receptive fields (epoch 0 + last by default)
+# Receptive fields (iteration 0 + last by default)
 model.plot_receptive_fields(neurons=[0, 5, 10])
 
 # Spike raster heatmap (time × neurons)
 model.plot_spikes()
 model.plot_spikes(time_range=(0, 60))
 
-# Auto-discover and plot all per-epoch metrics
+# Auto-discover and plot all per-iteration metrics
 model.plot_all_metrics(show_neurons=False)
 
 # Prediction on held-out data
@@ -110,7 +110,7 @@ model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 
 ### Saving results
 
-Save the full results (all epochs, metrics, fitted variables) to a netCDF file:
+Save the full results (all iterations, metrics, fitted variables) to a netCDF file:
 
 ```python
 model.save_results("results.nc")
@@ -132,7 +132,7 @@ model = SIMPL(
     speed_prior=0.1,
     kernel_bandwidth=0.3,
 )
-model.fit(Y, Xb, time, n_epochs=5)  # Xb should be in radians, [-pi, pi)
+model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 ```
 
 > **Note:** The wrapped Kalman filter assumes a tight posterior (σ ≪ 2π). If posterior uncertainty is large relative to the circular domain, decoding accuracy may degrade.
