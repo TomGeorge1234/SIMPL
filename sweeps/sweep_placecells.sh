@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=simpl-sweep-pc
-#SBATCH --array=0-49
+#SBATCH --array=0-999
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=02:00:00
@@ -19,8 +19,12 @@ N_KB=${#KERNEL_BANDWIDTHS[@]}
 N_SP=${#SPEED_PRIORS[@]}
 N_EP=${#ENV_PADS[@]}
 
-# Map flat array index -> (kb, sp, ep) indices
+N_TOTAL=$((N_KB * N_SP * N_EP))
+
 IDX=$SLURM_ARRAY_TASK_ID
+if [ "$IDX" -ge "$N_TOTAL" ]; then exit 0; fi
+
+# Map flat array index -> (kb, sp, ep) indices
 KB_IDX=$(( IDX / (N_SP * N_EP) ))
 SP_IDX=$(( (IDX / N_EP) % N_SP ))
 EP_IDX=$(( IDX % N_EP ))
@@ -36,7 +40,6 @@ OUT_DIR="$SWEEP_DIR/outputs/$SWEEP_NAME"
 mkdir -p "$OUT_DIR/results" "$OUT_DIR/logs"
 
 if [ "$IDX" -eq 0 ]; then
-    N_TOTAL=$((N_KB * N_SP * N_EP))
     echo "════════════════════════════════════════════════════════"
     echo "Sweep: $SWEEP_NAME ($N_TOTAL jobs) [place cells]"
     echo "  kernel_bandwidth: ${KERNEL_BANDWIDTHS[*]}"
