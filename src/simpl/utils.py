@@ -648,7 +648,7 @@ _AVAILABLE_DEMO_DATA = [
     "gridcells_synthetic.npz",
     "placecells_tanni2022.npz",
     "headdirectioncells_vollan2025.npz",
-    "somatosensory_chowdhury2020.npz"
+    "somatosensory_chowdhury2020.npz",
 ]
 
 
