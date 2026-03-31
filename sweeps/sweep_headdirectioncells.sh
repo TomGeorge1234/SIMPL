@@ -9,9 +9,9 @@
 SWEEP_NAME=${SWEEP_NAME:-"default_hd"}
 
 # ── Hyperparameter grid ──────────────────────────────────────────────
-KERNEL_BANDWIDTHS=(0.2 0.25 0.316 0.4 0.5)
+KERNEL_BANDWIDTHS=(0.2 0.3 0.4 0.5)
 SPEED_PRIORS=(50 75 100 150 200)
-BEHAVIOR_PRIORS=(0.5 1.0)
+BEHAVIOR_PRIORS=(0.1 0.5 1.0 2.0 10.0)
 BIN_SIZE=$(python3 -c "import math; print(2 * math.pi / 100)")
 
 N_KB=${#KERNEL_BANDWIDTHS[@]}
