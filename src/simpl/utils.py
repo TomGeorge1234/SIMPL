@@ -648,24 +648,29 @@ _AVAILABLE_DEMO_DATA = [
     "gridcells_synthetic.npz",
     "placecells_tanni2022.npz",
     "headdirectioncells_vollan2025.npz",
+    "somatosensory_chowdhury2020.npz"
 ]
 
 
-def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFile:
+def load_demo_data(name: str = "gridcells_synthetic.npz", directory: str | None = None) -> np.lib.npyio.NpzFile:
     """Load a demo data file, downloading from GitHub releases if not cached.
 
     Resolution order:
 
-    1. **Local source tree** — ``examples/data/`` relative to the package root
+    1. **User-specified directory** — if *directory* is given, look for
+       ``<directory>/<name>`` first.
+    2. **Local source tree** — ``examples/data/`` relative to the package root
        (available in editable / development installs).
-    2. **User cache** — ``~/.simpl/data/``.
-    3. **Download** — fetched from the latest GitHub release and saved to the
+    3. **User cache** — ``~/.simpl/data/``.
+    4. **Download** — fetched from the latest GitHub release and saved to the
        user cache for next time.
 
     Parameters
     ----------
     name : str
         Filename to load (e.g. ``"gridcells_synthetic.npz"``).
+    directory : str or None
+        Optional directory to search for *name* before the default locations.
 
     Returns
     -------
@@ -683,7 +688,13 @@ def load_demo_data(name: str = "gridcells_synthetic.npz") -> np.lib.npyio.NpzFil
 
     from pathlib import Path
 
-    # 1. Check local source tree (editable installs)
+    # 1. Check user-specified directory
+    if directory is not None:
+        dir_path = Path(directory) / name
+        if dir_path.is_file():
+            return np.load(dir_path)
+
+    # 2. Check local source tree (editable installs)
     local_path = Path(__file__).resolve().parent.parent.parent / "examples" / "data" / name
     if local_path.is_file():
         return np.load(local_path)
