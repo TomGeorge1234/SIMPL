@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=simpl-sweep-pc
-#SBATCH --ntasks=4
-#SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=4G
+#SBATCH --ntasks=8
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=8G
 #SBATCH --time=24:00:00
 #SBATCH --output=/dev/null
 
