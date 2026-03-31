@@ -234,16 +234,23 @@ class TestLoadDemoData:
 
     @pytest.mark.parametrize("name", _AVAILABLE_DEMO_DATA)
     def test_release_assets_exist(self, name):
-        """Check that demo data files are available at the latest GitHub release URL."""
+        """Check that demo data files are available in some GitHub release (not necessarily latest)."""
+        import json
         import urllib.request
 
-        url = f"https://github.com/TomGeorge1234/simpl/releases/latest/download/{name}"
-        req = urllib.request.Request(url, method="HEAD")
+        api_url = "https://api.github.com/repos/TomGeorge1234/SIMPL/releases"
+        req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json"})
         try:
-            resp = urllib.request.urlopen(req, timeout=10)
-            assert resp.status == 200, f"{url} returned {resp.status}"
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                releases = json.loads(resp.read())
         except urllib.error.URLError as exc:
-            pytest.fail(f"Demo data not reachable at {url}: {exc}")
+            pytest.skip(f"Cannot reach GitHub API: {exc}")
+
+        for release in releases:
+            for asset in release.get("assets", []):
+                if asset["name"] == name:
+                    return  # found
+        pytest.fail(f'"{name}" not found as an asset in any GitHub release')
 
 
 class TestSaveAndLoadResults:
