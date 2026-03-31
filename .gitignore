@@ -2,6 +2,7 @@ __pycache__/
 build/
 dist/
 data/
+sweeps/outputs/*
 *.egg-info/
 *.egg/
 *.whl
