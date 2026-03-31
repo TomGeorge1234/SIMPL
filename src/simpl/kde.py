@@ -21,7 +21,7 @@ import jax
 import jax.numpy as jnp
 from jax import vmap
 
-from simpl.utils import _bin_indices_minuspi_pi, _circular_conv_fft_1d, gaussian_norm_const
+from simpl.utils import _bin_indices_minuspi_pi, _circular_conv_fft_1d
 
 __all__ = [
     "gaussian_kernel",
@@ -58,16 +58,10 @@ def gaussian_kernel(
     kernel: float
         The probability density at x
     """
-    assert x1.ndim == 1
-    assert x2.ndim == 1
-    assert x1.shape[0] == x2.shape[0]
+    diff = x1 - x2
     D = x1.shape[0]
-
-    covariance = jnp.eye(D) * bandwidth**2
-    x = x1 - x2
-    norm_const = gaussian_norm_const(covariance)
-    kernel = norm_const * jnp.exp(-0.5 * jnp.sum(x @ jnp.linalg.inv(covariance) * x))
-    return kernel
+    norm_const = 1.0 / ((2.0 * jnp.pi) ** (D / 2.0) * bandwidth**D)
+    return norm_const * jnp.exp(-0.5 * jnp.sum(diff**2) / bandwidth**2)
 
 
 def kde(

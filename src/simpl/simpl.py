@@ -1038,7 +1038,7 @@ class SIMPL:
         no_spikes = jnp.sum(Y * mask, axis=1) == 0
 
         # Fit Gaussians
-        mu_l, mode_l, sigma_l = vmap(fit_gaussian, in_axes=(None, 0))(self.xF_, jnp.exp(logPYXF_maps))
+        mu_l, mode_l, sigma_l = fit_gaussian(self.xF_, jnp.exp(logPYXF_maps))
 
         # Observation noise (inflated when no spikes)
         observation_noise = jnp.where(
@@ -1696,9 +1696,12 @@ class SIMPL:
             metrics["sparsity"] = rho_F
 
         if F_odd_mins is not None and F_even_mins is not None:
-            corr = jnp.corrcoef(F_odd_mins, F_even_mins)
-            cross_corr = corr[: self.N_neurons_, self.N_neurons_ :]
-            stability = jnp.diag(cross_corr)
+            # Per-neuron Pearson correlation (avoids building a full (2N x 2N) matrix)
+            odd_c = F_odd_mins - jnp.mean(F_odd_mins, axis=1, keepdims=True)
+            even_c = F_even_mins - jnp.mean(F_even_mins, axis=1, keepdims=True)
+            num = jnp.sum(odd_c * even_c, axis=1)
+            denom = jnp.sqrt(jnp.sum(odd_c**2, axis=1) * jnp.sum(even_c**2, axis=1))
+            stability = num / (denom + 1e-12)
             metrics["stability"] = stability
 
         if F_prev is not None and F is not None:
@@ -1753,12 +1756,12 @@ class SIMPL:
         trial_slices = [slice(trial_boundaries[i], trial_boundaries[i + 1]) for i in range(len(trial_boundaries) - 1)]
         trial_slices.append(slice(trial_boundaries[-1], T))
 
-        is_boundary = jnp.zeros(T, dtype=bool)
-        is_trial_end = jnp.zeros(T, dtype=bool)
-        for trial_slice in trial_slices:
-            is_boundary = is_boundary.at[trial_slice.start].set(True)
-            is_trial_end = is_trial_end.at[trial_slice.stop - 1].set(True)
-        return trial_boundaries, trial_slices, is_boundary, is_trial_end
+        is_boundary = np.zeros(T, dtype=bool)
+        is_boundary[trial_boundaries] = True
+        is_trial_end = np.zeros(T, dtype=bool)
+        trial_ends = np.append(trial_boundaries[1:] - 1, T - 1)
+        is_trial_end[trial_ends] = True
+        return trial_boundaries, trial_slices, jnp.array(is_boundary), jnp.array(is_trial_end)
 
     @staticmethod
     def _per_trial_initial_states(mode_l, trial_slices):
@@ -1782,15 +1785,17 @@ class SIMPL:
             Per-timestep initial covariances (meaningful only at trial starts).
         """
         T, D = mode_l.shape
-        mu0_all = jnp.zeros((T, D))
-        sigma0_all = jnp.zeros((T, D, D))
+        # Convert to numpy for the loop to avoid JAX tracing overhead
+        mode_np = np.array(mode_l)
+        mu0_all = np.zeros((T, D))
+        sigma0_all = np.zeros((T, D, D))
         for trial_slice in trial_slices:
-            modes = mode_l[trial_slice]
+            modes = mode_np[trial_slice]
             mu = modes.mean(axis=0)
             sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
-            mu0_all = mu0_all.at[trial_slice.start].set(mu)
-            sigma0_all = sigma0_all.at[trial_slice.start].set(sigma)
-        return mu0_all, sigma0_all
+            mu0_all[trial_slice.start] = mu
+            sigma0_all[trial_slice.start] = sigma
+        return jnp.array(mu0_all), jnp.array(sigma0_all)
 
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""

@@ -4,7 +4,7 @@ Gaussian Helpers
     ``gaussian_pdf``, ``log_gaussian_pdf``, ``gaussian_norm_const``
 
 Gaussian Fitting
-    ``fit_gaussian``, ``fit_gaussian_vmap``, ``gaussian_sample``
+    ``fit_gaussian``, ``fit_gaussian_legacy``, ``fit_gaussian_vmap``, ``gaussian_sample``
 
 Statistical and Analysis Helpers
     ``coefficient_of_determination``, ``cca``, ``cca_angular``,
@@ -138,7 +138,7 @@ def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def fit_gaussian(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+def fit_gaussian_legacy(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
 
     Computes the weighted mean and covariance:
@@ -174,11 +174,64 @@ def fit_gaussian(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Ar
     return mu, mode, cov
 
 
+@jax.jit
+def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fits a multivariate-Gaussian to each of T likelihood distributions over spatial bins.
+
+    For each timestep, computes the weighted mean, mode, and covariance of the
+    spatial bin coordinates ``x`` under the likelihood weights:
+
+    $$\\mu_t = \\frac{\\sum_i x_i \\, p_{t,i}}{\\sum_i p_{t,i}}, \\qquad
+    \\Sigma_t = \\mathbb{E}_t[x x^\\top] - \\mu_t \\mu_t^\\top$$
+
+    The covariance uses the identity ``Cov = E[xx^T] - mu mu^T``.  This lets us
+    precompute ``x x^T`` once as a small ``(N_bins, D, D)`` array and contract it
+    with the ``(T, N_bins)`` likelihoods via a single einsum, rather than
+    materialising a ``(T, N_bins, D)`` intermediate as the naive formula would.
+
+    The function is JIT-compiled so the XLA computation is traced once and
+    reused on subsequent calls.
+
+    Parameters
+    ----------
+    x : jnp.ndarray, shape (N_bins, D)
+        The position bins (shared across all time steps).
+    likelihoods : jnp.ndarray, shape (T, N_bins)
+        Likelihood values (not log) at each bin for each time step.
+
+    Returns
+    -------
+    means : jnp.ndarray, shape (T, D)
+        The weighted mean position at each time step.
+    modes : jnp.ndarray, shape (T, D)
+        The bin coordinate with the highest likelihood at each time step.
+    covariances : jnp.ndarray, shape (T, D, D)
+        The weighted covariance at each time step.
+    """
+    sums = likelihoods.sum(axis=1)  # (T,)
+
+    # Mean: weighted average via matmul
+    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
+
+    # Mode: position of max likelihood
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
+
+    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
+    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
+    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
+    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
+
+    return mu, mode, cov
+
+
 def fit_gaussian_vmap(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to each row of a batch of likelihood arrays.
 
     This is the vmapped version of ``fit_gaussian``: it accepts likelihoods of
     shape ``(T, N_bins)`` and returns batched means, modes, and covariances.
+
+    .. deprecated::
+        Use :func:`fit_gaussian` instead for better performance.
 
     Parameters
     ----------
@@ -196,7 +249,7 @@ def fit_gaussian_vmap(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, 
     covariances : jnp.ndarray, shape (T, D, D)
         The covariance of each fitted Gaussian.
     """
-    return jax.vmap(fit_gaussian, in_axes=(None, 0))(x, likelihoods)
+    return jax.vmap(fit_gaussian_legacy, in_axes=(None, 0))(x, likelihoods)
 
 
 def gaussian_sample(key: jax.Array, mu: jax.Array, sigma: jax.Array) -> jax.Array:
@@ -927,7 +980,7 @@ def analyse_place_fields(
             perimeter = (perimeter + perimeter_dilated) / 2
             roundness = 4 * np.pi * size / perimeter**2
             combined_pf_mask += pf_mask
-            mu, mode, cov = fit_gaussian(xF, pf.flatten())
+            mu, mode, cov = fit_gaussian_legacy(xF, pf.flatten())
             pf_size[n, n_pfs] = size
             pf_position[n, n_pfs] = mu
             pf_covariance[n, n_pfs] = cov
