@@ -4,6 +4,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=02:00:00
+#SBATCH --output=/dev/null
 
 # ── Sweep name (change this for each run) ────────────────────────────
 SWEEP_NAME=${SWEEP_NAME:-"default_hd"}
