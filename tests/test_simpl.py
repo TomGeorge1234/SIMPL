@@ -8,7 +8,7 @@ import xarray as xr
 
 from simpl.environment import Environment
 from simpl.simpl import SIMPL
-from simpl.utils import load_results
+from simpl.utils import load_results, save_results_to_netcdf
 
 
 class TestSIMPLInit:
@@ -322,6 +322,94 @@ class TestSIMPLSaveLoadResults:
         assert loaded.attrs["kernel_bandwidth"] == 0.03
         assert loaded.attrs["use_kalman_smoothing"] == 0
         np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
+
+
+class TestSIMPLRehydrateResults:
+    def test_from_results_restores_fitted_model_state(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        boundaries = np.array([0, N // 2])
+        model = SIMPL(
+            kernel_bandwidth=0.03,
+            speed_prior=0.2,
+            behavior_prior=0.4,
+            bin_size=0.05,
+            env_pad=0.0,
+            env_lims=((0.0, 0.0), (1.0, 1.0)),
+            val_frac=0.2,
+            speckle_block_size_seconds=2.0,
+            random_seed=7,
+            use_gpu=False,
+        )
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+            trial_boundaries=boundaries,
+            align_to_behavior="fields",
+            save_full_history=True,
+        )
+
+        path = str(tmp_path / "rehydrate_results.nc")
+        model.save_results(path)
+        loaded_model = SIMPL.from_results(path, use_gpu=False)
+
+        assert loaded_model.is_fitted_ is True
+        assert loaded_model.align_mode_ == "fields"
+        assert loaded_model.iteration_ == model.iteration_
+        np.testing.assert_array_equal(loaded_model.trial_boundaries_, boundaries)
+        np.testing.assert_allclose(np.array(loaded_model.X_), np.array(model.X_))
+        np.testing.assert_allclose(np.array(loaded_model.F_), np.array(model.F_))
+        np.testing.assert_array_equal(np.array(loaded_model.spike_mask_), np.array(model.spike_mask_))
+        assert loaded_model.save_full_history_ is True
+
+        lls = loaded_model.calculate_spike_loglikelihoods(field_iteration=1, trajectory_var="X")
+        assert lls["logPYXF"] == pytest.approx(float(model.loglikelihoods_.logPYXF.sel(iteration=1).values))
+        assert lls["logPYXF_val"] == pytest.approx(float(model.loglikelihoods_.logPYXF_val.sel(iteration=1).values))
+
+    def test_from_results_fills_missing_Y_with_nan_and_warns(self, tmp_path, demo_data):
+        N = 300
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(use_gpu=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+        )
+
+        partial_results = model.results_.drop_vars("Y")
+        path = str(tmp_path / "rehydrate_missing_Y.nc")
+        save_results_to_netcdf(partial_results, path)
+
+        with pytest.warns(UserWarning, match="Missing variables were replaced"):
+            loaded_model = SIMPL.from_results(path, use_gpu=False)
+
+        assert "Y" in loaded_model.results_
+        assert np.isnan(np.array(loaded_model.Y_)).all()
+        assert np.isnan(loaded_model.results_["Y"].values).all()
+        np.testing.assert_allclose(np.array(loaded_model.X_), np.array(model.X_))
+        np.testing.assert_allclose(np.array(loaded_model.F_), np.array(model.F_))
+
+    def test_from_results_accepts_scalar_trial_boundaries_attr(self, tmp_path, demo_data):
+        N = 300
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(use_gpu=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+        )
+
+        scalar_boundary_results = model.results_.copy(deep=True)
+        scalar_boundary_results.attrs["trial_boundaries"] = np.int64(0)
+        path = str(tmp_path / "rehydrate_scalar_boundary.nc")
+        save_results_to_netcdf(scalar_boundary_results, path)
+
+        loaded_model = SIMPL.from_results(path, use_gpu=False)
+        np.testing.assert_array_equal(loaded_model.trial_boundaries_, np.array([0]))
 
 
 class TestSIMPLInterpolateFiringRates:

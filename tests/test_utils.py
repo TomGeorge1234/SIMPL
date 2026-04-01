@@ -334,6 +334,26 @@ class TestSaveResultsSham:
         assert ds["spike_mask"].dtype == bool
         assert ds["F"].attrs["reshape"] is True
 
+    def test_sham_results_save_without_spike_mask(self, tmp_path):
+        T, N = 20, 3
+        ds = xr.Dataset(
+            {
+                "Y": xr.DataArray(np.random.poisson(1, (T, N)), dims=["time", "neuron"]),
+                "F": xr.DataArray(
+                    np.random.rand(N, 10),
+                    dims=["neuron", "x"],
+                    attrs={"reshape": True},
+                ),
+            },
+            attrs={"trial_boundaries": np.array([0])},
+        )
+        path = str(tmp_path / "sham_no_mask.nc")
+        save_results_to_netcdf(ds, path)
+        loaded = load_results(path)
+
+        assert "Y" in loaded
+        assert "spike_mask" not in loaded
+
 
 class TestCalculateSpatialInformation:
     def test_uniform_rate_map_zero_info(self):

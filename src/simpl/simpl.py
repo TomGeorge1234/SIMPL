@@ -16,6 +16,7 @@ Each EM iteration proceeds as:
 """
 
 # Jax, for the majority of the calculations
+import os
 import threading
 import warnings
 
@@ -45,6 +46,7 @@ from simpl.utils import (
     coefficient_of_determination,
     create_speckled_mask,
     get_field_peaks,
+    load_results,
     print_data_summary,
     save_results_to_netcdf,
 )
@@ -689,6 +691,224 @@ class SIMPL:
             File path to save to (typically ending in ``.nc``).
         """
         save_results_to_netcdf(self.results_, path)
+
+    @classmethod
+    def from_results(
+        cls,
+        path_or_results: str | os.PathLike[str] | xr.Dataset,
+        use_gpu: bool | str | None = None,
+    ) -> "SIMPL":
+        """Rehydrate a fitted ``SIMPL`` instance from saved results.
+
+        Parameters
+        ----------
+        path_or_results : str or PathLike or xr.Dataset
+            Path to a netCDF file previously written by ``save_results()``, or an
+            already-loaded results ``Dataset``.
+        use_gpu : bool or str or None, optional
+            Override the saved ``use_gpu`` preference. If None, uses the saved
+            preference when available, otherwise defaults to ``"if_available"``.
+
+        Returns
+        -------
+        SIMPL
+            Rehydrated model instance with ``results_`` and convenience attrs
+            restored.
+        """
+        if isinstance(path_or_results, xr.Dataset):
+            results = path_or_results.copy(deep=True)
+        else:
+            results = load_results(os.fspath(path_or_results))
+
+        attrs = results.attrs
+        use_gpu_saved = cls._deserialize_use_gpu_requested(attrs.get("use_gpu_requested"))
+        use_gpu_effective = use_gpu_saved if use_gpu is None else use_gpu
+        if use_gpu_effective is None:
+            use_gpu_effective = "if_available"
+
+        behavior_prior = attrs.get("behavior_prior", np.nan)
+        if np.isscalar(behavior_prior) and np.isnan(behavior_prior):
+            behavior_prior = None
+
+        model = cls(
+            kernel_bandwidth=float(attrs.get("kernel_bandwidth", 0.02)),
+            speed_prior=float(attrs.get("speed_prior", 0.1)),
+            use_kalman_smoothing=bool(attrs.get("use_kalman_smoothing", 1)),
+            behavior_prior=behavior_prior,
+            is_1D_angular=bool(attrs.get("is_1D_angular", 0)),
+            bin_size=float(attrs.get("bin_size", 0.02)),
+            env_pad=float(attrs.get("env_pad", 0.1)),
+            env_lims=cls._environment_lims_from_results(results),
+            val_frac=float(attrs.get("val_frac", 0.1)),
+            speckle_block_size_seconds=float(attrs.get("speckle_block_size_seconds", 1.0)),
+            random_seed=int(attrs.get("random_seed", 0)),
+            use_gpu=use_gpu_effective,
+        )
+
+        if bool(attrs.get("environment_provided", 0)):
+            warnings.warn(
+                "Results were produced with a user-provided Environment; rehydration restores an equivalent "
+                "generic Environment from the saved grid, not the original Python object."
+            )
+
+        device = model._jax_device()
+        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
+        model.dim_ = dim_names
+        model.D_ = len(dim_names)
+        model.T_ = int(results.sizes["time"])
+        model.N_neurons_ = int(results.sizes["neuron"])
+        model.N_PFmax_ = int(results.sizes.get("place_field", 20))
+        model.results_ = results
+        model.is_fitted_ = True
+
+        model.environment_ = cls._environment_from_results(results)
+        model.time_ = jax.device_put(jnp.array(results.coords["time"].values), device)
+        model.neuron_ = jax.device_put(jnp.array(results.coords["neuron"].values), device)
+
+        dt_attr = attrs.get("dt", np.nan)
+        if np.isscalar(dt_attr) and np.isfinite(dt_attr):
+            model.dt_ = float(dt_attr)
+        elif model.T_ >= 2:
+            model.dt_ = float(np.median(np.diff(np.asarray(results.coords["time"].values, dtype=float))))
+        else:
+            model.dt_ = np.nan
+
+        model.xF_ = jax.device_put(jnp.array(model.environment_.flattened_discretised_coords), device)
+        model.xF_shape_ = model.environment_.discrete_env_shape
+        model.N_bins_ = len(model.xF_)
+        model.variable_info_dict_ = _build_variable_info_dict(model.dim_)
+        model.coordinates_dict_ = {
+            "neuron": model.neuron_,
+            "time": model.time_,
+            "dim": model.dim_,
+            "dim_": model.dim_,
+            **model.environment_.coords_dict,
+            "place_field": jnp.arange(model.N_PFmax_),
+        }
+
+        missing_vars: dict[str, str] = {}
+        Y_values = cls._results_array_or_fill(
+            results,
+            "Y",
+            (model.T_, model.N_neurons_),
+            missing_vars,
+        )
+        Xb_values = cls._results_array_or_fill(
+            results,
+            "Xb",
+            (model.T_, model.D_),
+            missing_vars,
+        )
+        spike_mask_values = cls._results_mask_or_fill(
+            results,
+            (model.T_, model.N_neurons_),
+            missing_vars,
+        )
+
+        model.Y_ = jax.device_put(jnp.array(Y_values), device)
+        model.Xb_ = jax.device_put(jnp.array(Xb_values), device)
+        model.spike_mask_ = jax.device_put(jnp.array(spike_mask_values), device)
+
+        placeholder_data = {}
+        if "Y" not in model.results_:
+            placeholder_data["Y"] = model.Y_
+        if "Xb" not in model.results_:
+            placeholder_data["Xb"] = model.Xb_
+        if "spike_mask" not in model.results_:
+            placeholder_data["spike_mask"] = model.spike_mask_
+        if placeholder_data:
+            model.results_ = xr.merge(
+                [model.results_, _dict_to_dataset(placeholder_data, model.variable_info_dict_, model.coordinates_dict_)],
+                compat="override",
+            )
+
+        model.block_size_ = max(1, int(np.ceil(model.speckle_block_size_seconds / model.dt_)))
+        model.odd_minute_mask_ = jnp.stack([jnp.array(model.time_ // 60 % 2 == 0)] * model.N_neurons_, axis=1)
+        model.even_minute_mask_ = ~model.odd_minute_mask_
+
+        model.align_mode_ = cls._deserialize_align_mode(attrs.get("align_mode"))
+        model.Xalign_ = model.Xb_ if model.align_mode_ else None
+        model._kde = kde_angular if model.is_1D_angular else kde
+        model.save_full_history_ = bool(attrs.get("save_full_history", int("FX" in results or "logPYXF_maps" in results)))
+
+        trial_boundaries = np.asarray(attrs.get("trial_boundaries", [0]), dtype=int)
+        model.trial_boundaries_, model.trial_slices_, _, _ = cls._validate_trial_boundaries(trial_boundaries, model.T_)
+
+        model.iteration_ = cls._last_training_iteration(results)
+        model.loglikelihoods_ = cls._loglikelihoods_from_results(results)
+
+        F_values = cls._results_iteration_array_or_fill(
+            results,
+            "F",
+            model.iteration_,
+            (model.N_neurons_, model.N_bins_),
+            missing_vars,
+        )
+        X_values = cls._results_iteration_array_or_fill(
+            results,
+            "X",
+            model.iteration_,
+            (model.T_, model.D_),
+            missing_vars,
+        )
+
+        model.F_ = jax.device_put(jnp.array(F_values), device)
+        model.X_ = jax.device_put(jnp.array(X_values), device)
+        model.lastF_ = model.F_
+        model.lastX_ = model.X_
+
+        model.E_ = cls._restore_e_step_state(
+            results,
+            model.iteration_,
+            device,
+            missing_vars=missing_vars,
+            T=model.T_,
+            D=model.D_,
+        )
+        model.M_ = cls._restore_m_step_state(
+            results,
+            model.iteration_,
+            model.N_neurons_,
+            model.N_bins_,
+            device,
+            missing_vars=missing_vars,
+            T=model.T_,
+        )
+
+        if "FX_first_iteration" in results:
+            model.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
+
+        if model.align_mode_ == "fields" and "F" in results and 0 in np.asarray(results.iteration.values):
+            F_iter0 = np.asarray(results["F"].sel(iteration=0).values).reshape(model.N_neurons_, -1)
+            model.Falign_peaks_ = get_field_peaks(jnp.array(F_iter0), model.xF_)
+
+        model.ground_truth_available_ = False
+        model.Xt_ = None
+        model.Ft_ = None
+        if "Xt" in results:
+            model.Xt_ = jax.device_put(jnp.array(results["Xt"].values), device)
+            model._Xt_raw = np.asarray(results["Xt"].values)
+            model.ground_truth_available_ = True
+        if "Ft" in results:
+            model.Ft_ = jax.device_put(
+                jnp.array(np.asarray(results["Ft"].values).reshape(model.N_neurons_, -1)),
+                device,
+            )
+            model.ground_truth_available_ = True
+        if not model.ground_truth_available_:
+            model._Xt_raw = None
+        model._Ft_raw = None
+        model._Ft_coords_dict_raw = None
+
+        if missing_vars:
+            missing_details = "; ".join(missing_vars[name] for name in sorted(missing_vars))
+            warnings.warn(
+                "Rehydrated model from partial results. Missing variables were replaced with placeholders: "
+                f"{missing_details}. Methods that depend on these values may return NaN or fail."
+            )
+
+        model._init_kalman_filter()
+        return model
 
     # ──────────────────────────────────────────────────────────────────────────
     # Plotting
@@ -1751,7 +1971,10 @@ class SIMPL:
         if trial_boundaries is None:
             trial_boundaries = np.array([0])
         else:
-            trial_boundaries = np.array(trial_boundaries)
+            trial_boundaries = np.atleast_1d(np.asarray(trial_boundaries, dtype=int))
+
+        if trial_boundaries.size == 0:
+            raise ValueError("trial_boundaries must contain at least one boundary (starting at 0)")
 
         if trial_boundaries[0] != 0:
             raise ValueError("First trial boundary must be 0")
@@ -1803,6 +2026,185 @@ class SIMPL:
             mu0_all[trial_slice.start] = mu
             sigma0_all[trial_slice.start] = sigma
         return jnp.array(mu0_all), jnp.array(sigma0_all)
+
+    @staticmethod
+    def _serialize_use_gpu_requested(use_gpu: bool | str) -> str:
+        if use_gpu is True:
+            return "true"
+        if use_gpu is False:
+            return "false"
+        return str(use_gpu)
+
+    @staticmethod
+    def _deserialize_use_gpu_requested(use_gpu: str | None) -> bool | str | None:
+        if use_gpu is None:
+            return None
+        if use_gpu == "true":
+            return True
+        if use_gpu == "false":
+            return False
+        return use_gpu
+
+    @staticmethod
+    def _deserialize_align_mode(align_mode: str | None) -> str | None:
+        if align_mode in (None, "", "none"):
+            return None
+        return str(align_mode)
+
+    @staticmethod
+    def _environment_lims_from_results(results: xr.Dataset) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
+        bin_size = float(results.attrs.get("bin_size", 0.02))
+        lower = []
+        upper = []
+        for dim in dim_names:
+            coord = np.asarray(results.coords[dim].values, dtype=float)
+            lower.append(float(coord[0] - bin_size / 2))
+            upper.append(float(coord[-1] + bin_size / 2))
+        return tuple(lower), tuple(upper)
+
+    @classmethod
+    def _environment_from_results(cls, results: xr.Dataset) -> Environment:
+        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
+        coords_dict = {dim: np.asarray(results.coords[dim].values, dtype=float) for dim in dim_names}
+        env_lims = cls._environment_lims_from_results(results)
+        env = Environment(
+            X=np.zeros((1, len(dim_names))),
+            pad=float(results.attrs.get("env_pad", 0.0)),
+            bin_size=float(results.attrs.get("bin_size", 0.02)),
+            force_lims=env_lims,
+            verbose=False,
+        )
+        env.coords_dict = coords_dict
+        env.discretised_coords = np.stack(np.meshgrid(*env.coords_dict.values(), indexing="ij"))
+        env.discrete_env_shape = env.discretised_coords.shape[1:]
+        env.flattened_discretised_coords = env.discretised_coords.reshape(env.D, -1).T
+        return env
+
+    @staticmethod
+    def _last_training_iteration(results: xr.Dataset) -> int:
+        iterations = np.asarray(results.coords["iteration"].values, dtype=int)
+        nonnegative = iterations[iterations >= 0]
+        if len(nonnegative) > 0:
+            return int(nonnegative.max())
+        return int(iterations.max())
+
+    @staticmethod
+    def _loglikelihoods_from_results(results: xr.Dataset) -> xr.Dataset:
+        ll_vars = [var for var in ("logPYXF", "logPYXF_val", "bits_per_spike", "bits_per_spike_val") if var in results]
+        if not ll_vars:
+            return xr.Dataset(coords={"iteration": results.coords["iteration"]})
+        return results[ll_vars].copy(deep=True)
+
+    @staticmethod
+    def _results_array_or_fill(
+        results: xr.Dataset,
+        var_name: str,
+        shape: tuple[int, ...],
+        missing_vars: dict[str, str],
+    ) -> np.ndarray:
+        if var_name in results:
+            return np.asarray(results[var_name].values)
+        missing_vars[var_name] = f"{var_name}=NaN array with shape {shape}"
+        return np.full(shape, np.nan, dtype=float)
+
+    @staticmethod
+    def _results_mask_or_fill(
+        results: xr.Dataset,
+        shape: tuple[int, ...],
+        missing_vars: dict[str, str],
+    ) -> np.ndarray:
+        if "spike_mask" in results:
+            return np.asarray(results["spike_mask"].values, dtype=bool)
+        missing_vars["spike_mask"] = (
+            f"spike_mask=all-True boolean mask with shape {shape} "
+            "(NaN is not representable for boolean arrays)"
+        )
+        return np.ones(shape, dtype=bool)
+
+    @staticmethod
+    def _results_iteration_array_or_fill(
+        results: xr.Dataset,
+        var_name: str,
+        iteration: int,
+        shape: tuple[int, ...],
+        missing_vars: dict[str, str],
+    ) -> np.ndarray:
+        if var_name in results:
+            values = results[var_name].sel(iteration=iteration).values if "iteration" in results[var_name].dims else results[var_name].values
+            return np.asarray(values).reshape(shape)
+        missing_vars[var_name] = f"{var_name}=NaN array with shape {shape}"
+        return np.full(shape, np.nan, dtype=float)
+
+    @staticmethod
+    def _restore_e_step_state(
+        results: xr.Dataset,
+        iteration: int,
+        device,
+        missing_vars: dict[str, str] | None = None,
+        T: int | None = None,
+        D: int | None = None,
+    ) -> dict:
+        e_state = {}
+        expected_shapes = {
+            "X": (T, D),
+            "mu_l": (T, D),
+            "mode_l": (T, D),
+            "sigma_l": (T, D, D),
+            "mu_f": (T, D),
+            "sigma_f": (T, D, D),
+            "mu_s": (T, D),
+            "sigma_s": (T, D, D),
+            "coef": (D, D),
+            "intercept": (D,),
+        }
+        for var in expected_shapes:
+            if var not in results:
+                if missing_vars is not None and expected_shapes[var][0] is not None:
+                    missing_vars.setdefault(var, f"{var}=NaN array with shape {expected_shapes[var]}")
+                    e_state[var] = jax.device_put(jnp.array(np.full(expected_shapes[var], np.nan, dtype=float)), device)
+                continue
+            values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+            if np.all(np.isnan(values)):
+                continue
+            e_state[var] = jax.device_put(jnp.array(values), device)
+        return e_state
+
+    @staticmethod
+    def _restore_m_step_state(
+        results: xr.Dataset,
+        iteration: int,
+        n_neurons: int,
+        n_bins: int,
+        device,
+        missing_vars: dict[str, str] | None = None,
+        T: int | None = None,
+    ) -> dict:
+        m_state = {}
+        expected_shapes = {
+            "F": (n_neurons, n_bins),
+            "F_odd_minutes": (n_neurons, n_bins),
+            "F_even_minutes": (n_neurons, n_bins),
+            "PX": (n_bins,),
+        }
+        for var in expected_shapes:
+            if var not in results:
+                if missing_vars is not None:
+                    missing_vars.setdefault(var, f"{var}=NaN array with shape {expected_shapes[var]}")
+                    m_state[var] = jax.device_put(jnp.array(np.full(expected_shapes[var], np.nan, dtype=float)), device)
+                continue
+            values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+            if var.startswith("F"):
+                values = np.asarray(values).reshape(n_neurons, -1)
+            m_state[var] = jax.device_put(jnp.array(values), device)
+        if "FX" in results:
+            m_state["FX"] = jax.device_put(jnp.array(results["FX"].sel(iteration=iteration).values), device)
+        elif "FX_last_iteration" in results:
+            m_state["FX"] = jax.device_put(jnp.array(results["FX_last_iteration"].values), device)
+        elif missing_vars is not None and T is not None:
+            missing_vars.setdefault("FX", f"FX=NaN array with shape {(T, n_neurons)}")
+            m_state["FX"] = jax.device_put(jnp.array(np.full((T, n_neurons), np.nan, dtype=float)), device)
+        return m_state
 
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""

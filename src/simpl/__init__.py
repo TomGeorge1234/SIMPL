@@ -10,9 +10,10 @@ Convenience utilities re-exported at the package level:
 * ``coarsen_dt`` — re-bin data at a coarser time resolution
 * ``load_demo_data`` — load the bundled grid-cell demo dataset
 * ``load_results`` — reload a saved ``xr.Dataset`` from disk
+* ``rehydrate_model`` — reconstruct a ``SIMPL`` instance from saved results
 """
 
 from .simpl import SIMPL
-from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results
+from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, rehydrate_model
 
-__all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results"]
+__all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results", "rehydrate_model"]

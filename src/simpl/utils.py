@@ -15,7 +15,7 @@ Data Preparation
 
 Data I/O
     ``load_demo_data``, ``print_data_summary``, ``save_results_to_netcdf``,
-    ``load_results``
+    ``load_results``, ``rehydrate_model``
 
 Place-Field Analysis
     ``get_field_peaks``, ``analyse_place_fields``,
@@ -857,7 +857,8 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     path : str
         Destination file path (e.g. ``'results.nc'``)."""
     results_to_save = results.copy(deep=True)
-    results_to_save["spike_mask"] = results_to_save["spike_mask"].astype("int32")
+    if "spike_mask" in results_to_save:
+        results_to_save["spike_mask"] = results_to_save["spike_mask"].astype("int32")
     # Convert boolean 'reshape' attrs to int (netCDF4 doesn't support bool attrs)
     for var in results_to_save.data_vars:
         if "reshape" in results_to_save[var].attrs:
@@ -884,15 +885,37 @@ def load_results(path: str) -> xr.Dataset:
     xr.Dataset
         Results.
     """
-    results = xr.open_dataset(path)
+    results = xr.load_dataset(path)
     # Convert int 'reshape' attrs back to bool
     for var in results.data_vars:
         if "reshape" in results[var].attrs:
             results[var].attrs["reshape"] = bool(results[var].attrs["reshape"])
 
-    results["spike_mask"] = results["spike_mask"].astype("bool")
+    if "spike_mask" in results:
+        results["spike_mask"] = results["spike_mask"].astype("bool")
 
     return results
+
+
+def rehydrate_model(path_or_results: str | xr.Dataset, use_gpu: bool | str | None = None):
+    """Rehydrate a fitted ``SIMPL`` instance from saved results.
+
+    Parameters
+    ----------
+    path_or_results : str or xr.Dataset
+        Path to a saved netCDF file, or an already-loaded results Dataset.
+    use_gpu : bool or str or None, optional
+        Override the saved ``use_gpu`` preference. If None, the saved value is
+        used when available, otherwise ``"if_available"`` is used.
+
+    Returns
+    -------
+    simpl.simpl.SIMPL
+        Rehydrated model instance.
+    """
+    from simpl.simpl import SIMPL
+
+    return SIMPL.from_results(path_or_results, use_gpu=use_gpu)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
