@@ -307,6 +307,26 @@ class TestSaveResultsSham:
         assert "Y" in loaded
         np.testing.assert_array_equal(loaded.attrs["trial_boundaries"], [0, 10])
 
+    def test_save_does_not_mutate_input_dataset(self, tmp_path):
+        T, N = 20, 3
+        ds = xr.Dataset(
+            {
+                "Y": xr.DataArray(np.random.poisson(1, (T, N)), dims=["time", "neuron"]),
+                "spike_mask": xr.DataArray(np.ones((T, N), dtype=bool), dims=["time", "neuron"]),
+                "F": xr.DataArray(
+                    np.random.rand(N, 10),
+                    dims=["neuron", "x"],
+                    attrs={"reshape": True},
+                ),
+            },
+            attrs={"trial_boundaries": np.array([0])},
+        )
+        path = str(tmp_path / "sham_no_mutate.nc")
+        save_results_to_netcdf(ds, path)
+
+        assert ds["spike_mask"].dtype == bool
+        assert ds["F"].attrs["reshape"] is True
+
 
 class TestCalculateSpatialInformation:
     def test_uniform_rate_map_zero_info(self):
