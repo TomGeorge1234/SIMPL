@@ -1492,7 +1492,6 @@ class SIMPL:
             dim_Z=self.D_,
             dim_Y=self.D_,
             dim_U=self.D_,
-            batch_size=self.T_,  # i.e. one long batch.
             F=F,
             B=B,
             Q=Q,
