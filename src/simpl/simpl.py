@@ -1803,16 +1803,20 @@ class SIMPL:
             "env_extent": self.environment_.extent,
             "env_pad": self.environment_.pad,
             "bin_size": self.environment_.bin_size,
+            "dt": self.dt_,
             "trial_boundaries": trial_boundaries,
             "kernel_bandwidth": self.kernel_bandwidth,
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
+            "align_mode": self.align_mode_ or "none",
             "environment_provided": int(self._environment_override is not None),
             "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
+            "save_full_history": int(getattr(self, "save_full_history_", False)),
             "random_seed": self.random_seed,
+            "use_gpu": int(self.use_gpu_),
         }
 
 

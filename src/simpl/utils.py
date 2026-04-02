@@ -840,12 +840,13 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
         The results dataset (typically ``model.results_``).
     path : str
         Destination file path (e.g. ``'results.nc'``)."""
-    results["spike_mask"] = results["spike_mask"].astype("int32")
+    results_to_save = results.copy(deep=True)
+    results_to_save["spike_mask"] = results_to_save["spike_mask"].astype("int32")
     # Convert boolean 'reshape' attrs to int (netCDF4 doesn't support bool attrs)
-    for var in results.data_vars:
-        if "reshape" in results[var].attrs:
-            results[var].attrs["reshape"] = int(results[var].attrs["reshape"])
-    results.to_netcdf(path)
+    for var in results_to_save.data_vars:
+        if "reshape" in results_to_save[var].attrs:
+            results_to_save[var].attrs["reshape"] = int(results_to_save[var].attrs["reshape"])
+    results_to_save.to_netcdf(path)
 
 
 def load_results(path: str) -> xr.Dataset:
