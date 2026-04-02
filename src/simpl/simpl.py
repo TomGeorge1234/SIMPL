@@ -18,8 +18,6 @@ Each EM iteration proceeds as:
 # Jax, for the majority of the calculations
 import threading
 import warnings
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -30,7 +28,7 @@ from jax import vmap
 from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
 from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
-from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
+from simpl.kde import decode_observations, gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
 from simpl.utils import (
     _wrap_minuspi_pi,
     analyse_place_fields,
@@ -46,22 +44,6 @@ from simpl.utils import (
 )
 
 
-@partial(jax.jit, static_argnames=("return_log_maps",))
-def _decode_likelihood_batch(
-    xF: jax.Array,
-    spikes: jax.Array,
-    mean_rate: jax.Array,
-    mask: jax.Array,
-    return_log_maps: bool = False,
-):
-    logPYXF_maps = poisson_log_likelihood(spikes, mean_rate, mask=mask)
-    mu_l, mode_l, sigma_l = fit_gaussian(xF, jnp.exp(logPYXF_maps))
-    no_spikes = jnp.sum(spikes * mask, axis=1) == 0
-    if return_log_maps:
-        return mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps
-    return mu_l, mode_l, sigma_l, no_spikes
-
-
 class SIMPL:
     def __init__(
         self,
@@ -70,7 +52,6 @@ class SIMPL:
         speed_prior: float = 0.1,
         use_kalman_smoothing: bool = True,
         behavior_prior: float | None = None,
-        decode_batch_size: int | None = 4096,
         # Environment parameters
         is_1D_angular: bool = False,
         bin_size: float = 0.02,
@@ -138,11 +119,6 @@ class SIMPL:
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
             towards ``Xb``. None means no prior (the latent is free to move anywhere).
             By default None.
-        decode_batch_size : int or None, optional
-            Number of time bins to decode per batch when computing Poisson
-            likelihood maps and Gaussian observation fits. Smaller values reduce
-            peak memory usage during decoding; ``None`` disables batching and
-            decodes the full session in one shot. By default 4096.
         is_1D_angular : bool, optional
             Whether the latent space is 1D angular/circular (e.g. head direction data in
             radians). If True, angular KDE is used, the Kalman filter wraps its state to
@@ -197,9 +173,6 @@ class SIMPL:
         self.speed_prior = speed_prior
         self.use_kalman_smoothing = use_kalman_smoothing
         self.behavior_prior = behavior_prior
-        if decode_batch_size is not None and decode_batch_size <= 0:
-            raise ValueError(f"decode_batch_size must be positive or None, got {decode_batch_size}")
-        self.decode_batch_size = decode_batch_size
         self.is_1D_angular = is_1D_angular
 
         # Environment config
@@ -1056,38 +1029,14 @@ class SIMPL:
             U = jnp.zeros((T, self.D_))
 
         _, trial_slices, is_boundary, is_trial_end = self._validate_trial_boundaries(trial_boundaries, T)
-        decode_batch_size = T if self.decode_batch_size is None else min(self.decode_batch_size, T)
         store_log_maps = getattr(self, "save_full_history_", False)
 
-        mu_batches = []
-        mode_batches = []
-        sigma_batches = []
-        no_spike_batches = []
-        log_map_batches = [] if store_log_maps else None
-
-        for start in range(0, T, decode_batch_size):
-            end = min(start + decode_batch_size, T)
-            batch_result = _decode_likelihood_batch(
-                self.xF_,
-                Y[start:end],
-                F,
-                mask[start:end],
-                return_log_maps=store_log_maps,
-            )
-            if store_log_maps:
-                mu_b, mode_b, sigma_b, no_spikes_b, logPYXF_maps_b = batch_result
-                log_map_batches.append(logPYXF_maps_b)
-            else:
-                mu_b, mode_b, sigma_b, no_spikes_b = batch_result
-            mu_batches.append(mu_b)
-            mode_batches.append(mode_b)
-            sigma_batches.append(sigma_b)
-            no_spike_batches.append(no_spikes_b)
-
-        mu_l = jnp.concatenate(mu_batches, axis=0)
-        mode_l = jnp.concatenate(mode_batches, axis=0)
-        sigma_l = jnp.concatenate(sigma_batches, axis=0)
-        no_spikes = jnp.concatenate(no_spike_batches, axis=0)
+        # Likelihood maps and Gaussian observation fits (batched internally)
+        obs = decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
+        if store_log_maps:
+            mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
+        else:
+            mu_l, mode_l, sigma_l, no_spikes = obs
 
         # Observation noise (inflated when no spikes)
         observation_noise = jnp.where(
@@ -1129,7 +1078,7 @@ class SIMPL:
             "sigma_s": sigma_s,
         }
         if store_log_maps:
-            E["logPYXF_maps"] = jnp.concatenate(log_map_batches, axis=0)
+            E["logPYXF_maps"] = logPYXF_maps
 
         return E
 
@@ -1862,7 +1811,6 @@ class SIMPL:
             "speed_prior": self.speed_prior,
             "use_kalman_smoothing": int(self.use_kalman_smoothing),
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
-            "decode_batch_size": np.nan if self.decode_batch_size is None else self.decode_batch_size,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",
             "environment_provided": int(self._environment_override is not None),
