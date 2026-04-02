@@ -652,10 +652,14 @@ _AVAILABLE_DEMO_DATA = [
 ]
 
 
-def load_demo_data(name: str = "gridcells_synthetic.npz", directory: str | None = None) -> np.lib.npyio.NpzFile:
+def load_demo_data(
+    name: str = "gridcells_synthetic.npz",
+    directory: str | None = None,
+    force_download: bool = False,
+) -> np.lib.npyio.NpzFile:
     """Load a demo data file, downloading from GitHub releases if not cached.
 
-    Resolution order:
+    Resolution order (skipped when *force_download* is ``True``):
 
     1. **User-specified directory** — if *directory* is given, look for
        ``<directory>/<name>`` first.
@@ -671,6 +675,9 @@ def load_demo_data(name: str = "gridcells_synthetic.npz", directory: str | None 
         Filename to load (e.g. ``"gridcells_synthetic.npz"``).
     directory : str or None
         Optional directory to search for *name* before the default locations.
+    force_download : bool
+        If ``True``, skip local/cache lookups and always download from GitHub,
+        overwriting any cached copy.
 
     Returns
     -------
@@ -689,65 +696,71 @@ def load_demo_data(name: str = "gridcells_synthetic.npz", directory: str | None 
     from pathlib import Path
 
     # 1. Check user-specified directory
-    if directory is not None:
+    if not force_download and directory is not None:
         dir_path = Path(directory) / name
         if dir_path.is_file():
+            print(f"Loaded {name} from user directory: {dir_path}")
             return np.load(dir_path)
 
     # 2. Check local source tree (editable installs)
-    local_path = Path(__file__).resolve().parent.parent.parent / "examples" / "data" / name
-    if local_path.is_file():
-        return np.load(local_path)
+    if not force_download:
+        local_path = Path(__file__).resolve().parent.parent.parent / "examples" / "data" / name
+        if local_path.is_file():
+            print(f"Loaded {name} from local source tree: {local_path}")
+            return np.load(local_path)
 
-    # 2. Check user cache
+    # 3. Check user cache
     cache_dir = Path.home() / ".simpl" / "data"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cached_path = cache_dir / name
 
-    if not cached_path.exists():
-        # 3. Download from GitHub releases (search through releases for the file)
-        import json
-        import sys
-        import urllib.request
+    if not force_download and cached_path.exists():
+        print(f"Loaded {name} from cache: {cached_path}")
+        return np.load(cached_path)
 
-        def _reporthook(block_num, block_size, total_size):
-            if total_size > 0:
-                downloaded = block_num * block_size
-                pct = min(100, downloaded * 100 // total_size)
-                mb_done = downloaded / 1_000_000
-                mb_total = total_size / 1_000_000
-                print(f"\r  {pct:3d}% ({mb_done:.1f}/{mb_total:.1f} MB)", end="", file=sys.stderr)
+    # 4. Download from GitHub releases
+    import json
+    import os
+    import sys
+    import urllib.request
 
-        import os
+    def _reporthook(block_num, block_size, total_size):
+        if total_size > 0:
+            downloaded = block_num * block_size
+            pct = min(100, downloaded * 100 // total_size)
+            mb_done = downloaded / 1_000_000
+            mb_total = total_size / 1_000_000
+            print(f"\r  {pct:3d}% ({mb_done:.1f}/{mb_total:.1f} MB)", end="", file=sys.stderr)
 
-        api_url = "https://api.github.com/repos/TomGeorge1234/SIMPL/releases"
-        headers = {"Accept": "application/vnd.github+json"}
-        token = os.environ.get("GITHUB_TOKEN")
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        req = urllib.request.Request(api_url, headers=headers)
-        with urllib.request.urlopen(req) as resp:
-            releases = json.loads(resp.read())
+    api_url = "https://api.github.com/repos/TomGeorge1234/SIMPL/releases"
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(api_url, headers=headers)
+    with urllib.request.urlopen(req) as resp:
+        releases = json.loads(resp.read())
 
-        download_url = None
-        for release in releases:
-            for asset in release.get("assets", []):
-                if asset["name"] == name:
-                    download_url = asset["browser_download_url"]
-                    break
-            if download_url:
+    download_url = None
+    for release in releases:
+        for asset in release.get("assets", []):
+            if asset["name"] == name:
+                download_url = asset["browser_download_url"]
                 break
+        if download_url:
+            break
 
-        if download_url is None:
-            raise FileNotFoundError(f'Could not find "{name}" in any GitHub release at {api_url}')
+    if download_url is None:
+        raise FileNotFoundError(f'Could not find "{name}" in any GitHub release at {api_url}')
 
-        print(f"Downloading {name} from {download_url} ...", file=sys.stderr)
-        try:
-            urllib.request.urlretrieve(download_url, cached_path, reporthook=_reporthook)
-        except Exception:
-            cached_path.unlink(missing_ok=True)
-            raise
-        print(file=sys.stderr)  # newline after progress
+    print(f"Downloading {name} from {download_url} ...", file=sys.stderr)
+    try:
+        urllib.request.urlretrieve(download_url, cached_path, reporthook=_reporthook)
+    except Exception:
+        cached_path.unlink(missing_ok=True)
+        raise
+    print(file=sys.stderr)  # newline after progress
+    print(f"Loaded {name} from GitHub (saved to cache: {cached_path})")
 
     return np.load(cached_path)
 
