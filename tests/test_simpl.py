@@ -718,6 +718,7 @@ class TestSIMPLSaveFullHistory:
 
     def test_batched_decode_observations_matches_full(self, demo_data):
         import jax.numpy as jnp
+
         from simpl.kde import decode_observations
 
         N = 600

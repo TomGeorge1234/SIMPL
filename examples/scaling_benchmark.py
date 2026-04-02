@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import sys
 import time
 from pathlib import Path
@@ -47,11 +46,9 @@ parser.add_argument("--plot", action="store_true", help="Skip benchmark, just pl
 args = parser.parse_args()
 
 import jax  # noqa: E402
-import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 
 from simpl import SIMPL  # noqa: E402
-
 
 DT = 0.02  # 20 ms time bins (50 Hz)
 
@@ -131,7 +128,7 @@ def main():
     devices = []
     for d in args.devices:
         if d == "gpu" and not gpu_available:
-            print(f"Skipping GPU (not available)")
+            print("Skipping GPU (not available)")
             continue
         devices.append(d)
 
@@ -165,26 +162,30 @@ def main():
             try:
                 elapsed = time_fit(Y, Xb, time_arr, use_gpu, args.n_iterations, args.bin_size)
                 print(f"{elapsed:.2f}s")
-                results.append({
-                    "minutes": minutes,
-                    "timepoints": T,
-                    "device": device,
-                    "fit_time_s": elapsed,
-                    "total_spikes": total_spikes,
-                    "duration_s": duration_s,
-                    "spike_array_mb": spike_array_mb,
-                })
+                results.append(
+                    {
+                        "minutes": minutes,
+                        "timepoints": T,
+                        "device": device,
+                        "fit_time_s": elapsed,
+                        "total_spikes": total_spikes,
+                        "duration_s": duration_s,
+                        "spike_array_mb": spike_array_mb,
+                    }
+                )
             except Exception as e:
                 print(f"FAILED ({e})")
-                results.append({
-                    "minutes": minutes,
-                    "timepoints": T,
-                    "device": device,
-                    "fit_time_s": float("nan"),
-                    "total_spikes": total_spikes,
-                    "duration_s": duration_s,
-                    "spike_array_mb": spike_array_mb,
-                })
+                results.append(
+                    {
+                        "minutes": minutes,
+                        "timepoints": T,
+                        "device": device,
+                        "fit_time_s": float("nan"),
+                        "total_spikes": total_spikes,
+                        "duration_s": duration_s,
+                        "spike_array_mb": spike_array_mb,
+                    }
+                )
 
     # Write CSV
     output_path = Path(args.output)
@@ -208,4 +209,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

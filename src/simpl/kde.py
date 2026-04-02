@@ -321,7 +321,10 @@ def decode_observations(
     for start in range(0, T, batch_size):
         end = min(start + batch_size, T)
         result = _process_batch(
-            xF, spikes[start:end], mean_rate, mask[start:end],
+            xF,
+            spikes[start:end],
+            mean_rate,
+            mask[start:end],
             _return_log_maps=return_log_maps,
         )
         if return_log_maps:

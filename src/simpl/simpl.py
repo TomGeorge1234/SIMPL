@@ -18,6 +18,7 @@ Each EM iteration proceeds as:
 # Jax, for the majority of the calculations
 import threading
 import warnings
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -28,7 +29,13 @@ from jax import vmap
 from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
 from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
-from simpl.kde import decode_observations, gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
+from simpl.kde import (
+    decode_observations,
+    gaussian_kernel,
+    kde,
+    kde_angular,
+    poisson_log_likelihood_trajectory,
+)
 from simpl.utils import (
     _wrap_minuspi_pi,
     analyse_place_fields,
@@ -37,7 +44,6 @@ from simpl.utils import (
     cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
-    fit_gaussian,
     get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
