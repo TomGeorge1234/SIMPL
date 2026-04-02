@@ -469,8 +469,6 @@ class SIMPL:
         )
 
         X_decoded = np.array(E["mu_s"])
-        if self.is_1D_angular:
-            X_decoded = np.array(_wrap_minuspi_pi(jnp.array(X_decoded)))
 
         # Store full decode results as an xr.Dataset
         pred_time = np.arange(T_new) * self.dt_
@@ -1117,6 +1115,9 @@ class SIMPL:
             sigmas_f=sigma_f,
             is_trial_end=is_trial_end,
         )
+
+        if self.is_1D_angular:
+            mu_s = _wrap_minuspi_pi(mu_s)
 
         E = {
             "mu_l": mu_l,
