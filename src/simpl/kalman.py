@@ -101,7 +101,7 @@ class KalmanFilter:
         dim_Z: int,
         dim_Y: int,
         dim_U: int = 0,
-        batch_size: int = 36000,
+        batch_size: int | None = None,
         is_1D_angular: bool = False,
         force_cpu: bool = True,
         # optional parameters
@@ -134,8 +134,9 @@ class KalmanFilter:
             The size of the observation space
         dim_U : int, optional
             The size of the control space (default is 0, for no control)
-        batch_size : int
-            The batch size for the Kalman filter
+        batch_size : int or None
+            The batch size for the Kalman filter. If None (default), chosen
+            adaptively to target ~256 MB peak based on state dimension.
         is_1D_angular : bool, optional
             Whether the state is a 1D angle in [-pi, pi). If True, the filter
             and smoother wrap mu to [-pi, pi) after every predict, update, and
@@ -172,6 +173,11 @@ class KalmanFilter:
         self.dim_Z = dim_Z
         self.dim_Y = dim_Y
         self.dim_U = dim_U
+        if batch_size is None:
+            # Target ~256 MB peak; dominant arrays are (batch, dim_Z, dim_Z) float32
+            # Per-timestep: ~3 covariance matrices + 3 mean vectors ≈ 3*dim_Z^2 + 3*dim_Z floats
+            elems_per_step = max(1, 3 * dim_Z * dim_Z + 3 * dim_Z)
+            batch_size = max(256, 64_000_000 // elems_per_step)
         self.batch_size = batch_size
         self.force_cpu = force_cpu
 

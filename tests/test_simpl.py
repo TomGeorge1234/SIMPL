@@ -699,6 +699,7 @@ class TestSIMPLSaveFullHistory:
             n_iterations=1,
         )
         assert "logPYXF_maps" not in model.results_
+        assert "logPYXF_maps" not in model.E_
 
     def test_save_full_history_stores_logPYXF_maps(self, demo_data):
         N = 1000
@@ -712,7 +713,32 @@ class TestSIMPLSaveFullHistory:
             save_full_history=True,
         )
         assert "logPYXF_maps" in model.results_
+        assert "logPYXF_maps" in model.E_
         assert "iteration" not in model.results_.logPYXF_maps.dims
+
+    def test_batched_decode_observations_matches_full(self, demo_data):
+        import jax.numpy as jnp
+
+        from simpl.kde import decode_observations
+
+        N = 600
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL()
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=0,
+        )
+        Y = jnp.array(model.Y_)
+        F = model.F_
+        mask = jnp.ones(Y.shape, dtype=bool)
+
+        full = decode_observations(model.xF_, Y, F, mask, batch_size=N)
+        batched = decode_observations(model.xF_, Y, F, mask, batch_size=128)
+
+        for f, b in zip(full, batched):
+            np.testing.assert_allclose(np.asarray(b), np.asarray(f), atol=1e-6)
 
 
 class TestSIMPLConvenienceAttrs:

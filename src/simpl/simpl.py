@@ -29,7 +29,13 @@ from jax import vmap
 from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
 from simpl.environment import Environment
 from simpl.kalman import KalmanFilter
-from simpl.kde import gaussian_kernel, kde, kde_angular, poisson_log_likelihood, poisson_log_likelihood_trajectory
+from simpl.kde import (
+    decode_observations,
+    gaussian_kernel,
+    kde,
+    kde_angular,
+    poisson_log_likelihood_trajectory,
+)
 from simpl.utils import (
     _wrap_minuspi_pi,
     analyse_place_fields,
@@ -38,7 +44,6 @@ from simpl.utils import (
     cca_angular,
     coefficient_of_determination,
     create_speckled_mask,
-    fit_gaussian,
     get_field_peaks,
     print_data_summary,
     save_results_to_netcdf,
@@ -443,8 +448,6 @@ class SIMPL:
         )
 
         X_decoded = np.array(E["mu_s"])
-        if self.is_1D_angular:
-            X_decoded = np.array(_wrap_minuspi_pi(jnp.array(X_decoded)))
 
         # Store full decode results as an xr.Dataset
         pred_time = np.arange(T_new) * self.dt_
@@ -1032,13 +1035,14 @@ class SIMPL:
             U = jnp.zeros((T, self.D_))
 
         _, trial_slices, is_boundary, is_trial_end = self._validate_trial_boundaries(trial_boundaries, T)
+        store_log_maps = getattr(self, "save_full_history_", False)
 
-        # Log-likelihood maps
-        logPYXF_maps = poisson_log_likelihood(Y, F, mask=mask)
-        no_spikes = jnp.sum(Y * mask, axis=1) == 0
-
-        # Fit Gaussians
-        mu_l, mode_l, sigma_l = fit_gaussian(self.xF_, jnp.exp(logPYXF_maps))
+        # Likelihood maps and Gaussian observation fits (batched internally)
+        obs = decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
+        if store_log_maps:
+            mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
+        else:
+            mu_l, mode_l, sigma_l, no_spikes = obs
 
         # Observation noise (inflated when no spikes)
         observation_noise = jnp.where(
@@ -1067,6 +1071,9 @@ class SIMPL:
             is_trial_end=is_trial_end,
         )
 
+        if self.is_1D_angular:
+            mu_s = _wrap_minuspi_pi(mu_s)
+
         E = {
             "mu_l": mu_l,
             "mode_l": mode_l,
@@ -1076,7 +1083,8 @@ class SIMPL:
             "mu_s": mu_s,
             "sigma_s": sigma_s,
         }
-        E["logPYXF_maps"] = logPYXF_maps
+        if store_log_maps:
+            E["logPYXF_maps"] = logPYXF_maps
 
         return E
 
@@ -1490,7 +1498,6 @@ class SIMPL:
             dim_Z=self.D_,
             dim_Y=self.D_,
             dim_U=self.D_,
-            batch_size=self.T_,  # i.e. one long batch.
             F=F,
             B=B,
             Q=Q,

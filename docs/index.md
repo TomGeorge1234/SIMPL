@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml/badge.svg)](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml)
 
-<img src="https://raw.githubusercontent.com/TomGeorge1234/SIMPL/main/simpl.gif" width=850>
+<img src="https://raw.githubusercontent.com/TomGeorge1234/SIMPL/main/assets/simpl.gif" width=850>
 
 **SIMPL** implements the algorithm from the ICLR 2025 paper [_"Scalable and hassle-free optimisation of neural representations from behaviour"_](https://openreview.net/forum?id=9kFaNwX6rv). It optimises neural representations (place fields) from behavioural initialisation using an EM-style algorithm.
 
