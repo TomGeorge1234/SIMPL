@@ -465,6 +465,87 @@ class SIMPL:
 
         return X_decoded
 
+    def calculate_spike_loglikelihoods(
+        self,
+        field_iteration: int = 1,
+        trajectory_iteration: int | None = None,
+        trajectory_var: str = "mode_l",
+    ) -> dict[str, float]:
+        """Calculate spike log-likelihoods for a stored field/trajectory pair.
+
+        This is a post-hoc helper for scoring alternate latent trajectories
+        against receptive fields from a chosen iteration. By default it uses
+        ``F`` from iteration 1 and ``mode_l`` from iteration 1, then computes
+        train/validation Poisson log-likelihoods with the same normalization as
+        ``logPYXF`` and ``logPYXF_val``.
+
+        Parameters
+        ----------
+        field_iteration : int, optional
+            Iteration label from which to take ``F``. By default 1.
+        trajectory_iteration : int or None, optional
+            Iteration label from which to take ``trajectory_var``. If None,
+            uses ``field_iteration``. By default None.
+        trajectory_var : str, optional
+            Name of the stored trajectory variable to score, e.g. ``"mode_l"``,
+            ``"mu_s"``, or ``"X"``. By default ``"mode_l"``.
+
+        Returns
+        -------
+        dict
+            Dictionary with ``logPYXF``, ``logPYXF_val``, ``bits_per_spike``,
+            and ``bits_per_spike_val`` as Python floats.
+
+        Raises
+        ------
+        RuntimeError
+            If the model has not been fitted yet.
+        ValueError
+            If the requested iteration or trajectory variable is unavailable.
+        """
+        self._check_fitted()
+        if trajectory_iteration is None:
+            trajectory_iteration = field_iteration
+
+        available_iterations = set(np.asarray(self.results_.iteration.values).tolist())
+        if field_iteration not in available_iterations:
+            raise ValueError(
+                f"field_iteration={field_iteration} is not present in results_. "
+                f"Available iteration labels: {sorted(available_iterations)}"
+            )
+        if trajectory_iteration not in available_iterations:
+            raise ValueError(
+                f"trajectory_iteration={trajectory_iteration} is not present in results_. "
+                f"Available iteration labels: {sorted(available_iterations)}"
+            )
+        if "F" not in self.results_:
+            raise ValueError("results_ does not contain receptive fields 'F'.")
+        if trajectory_var not in self.results_:
+            raise ValueError(
+                f"results_ does not contain trajectory_var={trajectory_var!r}. "
+                f"Available variables include: {sorted(self.results_.data_vars)}"
+            )
+
+        F = np.asarray(self.results_["F"].sel(iteration=field_iteration).values)
+        trajectory = np.asarray(self.results_[trajectory_var].sel(iteration=trajectory_iteration).values)
+
+        if not np.all(np.isfinite(F)):
+            raise ValueError(f"F at iteration {field_iteration} contains non-finite values.")
+        if trajectory.ndim != 2 or trajectory.shape != (self.T_, self.D_):
+            raise ValueError(
+                f"{trajectory_var} at iteration {trajectory_iteration} must have shape {(self.T_, self.D_)}, "
+                f"got {trajectory.shape}"
+            )
+        if not np.all(np.isfinite(trajectory)):
+            raise ValueError(
+                f"{trajectory_var} at iteration {trajectory_iteration} contains non-finite values. "
+                "Try a later iteration with a completed E-step."
+            )
+
+        FX = jnp.array(self._interpolate_firing_rates(trajectory, F))
+        loglikelihoods = self._get_loglikelihoods(self.Y_, FX)
+        return {key: float(value) for key, value in loglikelihoods.items()}
+
     def analyse_place_fields(self, iterations: list[int] | None = None) -> "SIMPL":
         """Run place field morphology analysis and add results to ``self.results_``.
 
