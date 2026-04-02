@@ -897,25 +897,62 @@ def load_results(path: str) -> xr.Dataset:
     return results
 
 
-def rehydrate_model(path_or_results: str | xr.Dataset, use_gpu: bool | str | None = None):
-    """Rehydrate a fitted ``SIMPL`` instance from saved results.
+# ──────────────────────────────────────────────────────────────────────────────
+# Results loading helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
-    Parameters
-    ----------
-    path_or_results : str or xr.Dataset
-        Path to a saved netCDF file, or an already-loaded results Dataset.
-    use_gpu : bool or str or None, optional
-        Override the saved ``use_gpu`` preference. If None, the saved value is
-        used when available, otherwise ``"if_available"`` is used.
 
-    Returns
-    -------
-    simpl.simpl.SIMPL
-        Rehydrated model instance.
-    """
-    from simpl.simpl import SIMPL
+def last_training_iteration(results: xr.Dataset) -> int:
+    """Return the last non-negative iteration label in *results*."""
+    iterations = np.asarray(results.coords["iteration"].values, dtype=int)
+    nonneg = iterations[iterations >= 0]
+    return int(nonneg.max()) if len(nonneg) > 0 else int(iterations.max())
 
-    return SIMPL.from_results(path_or_results, use_gpu=use_gpu)
+
+def loglikelihoods_from_results(results: xr.Dataset) -> xr.Dataset:
+    """Extract log-likelihood variables from *results* as a standalone Dataset."""
+    ll_vars = [v for v in ("logPYXF", "logPYXF_val", "bits_per_spike", "bits_per_spike_val") if v in results]
+    if not ll_vars:
+        return xr.Dataset(coords={"iteration": results.coords["iteration"]})
+    return results[ll_vars].copy(deep=True)
+
+
+def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D: int) -> dict:
+    """Restore E-step state dict from *results* at the given iteration."""
+    import jax
+    import jax.numpy as jnp
+
+    e_state = {}
+    for var in ("X", "mu_l", "mode_l", "sigma_l", "mu_f", "sigma_f", "mu_s", "sigma_s", "coef", "intercept"):
+        if var not in results:
+            continue
+        values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        if np.all(np.isnan(values)):
+            continue
+        e_state[var] = jax.device_put(jnp.array(values), device)
+    return e_state
+
+
+def restore_M_step_state(
+    results: xr.Dataset, iteration: int, n_neurons: int, n_bins: int, device
+) -> dict:
+    """Restore M-step state dict from *results* at the given iteration."""
+    import jax
+    import jax.numpy as jnp
+
+    m_state = {}
+    for var in ("F", "F_odd_minutes", "F_even_minutes", "PX"):
+        if var not in results:
+            continue
+        values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        if var.startswith("F"):
+            values = np.asarray(values).reshape(n_neurons, -1)
+        m_state[var] = jax.device_put(jnp.array(values), device)
+    if "FX" in results:
+        m_state["FX"] = jax.device_put(jnp.array(results["FX"].sel(iteration=iteration).values), device)
+    elif "FX_last_iteration" in results:
+        m_state["FX"] = jax.device_put(jnp.array(results["FX_last_iteration"].values), device)
+    return m_state
 
 
 # ──────────────────────────────────────────────────────────────────────────────

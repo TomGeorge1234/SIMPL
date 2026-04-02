@@ -46,8 +46,12 @@ from simpl.utils import (
     coefficient_of_determination,
     create_speckled_mask,
     get_field_peaks,
+    last_training_iteration,
     load_results,
+    loglikelihoods_from_results,
     print_data_summary,
+    restore_E_step_state,
+    restore_M_step_state,
     save_results_to_netcdf,
 )
 
@@ -461,87 +465,6 @@ class SIMPL:
 
         return X_decoded
 
-    def calculate_spike_loglikelihoods(
-        self,
-        field_iteration: int = 1,
-        trajectory_iteration: int | None = None,
-        trajectory_var: str = "mode_l",
-    ) -> dict[str, float]:
-        """Calculate spike log-likelihoods for a stored field/trajectory pair.
-
-        This is a post-hoc helper for scoring alternate latent trajectories
-        against receptive fields from a chosen iteration. By default it uses
-        ``F`` from iteration 1 and ``mode_l`` from iteration 1, then computes
-        train/validation Poisson log-likelihoods with the same normalization as
-        ``logPYXF`` and ``logPYXF_val``.
-
-        Parameters
-        ----------
-        field_iteration : int, optional
-            Iteration label from which to take ``F``. By default 1.
-        trajectory_iteration : int or None, optional
-            Iteration label from which to take ``trajectory_var``. If None,
-            uses ``field_iteration``. By default None.
-        trajectory_var : str, optional
-            Name of the stored trajectory variable to score, e.g. ``"mode_l"``,
-            ``"mu_s"``, or ``"X"``. By default ``"mode_l"``.
-
-        Returns
-        -------
-        dict
-            Dictionary with ``logPYXF``, ``logPYXF_val``, ``bits_per_spike``,
-            and ``bits_per_spike_val`` as Python floats.
-
-        Raises
-        ------
-        RuntimeError
-            If the model has not been fitted yet.
-        ValueError
-            If the requested iteration or trajectory variable is unavailable.
-        """
-        self._check_fitted()
-        if trajectory_iteration is None:
-            trajectory_iteration = field_iteration
-
-        available_iterations = set(np.asarray(self.results_.iteration.values).tolist())
-        if field_iteration not in available_iterations:
-            raise ValueError(
-                f"field_iteration={field_iteration} is not present in results_. "
-                f"Available iteration labels: {sorted(available_iterations)}"
-            )
-        if trajectory_iteration not in available_iterations:
-            raise ValueError(
-                f"trajectory_iteration={trajectory_iteration} is not present in results_. "
-                f"Available iteration labels: {sorted(available_iterations)}"
-            )
-        if "F" not in self.results_:
-            raise ValueError("results_ does not contain receptive fields 'F'.")
-        if trajectory_var not in self.results_:
-            raise ValueError(
-                f"results_ does not contain trajectory_var={trajectory_var!r}. "
-                f"Available variables include: {sorted(self.results_.data_vars)}"
-            )
-
-        F = np.asarray(self.results_["F"].sel(iteration=field_iteration).values)
-        trajectory = np.asarray(self.results_[trajectory_var].sel(iteration=trajectory_iteration).values)
-
-        if not np.all(np.isfinite(F)):
-            raise ValueError(f"F at iteration {field_iteration} contains non-finite values.")
-        if trajectory.ndim != 2 or trajectory.shape != (self.T_, self.D_):
-            raise ValueError(
-                f"{trajectory_var} at iteration {trajectory_iteration} must have shape {(self.T_, self.D_)}, "
-                f"got {trajectory.shape}"
-            )
-        if not np.all(np.isfinite(trajectory)):
-            raise ValueError(
-                f"{trajectory_var} at iteration {trajectory_iteration} contains non-finite values. "
-                "Try a later iteration with a completed E-step."
-            )
-
-        FX = jnp.array(self._interpolate_firing_rates(trajectory, F))
-        loglikelihoods = self._get_loglikelihoods(self.Y_, FX)
-        return {key: float(value) for key, value in loglikelihoods.items()}
-
     def analyse_place_fields(self, iterations: list[int] | None = None) -> "SIMPL":
         """Run place field morphology analysis and add results to ``self.results_``.
 
@@ -773,223 +696,59 @@ class SIMPL:
         """
         save_results_to_netcdf(self.results_, path)
 
-    @classmethod
-    def from_results(
-        cls,
-        path_or_results: str | os.PathLike[str] | xr.Dataset,
-        use_gpu: bool | str | None = None,
-    ) -> "SIMPL":
-        """Rehydrate a fitted ``SIMPL`` instance from saved results.
+    def load(self, path: str | os.PathLike[str]) -> "SIMPL":
+        """Load saved results into a fitted model, replacing the current results.
+
+        The model must first be set up with ``fit(..., n_iterations=0)`` (or more)
+        using the same data and hyperparameters as the original training run. This
+        method then overwrites ``results_``, ``F_``, ``X_``, ``iteration_``, and
+        the E/M step state so the model can be used for plotting, prediction, or
+        resumed training.
 
         Parameters
         ----------
-        path_or_results : str or PathLike or xr.Dataset
-            Path to a netCDF file previously written by ``save_results()``, or an
-            already-loaded results ``Dataset``.
-        use_gpu : bool or str or None, optional
-            Override the saved ``use_gpu`` preference. If None, uses the saved
-            preference when available, otherwise defaults to ``"if_available"``.
+        path : str or PathLike
+            Path to a netCDF file previously written by ``save_results()``.
 
         Returns
         -------
-        SIMPL
-            Rehydrated model instance with ``results_`` and convenience attrs
-            restored.
+        self
+
+        Examples
+        --------
+        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
+        >>> model.fit(Y, Xb, time, n_iterations=0)
+        >>> model.load("results.nc")
+        >>> model.fit(Y, Xb, time, n_iterations=5, resume=True)
         """
-        if isinstance(path_or_results, xr.Dataset):
-            results = path_or_results.copy(deep=True)
-        else:
-            results = load_results(os.fspath(path_or_results))
+        self._check_fitted()
+        results = load_results(os.fspath(path))
+        device = self._jax_device()
 
-        attrs = results.attrs
-        use_gpu_saved = cls._deserialize_use_gpu_requested(attrs.get("use_gpu_requested"))
-        use_gpu_effective = use_gpu_saved if use_gpu is None else use_gpu
-        if use_gpu_effective is None:
-            use_gpu_effective = "if_available"
+        self.results_ = results
+        self.iteration_ = last_training_iteration(results)
+        self.loglikelihoods_ = loglikelihoods_from_results(results)
 
-        behavior_prior = attrs.get("behavior_prior", np.nan)
-        if np.isscalar(behavior_prior) and np.isnan(behavior_prior):
-            behavior_prior = None
+        # Restore final F and X
+        iteration = self.iteration_
+        self.F_ = jax.device_put(jnp.array(
+            results["F"].sel(iteration=iteration).values.reshape(self.N_neurons_, -1)
+        ), device)
+        self.X_ = jax.device_put(jnp.array(
+            results["X"].sel(iteration=iteration).values
+        ), device)
+        self.lastF_ = self.F_
+        self.lastX_ = self.X_
 
-        model = cls(
-            kernel_bandwidth=float(attrs.get("kernel_bandwidth", 0.02)),
-            speed_prior=float(attrs.get("speed_prior", 0.1)),
-            use_kalman_smoothing=bool(attrs.get("use_kalman_smoothing", 1)),
-            behavior_prior=behavior_prior,
-            is_1D_angular=bool(attrs.get("is_1D_angular", 0)),
-            bin_size=float(attrs.get("bin_size", 0.02)),
-            env_pad=float(attrs.get("env_pad", 0.1)),
-            env_lims=cls._environment_lims_from_results(results),
-            val_frac=float(attrs.get("val_frac", 0.1)),
-            speckle_block_size_seconds=float(attrs.get("speckle_block_size_seconds", 1.0)),
-            random_seed=int(attrs.get("random_seed", 0)),
-            use_gpu=use_gpu_effective,
-        )
-
-        if bool(attrs.get("environment_provided", 0)):
-            warnings.warn(
-                "Results were produced with a user-provided Environment; rehydration restores an equivalent "
-                "generic Environment from the saved grid, not the original Python object."
-            )
-
-        device = model._jax_device()
-        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
-        model.dim_ = dim_names
-        model.D_ = len(dim_names)
-        model.T_ = int(results.sizes["time"])
-        model.N_neurons_ = int(results.sizes["neuron"])
-        model.N_PFmax_ = int(results.sizes.get("place_field", 20))
-        model.results_ = results
-        model.is_fitted_ = True
-
-        model.environment_ = cls._environment_from_results(results)
-        model.time_ = jax.device_put(jnp.array(results.coords["time"].values), device)
-        model.neuron_ = jax.device_put(jnp.array(results.coords["neuron"].values), device)
-
-        dt_attr = attrs.get("dt", np.nan)
-        if np.isscalar(dt_attr) and np.isfinite(dt_attr):
-            model.dt_ = float(dt_attr)
-        elif model.T_ >= 2:
-            model.dt_ = float(np.median(np.diff(np.asarray(results.coords["time"].values, dtype=float))))
-        else:
-            model.dt_ = np.nan
-
-        model.xF_ = jax.device_put(jnp.array(model.environment_.flattened_discretised_coords), device)
-        model.xF_shape_ = model.environment_.discrete_env_shape
-        model.N_bins_ = len(model.xF_)
-        model.variable_info_dict_ = _build_variable_info_dict(model.dim_)
-        model.coordinates_dict_ = {
-            "neuron": model.neuron_,
-            "time": model.time_,
-            "dim": model.dim_,
-            "dim_": model.dim_,
-            **model.environment_.coords_dict,
-            "place_field": jnp.arange(model.N_PFmax_),
-        }
-
-        missing_vars: dict[str, str] = {}
-        Y_values = cls._results_array_or_fill(
-            results,
-            "Y",
-            (model.T_, model.N_neurons_),
-            missing_vars,
-        )
-        Xb_values = cls._results_array_or_fill(
-            results,
-            "Xb",
-            (model.T_, model.D_),
-            missing_vars,
-        )
-        spike_mask_values = cls._results_mask_or_fill(
-            results,
-            (model.T_, model.N_neurons_),
-            missing_vars,
-        )
-
-        model.Y_ = jax.device_put(jnp.array(Y_values), device)
-        model.Xb_ = jax.device_put(jnp.array(Xb_values), device)
-        model.spike_mask_ = jax.device_put(jnp.array(spike_mask_values), device)
-
-        placeholder_data = {}
-        if "Y" not in model.results_:
-            placeholder_data["Y"] = model.Y_
-        if "Xb" not in model.results_:
-            placeholder_data["Xb"] = model.Xb_
-        if "spike_mask" not in model.results_:
-            placeholder_data["spike_mask"] = model.spike_mask_
-        if placeholder_data:
-            model.results_ = xr.merge(
-                [model.results_, _dict_to_dataset(placeholder_data, model.variable_info_dict_, model.coordinates_dict_)],
-                compat="override",
-            )
-
-        model.block_size_ = max(1, int(np.ceil(model.speckle_block_size_seconds / model.dt_)))
-        model.odd_minute_mask_ = jnp.stack([jnp.array(model.time_ // 60 % 2 == 0)] * model.N_neurons_, axis=1)
-        model.even_minute_mask_ = ~model.odd_minute_mask_
-
-        model.align_mode_ = cls._deserialize_align_mode(attrs.get("align_mode"))
-        model.Xalign_ = model.Xb_ if model.align_mode_ else None
-        model._kde = kde_angular if model.is_1D_angular else kde
-        model.save_full_history_ = bool(attrs.get("save_full_history", int("FX" in results or "logPYXF_maps" in results)))
-
-        trial_boundaries = np.asarray(attrs.get("trial_boundaries", [0]), dtype=int)
-        model.trial_boundaries_, model.trial_slices_, _, _ = cls._validate_trial_boundaries(trial_boundaries, model.T_)
-
-        model.iteration_ = cls._last_training_iteration(results)
-        model.loglikelihoods_ = cls._loglikelihoods_from_results(results)
-
-        F_values = cls._results_iteration_array_or_fill(
-            results,
-            "F",
-            model.iteration_,
-            (model.N_neurons_, model.N_bins_),
-            missing_vars,
-        )
-        X_values = cls._results_iteration_array_or_fill(
-            results,
-            "X",
-            model.iteration_,
-            (model.T_, model.D_),
-            missing_vars,
-        )
-
-        model.F_ = jax.device_put(jnp.array(F_values), device)
-        model.X_ = jax.device_put(jnp.array(X_values), device)
-        model.lastF_ = model.F_
-        model.lastX_ = model.X_
-
-        model.E_ = cls._restore_e_step_state(
-            results,
-            model.iteration_,
-            device,
-            missing_vars=missing_vars,
-            T=model.T_,
-            D=model.D_,
-        )
-        model.M_ = cls._restore_m_step_state(
-            results,
-            model.iteration_,
-            model.N_neurons_,
-            model.N_bins_,
-            device,
-            missing_vars=missing_vars,
-            T=model.T_,
-        )
+        # Restore E/M state for resume
+        self.E_ = restore_E_step_state(results, iteration, device, self.T_, self.D_)
+        self.M_ = restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
 
         if "FX_first_iteration" in results:
-            model.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
+            self.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
 
-        if model.align_mode_ == "fields" and "F" in results and 0 in np.asarray(results.iteration.values):
-            F_iter0 = np.asarray(results["F"].sel(iteration=0).values).reshape(model.N_neurons_, -1)
-            model.Falign_peaks_ = get_field_peaks(jnp.array(F_iter0), model.xF_)
-
-        model.ground_truth_available_ = False
-        model.Xt_ = None
-        model.Ft_ = None
-        if "Xt" in results:
-            model.Xt_ = jax.device_put(jnp.array(results["Xt"].values), device)
-            model._Xt_raw = np.asarray(results["Xt"].values)
-            model.ground_truth_available_ = True
-        if "Ft" in results:
-            model.Ft_ = jax.device_put(
-                jnp.array(np.asarray(results["Ft"].values).reshape(model.N_neurons_, -1)),
-                device,
-            )
-            model.ground_truth_available_ = True
-        if not model.ground_truth_available_:
-            model._Xt_raw = None
-        model._Ft_raw = None
-        model._Ft_coords_dict_raw = None
-
-        if missing_vars:
-            missing_details = "; ".join(missing_vars[name] for name in sorted(missing_vars))
-            warnings.warn(
-                "Rehydrated model from partial results. Missing variables were replaced with placeholders: "
-                f"{missing_details}. Methods that depend on these values may return NaN or fail."
-            )
-
-        model._init_kalman_filter()
-        return model
+        print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
+        return self
 
     # ──────────────────────────────────────────────────────────────────────────
     # Plotting
@@ -1699,28 +1458,78 @@ class SIMPL:
                 f"Consider increasing speed_prior (e.g. to {median_speed:.2g} or higher)."
             )
 
-        # ── Set up Kalman filter, masks, and alignment ──
+        # ── Set up Kalman filter, masks, alignment, coordinates ──
+        self._init_infrastructure(trial_boundaries, align_to_behavior)
+
+        # ── Initialise empty results datasets ──
+        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
+        data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
+        self.results_ = xr.merge(
+            [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
+            compat="override",
+        )
+        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+
+        # Preserve ground truth if add_baselines was called before fit
+        if not getattr(self, "ground_truth_available_", False):
+            self.Xt_ = None
+            self.Ft_ = None
+            self.ground_truth_available_ = False
+        else:
+            # Xt_ will be set from raw data in _apply_baselines_to_results after fit
+            self.Xt_ = jnp.array(self._Xt_raw)
+            self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
+
+        if verbose:
+            self._print_data_summary()
+
+    def _init_infrastructure(
+        self,
+        trial_boundaries,
+        align_to_behavior=None,
+        spike_mask=None,
+    ) -> None:
+        """Set up Kalman filter, masks, alignment, and coordinate registry.
+
+        Assumes that ``environment_``, ``Y_``, ``Xb_``, ``time_``, ``neuron_``,
+        ``dt_``, ``D_``, ``T_``, ``N_neurons_``, ``N_PFmax_``, ``xF_``,
+        ``xF_shape_``, and ``N_bins_`` are already set.
+
+        Parameters
+        ----------
+        trial_boundaries : array-like or None
+            Trial boundary indices passed through to ``_validate_trial_boundaries``.
+        align_to_behavior : bool or str or None
+            Alignment mode (``True``/``"trajectory"``/``"fields"``/``None``).
+        spike_mask : array-like or None
+            If provided, use this mask instead of generating a fresh speckled mask.
+            Used when loading from saved results.
+        """
         self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
 
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
-        if self.block_size_ >= self.T_:
-            raise ValueError(
-                "speckle_block_size_seconds must be shorter than the recording duration so both train and validation "
-                f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+        if spike_mask is not None:
+            self.spike_mask_ = spike_mask
+        else:
+            if self.block_size_ >= self.T_:
+                raise ValueError(
+                    "speckle_block_size_seconds must be shorter than the recording duration so both train and "
+                    f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+                )
+            self.spike_mask_ = create_speckled_mask(
+                size=(self.T_, self.N_neurons_),
+                sparsity=self.val_frac,
+                block_size=self.block_size_,
+                random_seed=self.random_seed,
             )
-        self.spike_mask_ = create_speckled_mask(
-            size=(self.T_, self.N_neurons_),
-            sparsity=self.val_frac,
-            block_size=self.block_size_,
-            random_seed=self.random_seed,
-        )
-        n_train = int(np.asarray(self.spike_mask_).sum())
-        if n_train == 0:
-            raise ValueError(
-                "The held-out mask produced an empty train split (no spikes are used for fitting). "
-                "Adjust val_frac or speckle_block_size_seconds."
-            )
+            n_train = int(np.asarray(self.spike_mask_).sum())
+            if n_train == 0:
+                raise ValueError(
+                    "The held-out mask produced an empty train split (no spikes are used for fitting). "
+                    "Adjust val_frac or speckle_block_size_seconds."
+                )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_
@@ -1749,29 +1558,6 @@ class SIMPL:
             **self.environment_.coords_dict,
             "place_field": jnp.arange(self.N_PFmax_),
         }
-
-        # ── Initialise empty results datasets ──
-        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
-        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
-        data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
-        self.results_ = xr.merge(
-            [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
-            compat="override",
-        )
-        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
-
-        # Preserve ground truth if add_baselines was called before fit
-        if not getattr(self, "ground_truth_available_", False):
-            self.Xt_ = None
-            self.Ft_ = None
-            self.ground_truth_available_ = False
-        else:
-            # Xt_ will be set from raw data in _apply_baselines_to_results after fit
-            self.Xt_ = jnp.array(self._Xt_raw)
-            self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
-
-        if verbose:
-            self._print_data_summary()
 
     def _init_kalman_filter(self) -> None:
         """Set up the Kalman filter from prior parameters."""
@@ -2107,185 +1893,6 @@ class SIMPL:
             mu0_all[trial_slice.start] = mu
             sigma0_all[trial_slice.start] = sigma
         return jnp.array(mu0_all), jnp.array(sigma0_all)
-
-    @staticmethod
-    def _serialize_use_gpu_requested(use_gpu: bool | str) -> str:
-        if use_gpu is True:
-            return "true"
-        if use_gpu is False:
-            return "false"
-        return str(use_gpu)
-
-    @staticmethod
-    def _deserialize_use_gpu_requested(use_gpu: str | None) -> bool | str | None:
-        if use_gpu is None:
-            return None
-        if use_gpu == "true":
-            return True
-        if use_gpu == "false":
-            return False
-        return use_gpu
-
-    @staticmethod
-    def _deserialize_align_mode(align_mode: str | None) -> str | None:
-        if align_mode in (None, "", "none"):
-            return None
-        return str(align_mode)
-
-    @staticmethod
-    def _environment_lims_from_results(results: xr.Dataset) -> tuple[tuple[float, ...], tuple[float, ...]]:
-        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
-        bin_size = float(results.attrs.get("bin_size", 0.02))
-        lower = []
-        upper = []
-        for dim in dim_names:
-            coord = np.asarray(results.coords[dim].values, dtype=float)
-            lower.append(float(coord[0] - bin_size / 2))
-            upper.append(float(coord[-1] + bin_size / 2))
-        return tuple(lower), tuple(upper)
-
-    @classmethod
-    def _environment_from_results(cls, results: xr.Dataset) -> Environment:
-        dim_names = [str(dim) for dim in np.asarray(results.coords["dim"].values).tolist()]
-        coords_dict = {dim: np.asarray(results.coords[dim].values, dtype=float) for dim in dim_names}
-        env_lims = cls._environment_lims_from_results(results)
-        env = Environment(
-            X=np.zeros((1, len(dim_names))),
-            pad=float(results.attrs.get("env_pad", 0.0)),
-            bin_size=float(results.attrs.get("bin_size", 0.02)),
-            force_lims=env_lims,
-            verbose=False,
-        )
-        env.coords_dict = coords_dict
-        env.discretised_coords = np.stack(np.meshgrid(*env.coords_dict.values(), indexing="ij"))
-        env.discrete_env_shape = env.discretised_coords.shape[1:]
-        env.flattened_discretised_coords = env.discretised_coords.reshape(env.D, -1).T
-        return env
-
-    @staticmethod
-    def _last_training_iteration(results: xr.Dataset) -> int:
-        iterations = np.asarray(results.coords["iteration"].values, dtype=int)
-        nonnegative = iterations[iterations >= 0]
-        if len(nonnegative) > 0:
-            return int(nonnegative.max())
-        return int(iterations.max())
-
-    @staticmethod
-    def _loglikelihoods_from_results(results: xr.Dataset) -> xr.Dataset:
-        ll_vars = [var for var in ("logPYXF", "logPYXF_val", "bits_per_spike", "bits_per_spike_val") if var in results]
-        if not ll_vars:
-            return xr.Dataset(coords={"iteration": results.coords["iteration"]})
-        return results[ll_vars].copy(deep=True)
-
-    @staticmethod
-    def _results_array_or_fill(
-        results: xr.Dataset,
-        var_name: str,
-        shape: tuple[int, ...],
-        missing_vars: dict[str, str],
-    ) -> np.ndarray:
-        if var_name in results:
-            return np.asarray(results[var_name].values)
-        missing_vars[var_name] = f"{var_name}=NaN array with shape {shape}"
-        return np.full(shape, np.nan, dtype=float)
-
-    @staticmethod
-    def _results_mask_or_fill(
-        results: xr.Dataset,
-        shape: tuple[int, ...],
-        missing_vars: dict[str, str],
-    ) -> np.ndarray:
-        if "spike_mask" in results:
-            return np.asarray(results["spike_mask"].values, dtype=bool)
-        missing_vars["spike_mask"] = (
-            f"spike_mask=all-True boolean mask with shape {shape} "
-            "(NaN is not representable for boolean arrays)"
-        )
-        return np.ones(shape, dtype=bool)
-
-    @staticmethod
-    def _results_iteration_array_or_fill(
-        results: xr.Dataset,
-        var_name: str,
-        iteration: int,
-        shape: tuple[int, ...],
-        missing_vars: dict[str, str],
-    ) -> np.ndarray:
-        if var_name in results:
-            values = results[var_name].sel(iteration=iteration).values if "iteration" in results[var_name].dims else results[var_name].values
-            return np.asarray(values).reshape(shape)
-        missing_vars[var_name] = f"{var_name}=NaN array with shape {shape}"
-        return np.full(shape, np.nan, dtype=float)
-
-    @staticmethod
-    def _restore_e_step_state(
-        results: xr.Dataset,
-        iteration: int,
-        device,
-        missing_vars: dict[str, str] | None = None,
-        T: int | None = None,
-        D: int | None = None,
-    ) -> dict:
-        e_state = {}
-        expected_shapes = {
-            "X": (T, D),
-            "mu_l": (T, D),
-            "mode_l": (T, D),
-            "sigma_l": (T, D, D),
-            "mu_f": (T, D),
-            "sigma_f": (T, D, D),
-            "mu_s": (T, D),
-            "sigma_s": (T, D, D),
-            "coef": (D, D),
-            "intercept": (D,),
-        }
-        for var in expected_shapes:
-            if var not in results:
-                if missing_vars is not None and expected_shapes[var][0] is not None:
-                    missing_vars.setdefault(var, f"{var}=NaN array with shape {expected_shapes[var]}")
-                    e_state[var] = jax.device_put(jnp.array(np.full(expected_shapes[var], np.nan, dtype=float)), device)
-                continue
-            values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
-            if np.all(np.isnan(values)):
-                continue
-            e_state[var] = jax.device_put(jnp.array(values), device)
-        return e_state
-
-    @staticmethod
-    def _restore_m_step_state(
-        results: xr.Dataset,
-        iteration: int,
-        n_neurons: int,
-        n_bins: int,
-        device,
-        missing_vars: dict[str, str] | None = None,
-        T: int | None = None,
-    ) -> dict:
-        m_state = {}
-        expected_shapes = {
-            "F": (n_neurons, n_bins),
-            "F_odd_minutes": (n_neurons, n_bins),
-            "F_even_minutes": (n_neurons, n_bins),
-            "PX": (n_bins,),
-        }
-        for var in expected_shapes:
-            if var not in results:
-                if missing_vars is not None:
-                    missing_vars.setdefault(var, f"{var}=NaN array with shape {expected_shapes[var]}")
-                    m_state[var] = jax.device_put(jnp.array(np.full(expected_shapes[var], np.nan, dtype=float)), device)
-                continue
-            values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
-            if var.startswith("F"):
-                values = np.asarray(values).reshape(n_neurons, -1)
-            m_state[var] = jax.device_put(jnp.array(values), device)
-        if "FX" in results:
-            m_state["FX"] = jax.device_put(jnp.array(results["FX"].sel(iteration=iteration).values), device)
-        elif "FX_last_iteration" in results:
-            m_state["FX"] = jax.device_put(jnp.array(results["FX_last_iteration"].values), device)
-        elif missing_vars is not None and T is not None:
-            missing_vars.setdefault("FX", f"FX=NaN array with shape {(T, n_neurons)}")
-            m_state["FX"] = jax.device_put(jnp.array(np.full((T, n_neurons), np.nan, dtype=float)), device)
-        return m_state
 
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""
