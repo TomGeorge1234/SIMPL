@@ -229,7 +229,7 @@ class TestLoadDemoData:
         assert "time" in data
 
     def test_rejects_unknown_file(self):
-        with pytest.raises(ValueError, match="Unknown demo data file"):
+        with pytest.raises(FileNotFoundError, match="not a known release asset"):
             load_demo_data("nonexistent.npz")
 
     @pytest.mark.parametrize("name", _AVAILABLE_DEMO_DATA)
