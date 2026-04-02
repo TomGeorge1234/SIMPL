@@ -186,7 +186,6 @@ class SIMPL:
         self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
-        self.use_gpu_requested_ = use_gpu
 
         # Fitted flag
         self.is_fitted_ = False
@@ -1798,14 +1797,6 @@ class SIMPL:
             sigma0_all[trial_slice.start] = sigma
         return jnp.array(mu0_all), jnp.array(sigma0_all)
 
-    @staticmethod
-    def _serialize_use_gpu_requested(use_gpu: bool | str) -> str:
-        if use_gpu is True:
-            return "true"
-        if use_gpu is False:
-            return "false"
-        return str(use_gpu)
-
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""
         return {
@@ -1825,7 +1816,7 @@ class SIMPL:
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),
             "random_seed": self.random_seed,
-            "use_gpu_requested": self._serialize_use_gpu_requested(self.use_gpu_requested_),
+            "use_gpu": int(self.use_gpu_),
         }
 
 
