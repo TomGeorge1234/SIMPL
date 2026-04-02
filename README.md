@@ -12,7 +12,7 @@
 [![Paper](https://img.shields.io/badge/paper-ICLR%202025-blue)](https://openreview.net/pdf?id=9kFaNwX6rv)
 <!-- [![PyPI Downloads](https://img.shields.io/pepy/dt/simpl-neuro)](https://pepy.tech/projects/simpl-neuro) -->
 
-<img src="simpl.gif" width=850>
+<img src="assets/simpl.gif" width=850>
 
 <!-- docs-intro-start -->
 ## Installation
@@ -139,9 +139,13 @@ model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 
 ### GPU acceleration
 
-SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloaded to the GPU, giving speedups on very large datasets.
+SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloaded to the GPU, giving speedups on very large or high-dimensional datasets.
 
-> **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. Due to JIT-ing overheads it may be faster to turn GPU off unless your dataset is incredibly large or high-dimensional. 
+<img src="assets/scaling_benchmark.png" width=500>
+
+*100 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins)*
+
+> **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. "Typical" neural recording lengths (< 2hrs, 1,000,000 spikes) take under 60 seconds to fit on modern CPUs though SIMPL can handle much larger. 
 
 ```python
 # Force CPU usage even if GPU is avaiable
