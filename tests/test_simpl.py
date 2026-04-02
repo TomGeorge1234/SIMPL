@@ -14,17 +14,12 @@ from simpl.utils import load_results
 class TestSIMPLInit:
     def test_config_only(self):
         """__init__ should only store config, no data or computation."""
-        model = SIMPL(speed_prior=0.2, kernel_bandwidth=0.03, decode_batch_size=256)
+        model = SIMPL(speed_prior=0.2, kernel_bandwidth=0.03)
         assert model.speed_prior == 0.2
         assert model.kernel_bandwidth == 0.03
-        assert model.decode_batch_size == 256
         assert model.is_fitted_ is False
         assert not hasattr(model, "Y_")
         assert not hasattr(model, "results_")
-
-    def test_decode_batch_size_must_be_positive(self):
-        with pytest.raises(ValueError, match="decode_batch_size"):
-            SIMPL(decode_batch_size=0)
 
     def test_use_kalman_smoothing_argument(self, demo_data):
         N = 500
@@ -290,7 +285,6 @@ class TestSIMPLSaveLoadResults:
             speed_prior=0.2,
             use_kalman_smoothing=False,
             behavior_prior=0.4,
-            decode_batch_size=256,
             is_1D_angular=False,
             bin_size=0.05,
             env_pad=0.0,
@@ -310,7 +304,6 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["speed_prior"] == 0.2
         assert model.results_.attrs["use_kalman_smoothing"] == 0
         assert model.results_.attrs["behavior_prior"] == 0.4
-        assert model.results_.attrs["decode_batch_size"] == 256
         assert model.results_.attrs["is_1D_angular"] == 0
         assert model.results_.attrs["bin_size"] == 0.05
         assert model.results_.attrs["env_pad"] == 0.0
@@ -328,7 +321,6 @@ class TestSIMPLSaveLoadResults:
         assert loaded.F.shape == model.results_.F.shape
         assert loaded.attrs["kernel_bandwidth"] == 0.03
         assert loaded.attrs["use_kalman_smoothing"] == 0
-        assert loaded.attrs["decode_batch_size"] == 256
         np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
 
 
@@ -712,7 +704,7 @@ class TestSIMPLSaveFullHistory:
     def test_save_full_history_stores_logPYXF_maps(self, demo_data):
         N = 1000
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(decode_batch_size=128)
+        model = SIMPL()
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -724,25 +716,28 @@ class TestSIMPLSaveFullHistory:
         assert "logPYXF_maps" in model.E_
         assert "iteration" not in model.results_.logPYXF_maps.dims
 
-    def test_batched_decode_matches_full_decode(self, demo_data):
+    def test_batched_decode_observations_matches_full(self, demo_data):
+        import jax.numpy as jnp
+        from simpl.kde import decode_observations
+
         N = 600
         N_neurons = min(5, demo_data["Y"].shape[1])
-        fit_kwargs = {
-            "Y": demo_data["Y"][:N, :N_neurons],
-            "Xb": demo_data["Xb"][:N],
-            "time": demo_data["time"][:N],
-            "n_iterations": 1,
-        }
-        full_model = SIMPL(decode_batch_size=None)
-        full_model.fit(**fit_kwargs)
+        model = SIMPL()
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=0,
+        )
+        Y = jnp.array(model.Y_)
+        F = model.F_
+        mask = jnp.ones(Y.shape, dtype=bool)
 
-        batched_model = SIMPL(decode_batch_size=128)
-        batched_model.fit(**fit_kwargs)
+        full = decode_observations(model.xF_, Y, F, mask, batch_size=N)
+        batched = decode_observations(model.xF_, Y, F, mask, batch_size=128)
 
-        for key in ["mu_l", "mode_l", "sigma_l", "mu_f", "sigma_f", "mu_s", "sigma_s", "X"]:
-            np.testing.assert_allclose(np.asarray(batched_model.E_[key]), np.asarray(full_model.E_[key]))
-
-        np.testing.assert_allclose(np.asarray(batched_model.F_), np.asarray(full_model.F_))
+        for f, b in zip(full, batched):
+            np.testing.assert_allclose(np.asarray(b), np.asarray(f), atol=1e-6)
 
 
 class TestSIMPLConvenienceAttrs:

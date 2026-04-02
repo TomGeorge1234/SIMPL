@@ -9,6 +9,7 @@ import pytest
 @pytest.mark.docs
 def test_mkdocs_build():
     """mkdocs build --strict must exit cleanly."""
+    pytest.importorskip("mkdocs", reason="mkdocs not installed")
     result = subprocess.run(
         [sys.executable, "-m", "mkdocs", "build", "--strict", "--clean"],
         capture_output=True,
