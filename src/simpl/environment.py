@@ -98,8 +98,8 @@ class Environment:
         if force_lims is None:
             if X.ndim != 2:
                 raise ValueError("X should be a 2D array of size (T x D).")
-            self.data_lims = (tuple(np.round(X.min(axis=0), 2)), tuple(np.round(X.max(axis=0), 2)))
-            self.lims = (tuple(np.round(X.min(axis=0) - pad, 2)), tuple(np.round(X.max(axis=0) + pad, 2)))
+            self.data_lims = (tuple(np.floor(X.min(axis=0) * 100) / 100), tuple(np.ceil(X.max(axis=0) * 100) / 100))
+            self.lims = (tuple(np.floor((X.min(axis=0) - pad) * 100) / 100), tuple(np.ceil((X.max(axis=0) + pad) * 100) / 100))
             self.D = X.shape[1]
         else:
             self.lims = force_lims
