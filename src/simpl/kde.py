@@ -72,7 +72,7 @@ def kde(
     kernel: Callable = gaussian_kernel,
     kernel_bandwidth: float = 0.01,
     mask: jax.Array | None = None,
-    batch_size: int = 36000,
+    batch_size: int | None = None,
     return_position_density: bool = False,
 ) -> jax.Array | tuple[jax.Array, jax.Array]:
     """
@@ -107,10 +107,10 @@ def kde(
         The bandwidth of the kernel
     mask : jax.Array, shape (T, N_neurons), optional
         A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
-    batch_size : int
+    batch_size : int or None
         The time axis is split into batches of this size to avoid memory
-        errors, each batch is then processed in series. Default is 36000
-        (chosen to be 1 hr at 10 and an amount which doesn't crash CPU)
+        errors, each batch is then processed in series. If None (default),
+        chosen adaptively to target ~64 MB peak for the kernel matrix.
     return_position_density : bool
         If True, this function also returns the position density (the denominator of the KDE) at each bin.
 
@@ -128,6 +128,11 @@ def kde(
     N_neurons = spikes.shape[1]
     N_bins = bins.shape[0]
     T = trajectory.shape[0]
+
+    if batch_size is None:
+        # Target ~256 MB peak for the (N_bins, batch_size) float32 kernel matrix
+        batch_size = max(256, 64_000_000 // N_bins)
+    batch_size = min(batch_size, T)
 
     # If not passed make a trivial mask (all True)
     if mask is None:
@@ -297,11 +302,9 @@ def decode_observations(
     T = spikes.shape[0]
     N_bins = xF.shape[0]
     if batch_size is None:
-        # Target ~64 MB peak for the (batch_size, N_bins) float32 likelihood tensor
-        batch_size = max(256, 16_000_000 // N_bins)
+        # Target ~256 MB peak for the (batch_size, N_bins) float32 likelihood tensor
+        batch_size = max(256, 64_000_000 // N_bins)
     batch_size = min(batch_size, T)
-    # batch_size = T
-    print(f"Decoding observations in batches of {batch_size} time bins to manage memory usage.")
 
     @partial(jax.jit, static_argnames=("_return_log_maps",))
     def _process_batch(xF, spikes_batch, mean_rate, mask_batch, _return_log_maps=False):
