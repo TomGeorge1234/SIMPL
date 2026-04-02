@@ -731,12 +731,10 @@ class SIMPL:
 
         # Restore final F and X
         iteration = self.iteration_
-        self.F_ = jax.device_put(jnp.array(
-            results["F"].sel(iteration=iteration).values.reshape(self.N_neurons_, -1)
-        ), device)
-        self.X_ = jax.device_put(jnp.array(
-            results["X"].sel(iteration=iteration).values
-        ), device)
+        self.F_ = jax.device_put(
+            jnp.array(results["F"].sel(iteration=iteration).values.reshape(self.N_neurons_, -1)), device
+        )
+        self.X_ = jax.device_put(jnp.array(results["X"].sel(iteration=iteration).values), device)
         self.lastF_ = self.F_
         self.lastX_ = self.X_
 

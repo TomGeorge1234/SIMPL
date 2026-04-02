@@ -926,16 +926,16 @@ def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D:
     for var in ("X", "mu_l", "mode_l", "sigma_l", "mu_f", "sigma_f", "mu_s", "sigma_s", "coef", "intercept"):
         if var not in results:
             continue
-        values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        values = (
+            results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        )
         if np.all(np.isnan(values)):
             continue
         e_state[var] = jax.device_put(jnp.array(values), device)
     return e_state
 
 
-def restore_M_step_state(
-    results: xr.Dataset, iteration: int, n_neurons: int, n_bins: int, device
-) -> dict:
+def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_bins: int, device) -> dict:
     """Restore M-step state dict from *results* at the given iteration."""
     import jax
     import jax.numpy as jnp
@@ -944,7 +944,9 @@ def restore_M_step_state(
     for var in ("F", "F_odd_minutes", "F_even_minutes", "PX"):
         if var not in results:
             continue
-        values = results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        values = (
+            results[var].sel(iteration=iteration).values if "iteration" in results[var].dims else results[var].values
+        )
         if var.startswith("F"):
             values = np.asarray(values).reshape(n_neurons, -1)
         m_state[var] = jax.device_put(jnp.array(values), device)
