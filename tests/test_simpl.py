@@ -324,6 +324,44 @@ class TestSIMPLSaveLoadResults:
         np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
 
 
+class TestSIMPLLoad:
+    def test_load_restores_fitted_model_state(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        Y, Xb, time = demo_data["Y"][:N, :N_neurons], demo_data["Xb"][:N], demo_data["time"][:N]
+
+        model = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
+        model.fit(Y=Y, Xb=Xb, time=time, n_iterations=2)
+
+        path = str(tmp_path / "results.nc")
+        model.save_results(path)
+
+        # Recreate model from scratch, then load
+        loaded = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
+        loaded.load(path)
+
+        assert loaded.iteration_ == model.iteration_
+        np.testing.assert_allclose(np.array(loaded.X_), np.array(model.X_))
+        np.testing.assert_allclose(np.array(loaded.F_), np.array(model.F_))
+
+    def test_load_then_resume(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        Y, Xb, time = demo_data["Y"][:N, :N_neurons], demo_data["Xb"][:N], demo_data["time"][:N]
+
+        model = SIMPL(speed_prior=0.2, use_gpu=False)
+        model.fit(Y=Y, Xb=Xb, time=time, n_iterations=1)
+        path = str(tmp_path / "results.nc")
+        model.save_results(path)
+
+        # Load and resume for more iterations
+        loaded = SIMPL(speed_prior=0.2, use_gpu=False)
+        loaded.load(path)
+        loaded.fit(Y=Y, Xb=Xb, time=time, n_iterations=2, resume=True)
+
+        assert loaded.iteration_ == 3  # 1 original + 2 resumed
+
+
 class TestSIMPLInterpolateFiringRates:
     def test_correct_shape(self, small_simpl_model):
         model = small_simpl_model

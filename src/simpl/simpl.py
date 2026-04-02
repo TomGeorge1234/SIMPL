@@ -16,6 +16,7 @@ Each EM iteration proceeds as:
 """
 
 # Jax, for the majority of the calculations
+import os
 import threading
 import warnings
 
@@ -45,7 +46,12 @@ from simpl.utils import (
     coefficient_of_determination,
     create_speckled_mask,
     get_field_peaks,
+    last_training_iteration,
+    load_results,
+    loglikelihoods_from_results,
     print_data_summary,
+    restore_E_step_state,
+    restore_M_step_state,
     save_results_to_netcdf,
 )
 
@@ -690,6 +696,82 @@ class SIMPL:
         """
         save_results_to_netcdf(self.results_, path)
 
+    def load(self, path: str | os.PathLike[str]) -> "SIMPL":
+        """Load saved results from disk, restoring the model to a previously fitted state.
+
+        This method reads a netCDF file written by ``save_results()`` and uses the
+        saved ``Y``, ``Xb``, and ``time`` arrays to set up the model internally
+        (equivalent to calling ``fit(..., n_iterations=0)``), then restores the
+        fitted fields, decoded trajectory, and E/M step state from the saved
+        iterations. After loading, the model can be used for plotting, prediction,
+        or resumed training via ``fit(..., resume=True)``.
+
+        .. warning::
+
+            **The constructor hyperparameters must exactly match those used in the
+            original training run.** This method does NOT read or override
+            hyperparameters from the saved file — it trusts whatever was passed to
+            ``__init__``. If any parameter differs (``speed_prior``,
+            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``val_frac``,
+            ``random_seed``, etc.), the internal state (Kalman filter, spike mask,
+            environment grid) will be inconsistent with the saved results, leading
+            to silently incorrect behaviour on resume, predict, or further fitting.
+
+            Copy the exact ``SIMPL(...)`` constructor call from your original
+            training script.
+
+        Parameters
+        ----------
+        path : str or PathLike
+            Path to a netCDF file previously written by ``save_results()``.
+
+        Returns
+        -------
+        self
+
+        Examples
+        --------
+        >>> # Use the exact same constructor arguments as the original training run
+        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
+        >>> model.load("results.nc")
+        >>> model.fit(Y, Xb, time, n_iterations=5, resume=True)
+        """
+        results = load_results(os.fspath(path))
+
+        # Run full setup from saved data (environment, Kalman filter, masks, etc.)
+        self.fit(
+            Y=results["Y"].values,
+            Xb=results["Xb"].values,
+            time=np.asarray(results.coords["time"].values, dtype=float),
+            n_iterations=0,
+            trial_boundaries=np.atleast_1d(np.asarray(results.attrs.get("trial_boundaries", [0]), dtype=int)),
+        )
+        device = self._jax_device()
+
+        # Overwrite with saved results
+        self.results_ = results
+        self.iteration_ = last_training_iteration(results)
+        self.loglikelihoods_ = loglikelihoods_from_results(results)
+
+        # Restore final F and X
+        iteration = self.iteration_
+        self.F_ = jax.device_put(
+            jnp.array(results["F"].sel(iteration=iteration).values.reshape(self.N_neurons_, -1)), device
+        )
+        self.X_ = jax.device_put(jnp.array(results["X"].sel(iteration=iteration).values), device)
+        self.lastF_ = self.F_
+        self.lastX_ = self.X_
+
+        # Restore E/M state for resume
+        self.E_ = restore_E_step_state(results, iteration, device, self.T_, self.D_)
+        self.M_ = restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
+
+        if "FX_first_iteration" in results:
+            self.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
+
+        print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
+        return self
+
     # ──────────────────────────────────────────────────────────────────────────
     # Plotting
     # ──────────────────────────────────────────────────────────────────────────
@@ -1172,7 +1254,7 @@ class SIMPL:
         results = _dict_to_dataset(iteration_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [self.iteration_]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     def _fit_N_iterations(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
         """Train for N iterations with KeyboardInterrupt and early stopping support."""
@@ -1279,7 +1361,7 @@ class SIMPL:
         results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [iteration_id]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Initialisation
@@ -1398,28 +1480,78 @@ class SIMPL:
                 f"Consider increasing speed_prior (e.g. to {median_speed:.2g} or higher)."
             )
 
-        # ── Set up Kalman filter, masks, and alignment ──
+        # ── Set up Kalman filter, masks, alignment, coordinates ──
+        self._init_infrastructure(trial_boundaries, align_to_behavior)
+
+        # ── Initialise empty results datasets ──
+        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
+        data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
+        self.results_ = xr.merge(
+            [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
+            compat="override",
+        )
+        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+
+        # Preserve ground truth if add_baselines was called before fit
+        if not getattr(self, "ground_truth_available_", False):
+            self.Xt_ = None
+            self.Ft_ = None
+            self.ground_truth_available_ = False
+        else:
+            # Xt_ will be set from raw data in _apply_baselines_to_results after fit
+            self.Xt_ = jnp.array(self._Xt_raw)
+            self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
+
+        if verbose:
+            self._print_data_summary()
+
+    def _init_infrastructure(
+        self,
+        trial_boundaries,
+        align_to_behavior=None,
+        spike_mask=None,
+    ) -> None:
+        """Set up Kalman filter, masks, alignment, and coordinate registry.
+
+        Assumes that ``environment_``, ``Y_``, ``Xb_``, ``time_``, ``neuron_``,
+        ``dt_``, ``D_``, ``T_``, ``N_neurons_``, ``N_PFmax_``, ``xF_``,
+        ``xF_shape_``, and ``N_bins_`` are already set.
+
+        Parameters
+        ----------
+        trial_boundaries : array-like or None
+            Trial boundary indices passed through to ``_validate_trial_boundaries``.
+        align_to_behavior : bool or str or None
+            Alignment mode (``True``/``"trajectory"``/``"fields"``/``None``).
+        spike_mask : array-like or None
+            If provided, use this mask instead of generating a fresh speckled mask.
+            Used when loading from saved results.
+        """
         self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(trial_boundaries, self.T_)
         self._init_kalman_filter()
 
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
-        if self.block_size_ >= self.T_:
-            raise ValueError(
-                "speckle_block_size_seconds must be shorter than the recording duration so both train and validation "
-                f"observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+        if spike_mask is not None:
+            self.spike_mask_ = spike_mask
+        else:
+            if self.block_size_ >= self.T_:
+                raise ValueError(
+                    "speckle_block_size_seconds must be shorter than the recording duration so both train and "
+                    f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+                )
+            self.spike_mask_ = create_speckled_mask(
+                size=(self.T_, self.N_neurons_),
+                sparsity=self.val_frac,
+                block_size=self.block_size_,
+                random_seed=self.random_seed,
             )
-        self.spike_mask_ = create_speckled_mask(
-            size=(self.T_, self.N_neurons_),
-            sparsity=self.val_frac,
-            block_size=self.block_size_,
-            random_seed=self.random_seed,
-        )
-        n_train = int(np.asarray(self.spike_mask_).sum())
-        if n_train == 0:
-            raise ValueError(
-                "The held-out mask produced an empty train split (no spikes are used for fitting). "
-                "Adjust val_frac or speckle_block_size_seconds."
-            )
+            n_train = int(np.asarray(self.spike_mask_).sum())
+            if n_train == 0:
+                raise ValueError(
+                    "The held-out mask produced an empty train split (no spikes are used for fitting). "
+                    "Adjust val_frac or speckle_block_size_seconds."
+                )
 
         self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
         self.even_minute_mask_ = ~self.odd_minute_mask_
@@ -1448,29 +1580,6 @@ class SIMPL:
             **self.environment_.coords_dict,
             "place_field": jnp.arange(self.N_PFmax_),
         }
-
-        # ── Initialise empty results datasets ──
-        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
-        self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
-        data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
-        self.results_ = xr.merge(
-            [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
-            compat="override",
-        )
-        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
-
-        # Preserve ground truth if add_baselines was called before fit
-        if not getattr(self, "ground_truth_available_", False):
-            self.Xt_ = None
-            self.Ft_ = None
-            self.ground_truth_available_ = False
-        else:
-            # Xt_ will be set from raw data in _apply_baselines_to_results after fit
-            self.Xt_ = jnp.array(self._Xt_raw)
-            self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
-
-        if verbose:
-            self._print_data_summary()
 
     def _init_kalman_filter(self) -> None:
         """Set up the Kalman filter from prior parameters."""
@@ -1751,7 +1860,10 @@ class SIMPL:
         if trial_boundaries is None:
             trial_boundaries = np.array([0])
         else:
-            trial_boundaries = np.array(trial_boundaries)
+            trial_boundaries = np.atleast_1d(np.asarray(trial_boundaries, dtype=int))
+
+        if trial_boundaries.size == 0:
+            raise ValueError("trial_boundaries must contain at least one boundary (starting at 0)")
 
         if trial_boundaries[0] != 0:
             raise ValueError("First trial boundary must be 0")

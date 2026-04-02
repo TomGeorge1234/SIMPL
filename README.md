@@ -72,15 +72,6 @@ X_decoded = model.predict(Y_new)
 model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-likelihoods, etc.)
 ```
 
-### Ground truth baselines
-
-If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each iteration:
-
-```python
-model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
-model.fit(Y, Xb, time, n_iterations=5)  # baselines computed automatically
-```
-
 ### Plotting
 
 Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
@@ -108,16 +99,29 @@ model.predict(Y_test)
 model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 ```
 
-### Saving results
-
-Save the full results (all iterations, metrics, fitted variables) to a netCDF file:
+### Saving and loading
 
 ```python
 model.save_results("results.nc")
 
-# Load back later
+# Load results as an xr.Dataset for custom analysis
 from simpl import load_results
 results = load_results("results.nc")
+
+# Or rehydrate a full model for plotting, prediction, or resumed training
+# (constructor arguments must exactly match the original training run)
+model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
+model.load("results.nc")
+model.fit(Y, Xb, time, n_iterations=5, resume=True)  # pick up where you left off
+```
+
+### Ground truth baselines
+
+If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each iteration:
+
+```python
+model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
+model.fit(Y, Xb, time, n_iterations=5)  # baselines computed automatically
 ```
 
 ### 1D angular / circular data

@@ -10,6 +10,8 @@ Convenience utilities re-exported at the package level:
 * ``coarsen_dt`` — re-bin data at a coarser time resolution
 * ``load_demo_data`` — load the bundled grid-cell demo dataset
 * ``load_results`` — reload a saved ``xr.Dataset`` from disk
+
+To load a fitted model from saved results, use ``SIMPL.load(path)``.
 """
 
 from .simpl import SIMPL
