@@ -1076,7 +1076,8 @@ class SIMPL:
             "mu_s": mu_s,
             "sigma_s": sigma_s,
         }
-        E["logPYXF_maps"] = logPYXF_maps
+        if getattr(self, "save_full_history_", False):
+            E["logPYXF_maps"] = logPYXF_maps
 
         return E
 

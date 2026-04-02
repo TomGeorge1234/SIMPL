@@ -699,6 +699,7 @@ class TestSIMPLSaveFullHistory:
             n_iterations=1,
         )
         assert "logPYXF_maps" not in model.results_
+        assert "logPYXF_maps" not in model.E_
 
     def test_save_full_history_stores_logPYXF_maps(self, demo_data):
         N = 1000
@@ -712,6 +713,7 @@ class TestSIMPLSaveFullHistory:
             save_full_history=True,
         )
         assert "logPYXF_maps" in model.results_
+        assert "logPYXF_maps" in model.E_
         assert "iteration" not in model.results_.logPYXF_maps.dims
 
 
