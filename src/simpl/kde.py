@@ -24,6 +24,7 @@ from jax import vmap
 from simpl.utils import _bin_indices_minuspi_pi, _circular_conv_fft_1d
 
 __all__ = [
+    "decode_observations",
     "gaussian_kernel",
     "kde",
     "kde_angular",
@@ -250,6 +251,94 @@ def poisson_log_likelihood(
     if renormalise:
         logPXmu = logPXmu - jnp.max(logPXmu, axis=1)[:, None]
     return logPXmu
+
+
+def decode_observations(
+    xF: jax.Array,
+    spikes: jax.Array,
+    mean_rate: jax.Array,
+    mask: jax.Array,
+    batch_size: int | None = None,
+    return_log_maps: bool = False,
+) -> tuple:
+    """Compute Poisson likelihood maps, fit Gaussian observations, and flag silent bins.
+
+    This combines ``poisson_log_likelihood`` and ``fit_gaussian`` in a single
+    batched pipeline so that the full ``(T, N_bins)`` likelihood tensor is never
+    materialised at once, keeping peak memory low for long sessions.
+
+    Parameters
+    ----------
+    xF : jax.Array, shape (N_bins, D)
+        Spatial bin centres.
+    spikes : jax.Array, shape (T, N_neurons)
+        Spike counts.
+    mean_rate : jax.Array, shape (N_neurons, N_bins)
+        Receptive fields (expected spike counts per bin per time step).
+    mask : jax.Array, shape (T, N_neurons)
+        Boolean mask (True = use neuron at this time step).
+    batch_size : int or None
+        Number of time bins per batch. If None (default), chosen adaptively
+        to target ~64 MB peak memory for the likelihood tensor.
+    return_log_maps : bool
+        If True, also return the full ``(T, N_bins)`` log-likelihood maps.
+
+    Returns
+    -------
+    mu_l, mode_l, sigma_l : jax.Array
+        Gaussian observation parameters fitted from the likelihood.
+    no_spikes : jax.Array, shape (T,)
+        Boolean, True where total (masked) spike count is zero.
+    logPYXF_maps : jax.Array, shape (T, N_bins)
+        Only returned when ``return_log_maps`` is True.
+    """
+    from simpl.utils import fit_gaussian  # local to avoid circular import
+
+    T = spikes.shape[0]
+    N_bins = xF.shape[0]
+    if batch_size is None:
+        # Target ~64 MB peak for the (batch_size, N_bins) float32 likelihood tensor
+        batch_size = max(256, 16_000_000 // N_bins)
+    batch_size = min(batch_size, T)
+    # batch_size = T
+    print(f"Decoding observations in batches of {batch_size} time bins to manage memory usage.")
+
+    @partial(jax.jit, static_argnames=("_return_log_maps",))
+    def _process_batch(xF, spikes_batch, mean_rate, mask_batch, _return_log_maps=False):
+        log_maps = poisson_log_likelihood(spikes_batch, mean_rate, mask=mask_batch)
+        mu, mode, sigma = fit_gaussian(xF, jnp.exp(log_maps))
+        no_spk = jnp.sum(spikes_batch * mask_batch, axis=1) == 0
+        if _return_log_maps:
+            return mu, mode, sigma, no_spk, log_maps
+        return mu, mode, sigma, no_spk
+
+    mu_batches, mode_batches, sigma_batches, no_spike_batches = [], [], [], []
+    log_map_batches = [] if return_log_maps else None
+
+    for start in range(0, T, batch_size):
+        end = min(start + batch_size, T)
+        result = _process_batch(
+            xF, spikes[start:end], mean_rate, mask[start:end],
+            _return_log_maps=return_log_maps,
+        )
+        if return_log_maps:
+            mu_b, mode_b, sigma_b, no_spk_b, log_maps_b = result
+            log_map_batches.append(log_maps_b)
+        else:
+            mu_b, mode_b, sigma_b, no_spk_b = result
+        mu_batches.append(mu_b)
+        mode_batches.append(mode_b)
+        sigma_batches.append(sigma_b)
+        no_spike_batches.append(no_spk_b)
+
+    mu_l = jnp.concatenate(mu_batches, axis=0)
+    mode_l = jnp.concatenate(mode_batches, axis=0)
+    sigma_l = jnp.concatenate(sigma_batches, axis=0)
+    no_spikes = jnp.concatenate(no_spike_batches, axis=0)
+
+    if return_log_maps:
+        return mu_l, mode_l, sigma_l, no_spikes, jnp.concatenate(log_map_batches, axis=0)
+    return mu_l, mode_l, sigma_l, no_spikes
 
 
 def poisson_log_likelihood_trajectory(
