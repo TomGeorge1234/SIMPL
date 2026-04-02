@@ -689,10 +689,6 @@ def load_demo_data(
     ValueError
         If *name* is not one of the available demo data files.
     """
-    if name not in _AVAILABLE_DEMO_DATA:
-        available = ", ".join(f'"{f}"' for f in _AVAILABLE_DEMO_DATA)
-        raise ValueError(f'Unknown demo data file "{name}". Available files: {available}')
-
     from pathlib import Path
 
     # 1. Check user-specified directory
@@ -717,6 +713,13 @@ def load_demo_data(
     if not force_download and cached_path.exists():
         print(f"Loaded {name} from cache: {cached_path}")
         return np.load(cached_path)
+
+    # File not found locally — check it's a known release asset before attempting download
+    if name not in _AVAILABLE_DEMO_DATA:
+        available = ", ".join(f'"{f}"' for f in _AVAILABLE_DEMO_DATA)
+        raise FileNotFoundError(
+            f'Could not find "{name}" locally and it is not a known release asset. Available for download: {available}'
+        )
 
     # 4. Download from GitHub releases
     import json
