@@ -336,9 +336,8 @@ class TestSIMPLLoad:
         path = str(tmp_path / "results.nc")
         model.save_results(path)
 
-        # Recreate model from scratch, setup only, then load
+        # Recreate model from scratch, then load
         loaded = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
-        loaded.fit(Y=Y, Xb=Xb, time=time, n_iterations=0)
         loaded.load(path)
 
         assert loaded.iteration_ == model.iteration_
@@ -357,7 +356,6 @@ class TestSIMPLLoad:
 
         # Load and resume for more iterations
         loaded = SIMPL(speed_prior=0.2, use_gpu=False)
-        loaded.fit(Y=Y, Xb=Xb, time=time, n_iterations=0)
         loaded.load(path)
         loaded.fit(Y=Y, Xb=Xb, time=time, n_iterations=2, resume=True)
 

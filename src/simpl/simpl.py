@@ -697,13 +697,28 @@ class SIMPL:
         save_results_to_netcdf(self.results_, path)
 
     def load(self, path: str | os.PathLike[str]) -> "SIMPL":
-        """Load saved results into a fitted model, replacing the current results.
+        """Load saved results from disk, restoring the model to a previously fitted state.
 
-        The model must first be set up with ``fit(..., n_iterations=0)`` (or more)
-        using the same data and hyperparameters as the original training run. This
-        method then overwrites ``results_``, ``F_``, ``X_``, ``iteration_``, and
-        the E/M step state so the model can be used for plotting, prediction, or
-        resumed training.
+        This method reads a netCDF file written by ``save_results()`` and uses the
+        saved ``Y``, ``Xb``, and ``time`` arrays to set up the model internally
+        (equivalent to calling ``fit(..., n_iterations=0)``), then restores the
+        fitted fields, decoded trajectory, and E/M step state from the saved
+        iterations. After loading, the model can be used for plotting, prediction,
+        or resumed training via ``fit(..., resume=True)``.
+
+        .. warning::
+
+            **The constructor hyperparameters must exactly match those used in the
+            original training run.** This method does NOT read or override
+            hyperparameters from the saved file — it trusts whatever was passed to
+            ``__init__``. If any parameter differs (``speed_prior``,
+            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``val_frac``,
+            ``random_seed``, etc.), the internal state (Kalman filter, spike mask,
+            environment grid) will be inconsistent with the saved results, leading
+            to silently incorrect behaviour on resume, predict, or further fitting.
+
+            Copy the exact ``SIMPL(...)`` constructor call from your original
+            training script.
 
         Parameters
         ----------
@@ -716,15 +731,24 @@ class SIMPL:
 
         Examples
         --------
+        >>> # Use the exact same constructor arguments as the original training run
         >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
-        >>> model.fit(Y, Xb, time, n_iterations=0)
         >>> model.load("results.nc")
         >>> model.fit(Y, Xb, time, n_iterations=5, resume=True)
         """
-        self._check_fitted()
         results = load_results(os.fspath(path))
+
+        # Run full setup from saved data (environment, Kalman filter, masks, etc.)
+        self.fit(
+            Y=results["Y"].values,
+            Xb=results["Xb"].values,
+            time=np.asarray(results.coords["time"].values, dtype=float),
+            n_iterations=0,
+            trial_boundaries=np.atleast_1d(np.asarray(results.attrs.get("trial_boundaries", [0]), dtype=int)),
+        )
         device = self._jax_device()
 
+        # Overwrite with saved results
         self.results_ = results
         self.iteration_ = last_training_iteration(results)
         self.loglikelihoods_ = loglikelihoods_from_results(results)
@@ -1230,7 +1254,7 @@ class SIMPL:
         results = _dict_to_dataset(iteration_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [self.iteration_]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     def _fit_N_iterations(self, N: int, early_stopping: bool = True, verbose: bool = True) -> None:
         """Train for N iterations with KeyboardInterrupt and early stopping support."""
@@ -1337,7 +1361,7 @@ class SIMPL:
         results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [iteration_id]}
         )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal")
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Initialisation
