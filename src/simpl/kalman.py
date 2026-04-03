@@ -705,17 +705,12 @@ def _kalman_smoother(
         # Standard RTS smoother step
         mu_predict, sigma_predict = _kalman_predict(mu_f_t, sigma_f_t, F, Q, B, u)
         mu_predict = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_predict), mu_predict)
-        sigma_predict = sigma_predict + jnp.eye(sigma_predict.shape[0]) * 1e-6
         J = sigma_f_t @ F.T @ jnp.linalg.inv(sigma_predict)
         diff = mu_s_next - mu_predict
         diff = jnp.where(is_1D_angular, _wrap_minuspi_pi(diff), diff)
         mu_smoothed = mu_f_t + J @ diff
         mu_smoothed = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_smoothed), mu_smoothed)
         sigma_smoothed = sigma_f_t + J @ (sigma_s_next - sigma_predict) @ J.T
-        # Fall back to filtered value if smoothing produced NaN (numerical instability)
-        has_nan = jnp.any(jnp.isnan(mu_smoothed)) | jnp.any(jnp.isnan(sigma_smoothed))
-        mu_smoothed = jnp.where(has_nan, mu_f_t, mu_smoothed)
-        sigma_smoothed = jnp.where(has_nan, sigma_f_t, sigma_smoothed)
         # At trial ends: override with filtered value (terminal condition)
         mu_out = jnp.where(is_end, mu_f_t, mu_smoothed)
         sigma_out = jnp.where(is_end, sigma_f_t, sigma_smoothed)
