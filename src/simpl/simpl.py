@@ -17,7 +17,6 @@ Each EM iteration proceeds as:
 
 # Jax, for the majority of the calculations
 import os
-import threading
 import warnings
 
 import jax
@@ -228,10 +227,9 @@ class SIMPL:
             raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
-            device = self._jax_device()
-            print(f"SIMPL: Using GPU ({device})")
+            self._device_str = f"GPU ({jax.devices('gpu')[0].device_kind})"
         else:
-            print("SIMPL: Using CPU")
+            self._device_str = "CPU"
 
     @staticmethod
     def _jax_gpu_device():
@@ -368,7 +366,7 @@ class SIMPL:
             self.F_ = self.M_["F"]
             return self
 
-        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior, verbose)
+        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior)
 
         # ── Run iteration 0 (M-step on behavioral trajectory) ──
         self._run_iteration_zero(verbose)
@@ -1208,20 +1206,24 @@ class SIMPL:
         RuntimeError
             If the model has not been initialised via ``fit()`` yet.
         """
+        self._fit_iteration_E_step()
+        self._fit_iteration_M_step()
+
+    def _fit_iteration_E_step(self) -> None:
+        """Increment iteration counter and run the E-step."""
         if not hasattr(self, "Y_"):
             raise RuntimeError("Model has not been fitted yet. Call fit() first.")
 
-        # ── Increment iteration ──
         self.iteration_ += 1
 
-        # ── E-step ──
         if self.iteration_ == 0:
             self.E_ = {"X": self.Xb_}
         else:
             assert self.lastF_ is not None
             self.E_ = self._E_step(Y=self.Y_, F=self.lastF_)
 
-        # ── M-step ──
+    def _fit_iteration_M_step(self) -> None:
+        """Run the M-step, evaluate, and store results."""
         X = self.E_["X"]
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
@@ -1281,11 +1283,22 @@ class SIMPL:
         patience = 3
         best_val_ll = -np.inf
         iterations_without_improvement = 0
+
+        if verbose:
+            print()
+            print(self._TABLE_HEADER)
         self._print_iteration_summary()
         for _ in range(N):
             try:
-                self._fit_iteration()
+                next_iter = self.iteration_ + 1
                 if verbose:
+                    self._print_step_status(next_iter, "E-step ···")
+                self._fit_iteration_E_step()
+                if verbose:
+                    self._print_step_status(next_iter, "E✓·M-step ···")
+                self._fit_iteration_M_step()
+                if verbose:
+                    self._print_step_status(next_iter, "E✓·M✓")
                     self._print_iteration_summary()
                 if early_stopping:
                     val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=self.iteration_).values)
@@ -1296,65 +1309,45 @@ class SIMPL:
                         iterations_without_improvement += 1
                         if iterations_without_improvement >= patience:
                             if verbose:
-                                print(
-                                    f"  Early stopping: validation log-likelihood has not "
-                                    f"improved for {patience} iterations."
-                                )
+                                print(f"  Early stopping: no improvement for {patience} iterations.")
                             break
             except KeyboardInterrupt:
-                print(f"Training interrupted after {self.iteration_} iterations.")
+                print(f"\n  Training interrupted after {self.iteration_} iterations.")
                 break
+        if verbose:
+            print(f"{'━' * self._TABLE_WIDTH}")
+
+    def _print_step_status(self, iteration: int, status: str) -> None:
+        """Print an in-place progress indicator for the current E/M step."""
+        print(f"\r  {iteration:>4}  {status:<{self._TABLE_WIDTH - 8}}", end="", flush=True)
 
     def _run_iteration_zero(self, verbose: bool) -> None:
         """Run iteration 0 (M-step on behavioral trajectory) and print diagnostics."""
-        _iter0_done = threading.Event()
+        if verbose:
+            self._print_data_summary_header()
 
-        def _delayed_message():
-            if not _iter0_done.wait(3):
-                print("  ...[estimating spatial receptive fields from Xb (iteration 0)]")
-
-        _timer = threading.Thread(target=_delayed_message, daemon=True)
-        _timer.start()
         self._fit_iteration()
         self.FX_first_iteration_ = self.M_["FX"]
         if self.align_mode_ == "fields":
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
-        _iter0_done.set()
 
         if verbose:
             si = np.array(self.results_.spatial_information.sel(iteration=0))
             info_rate = float(si.sum())
-            si_min = float(si.min())
-            si_q25 = float(np.percentile(si, 25))
-            si_med = float(np.median(si))
-            si_q75 = float(np.percentile(si, 75))
-            si_max = float(si.max())
-            si_mean = float(si.mean())
-            print(
-                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
-                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
-                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
-            )
-            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
-            print()
-            print("FITTING:")
+            self._print_data_summary_spatial_info(info_rate)
 
+            # Warnings
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
                 print(
-                    "  WARNING: fewer than 5% of time bins have 2+ active "
-                    "neurons. The Poisson likelihood will be weak in most "
-                    "bins. Try coarsen_dt() or accumulate_spikes() to "
-                    "increase spike density, or add more neurons."
+                    "  ⚠ fewer than 5% of time bins have 2+ active neurons. "
+                    "Try coarsen_dt() or add more neurons."
                 )
             if info_rate < 1.0:
                 print(
-                    "  WARNING: spatial information rate is very low "
-                    f"({info_rate:.1f} bits/s). The neurons may not carry "
-                    "enough spatial information for reliable decoding. "
-                    "Try coarsen_dt() or accumulate_spikes() to increase "
-                    "spike density, or add more neurons."
+                    f"  ⚠ spatial information rate is very low ({info_rate:.1f} bits/s). "
+                    "Try coarsen_dt() or add more neurons."
                 )
 
     def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
@@ -1385,7 +1378,7 @@ class SIMPL:
     # Initialisation
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, verbose) -> None:
+    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
         time = np.asarray(time, dtype=float)
@@ -1521,8 +1514,7 @@ class SIMPL:
             self.Xt_ = jnp.array(self._Xt_raw)
             self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
 
-        if verbose:
-            self._print_data_summary()
+        # Data summary is printed after iteration 0 (when spatial info is available)
 
     def _init_infrastructure(
         self,
@@ -1638,50 +1630,60 @@ class SIMPL:
     # Display
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _print_data_summary(self) -> None:
-        """Print a summary of the input data and environment."""
-        # Build a minimal xr.Dataset for print_data_summary
-        data = xr.Dataset(
-            {
-                "Y": xr.DataArray(
-                    self.Y_, dims=["time", "neuron"], coords={"time": self.time_, "neuron": self.neuron_}
-                ),
-                "Xb": xr.DataArray(self.Xb_, dims=["time", "dim"], coords={"time": self.time_}),
-            }
-        )
-        Xb_np = np.asarray(self.Xb_)
+    def _format_spike_count(self) -> str:
+        """Format total spike count as a human-readable string."""
+        total_spikes = int(np.array(self.Y_).sum())
+        if total_spikes >= 1_000_000:
+            return f"{total_spikes / 1_000_000:.1f}M"
+        elif total_spikes >= 1_000:
+            return f"{total_spikes / 1_000:.1f}K"
+        return str(total_spikes)
+
+    def _print_data_summary_header(self) -> None:
+        """Print the summary header immediately (before iteration 0)."""
         env = self.environment_
-        Xb_extent_str = " x ".join(f"[{Xb_np[:, i].min():.2f}, {Xb_np[:, i].max():.2f}]" for i in range(self.D_))
-        extent_str = " x ".join(f"[{env.extent[2 * i]:.2f}, {env.extent[2 * i + 1]:.2f}]" for i in range(env.D))
-        print("ENVIRONMENT:")
-        print(f"  Extent:     {extent_str} (Xb: {Xb_extent_str})")
-        print(f"  Bin size:   {env.bin_size}")
-        print(f"  Grid shape: {env.discrete_env_shape} ({self.N_bins_} bins)")
-        print(f"  Padding:    {env.pad}")
-        print()
-        print_data_summary(data)
+        duration = float(self.time_[-1] - self.time_[0]) + self.dt_
+        grid_str = "x".join(str(s) for s in env.discrete_env_shape)
+        line1_parts = [
+            f"{self.N_neurons_} neurons",
+            f"{self.D_}D",
+            f"{duration:.1f}s (dt={self.dt_:.2g}s)",
+            f"grid ({grid_str})",
+        ]
+        print(f"━━ SIMPL fit ━{'━' * 55}")
+        print(f"{' · '.join(line1_parts)}")
+        print(f"{self._format_spike_count()} spikes · {self._device_str}", end="", flush=True)
+
+    def _print_data_summary_spatial_info(self, info_rate: float) -> None:
+        """Append spatial info to the summary (after iteration 0 completes)."""
+        print(f" · spatial info={info_rate:.1f} bits/s")
+
+    _TABLE_HEADER = f"  {'iter':>4}  {'status':<12}  {'bits per spike(train)':>21}  {'bits per spike(val)':>19}  {'spatial_info':>12}"
+    _TABLE_WIDTH = len(_TABLE_HEADER)
 
     def _print_iteration_summary(self) -> None:
-        """Print a one-line summary of the current iteration's metrics."""
+        """Print a one-line table row for the current iteration's metrics."""
         e = self.iteration_
         try:
-            train_ll = float(self.loglikelihoods_.logPYXF.sel(iteration=e).values)
-            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
             bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
             bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
             si = float(self.results_.spatial_information.sel(iteration=e).mean().values)
-            parts = [
-                f"Iteration {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
-                f"bits/spike(train={bps_train:.4f}, val={bps_val:.4f})",
-                f"spatial_info={si:.4f} bits/s/neuron",
-            ]
-            print("     ".join(parts))
+
+            # Arrow indicating val bits per spike direction
+            arrow = ""
             if e > 0:
+                prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
+                arrow = " ↑" if bps_val > prev_bps_val else " ↓"
+
+            row = f"  {e:>4}  {'E✓·M✓':<12}  {bps_train:>21.3f}  {bps_val:>19.3f}{arrow:<3} {si:>12.3f}"
+            print(f"\r{row:<{self._TABLE_WIDTH}}", flush=True)
+            if e > 0:
+                val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
                 iter0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values)
                 if val_ll < iter0_val_ll:
-                    print("    WARNING: validation LL below iteration 0. Model may be overfitting.")
+                    print("    ⚠ validation LL below iteration 0 — possible overfitting")
         except Exception:
-            print(f"Iteration {e}")
+            print(f"  {e:>4}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Utilities and static methods
