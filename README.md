@@ -147,7 +147,7 @@ SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloade
 
 <img src="assets/scaling_benchmark.png" width=500>
 
-*100 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins)*
+*100 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins), 5 iterations*
 
 > **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. "Typical" neural recording lengths (< 2hrs, 1,000,000 spikes) take under 60 seconds to fit on modern CPUs though SIMPL can handle much larger. 
 
