@@ -156,6 +156,16 @@ SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloade
 model = SIMPL(use_gpu=False)
 ```
 
+#### Apple Silicon GPU (experimental)
+
+SIMPL supports Apple Metal GPU acceleration via [`jax-metal`](https://developer.apple.com/metal/jax/). This is experimental but has been observed to give a decent (~2x) speed-up for large datasets. It requires JAX 0.4.35:
+
+```bash
+pip install jax==0.4.35 jaxlib==0.4.35 jax-metal
+```
+
+No code changes are needed — SIMPL auto-detects Metal and uses it for KDE and log-likelihood computation. The Kalman filter runs on CPU automatically. Angular mode (`is_1D_angular=True`) falls back to CPU as Metal lacks FFT support. We intend to make metal support default when `jax-metal` is ready. 
+
 ### Data preprocessing utilities
 
 ```python
