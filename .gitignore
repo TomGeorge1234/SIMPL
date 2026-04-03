@@ -21,4 +21,5 @@ _version.py
 *.mov
 *.mp4
 *.gif
+*.csv
 !assets/simpl.gif
