@@ -32,6 +32,11 @@ docs = [
     "mkdocstrings[python]",
     "mkdocs-include-markdown-plugin",
 ]
+metal = [
+    "jax==0.4.35",
+    "jaxlib==0.4.35",
+    "jax-metal",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
