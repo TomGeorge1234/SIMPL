@@ -1136,3 +1136,23 @@ def _fit_R(Z: jax.Array, Y: jax.Array) -> jax.Array:
     T = Z.shape[0]
     H = _fit_H(Z, Y)
     return (1 / T) * (Y - Z @ H.T).T @ (Y - Z @ H.T)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Smoother NaN guard
+# ──────────────────────────────────────────────────────────────────────────────
+
+_nan_warning_issued = False
+
+
+def _nan_warning_callback(has_nan):
+    """Print a warning once if the smoother encounters NaN and falls back to filtered values."""
+    global _nan_warning_issued
+    if bool(has_nan) and not _nan_warning_issued:
+        _nan_warning_issued = True
+        warnings.warn(
+            "Kalman smoother encountered NaN (near-singular covariance). "
+            "Falling back to filtered values at affected timesteps. "
+            "Results may be slightly less smooth.",
+            stacklevel=2,
+        )
