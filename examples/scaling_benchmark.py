@@ -69,24 +69,77 @@ def generate_synthetic_data(T: int, N: int, D: int = 2, dt: float = DT, seed: in
     return trajectory, spikes, time_arr
 
 
-def time_fit(Y, Xb, time_arr, use_gpu, n_iterations, bin_size):
-    """Fit SIMPL from scratch and return wall-clock time including JIT compilation."""
-    # Clear JAX's compilation cache so each dataset size pays its own JIT cost
-    jax.clear_caches()
+import os
+import subprocess
+import tempfile
 
-    model = SIMPL(
-        kernel_bandwidth=0.04,
-        speed_prior=0.3,
-        bin_size=bin_size,
-        env_pad=0.05,
-        use_gpu=use_gpu,
+# Each (minutes, device) pair runs in a fresh subprocess so JIT compilation
+# is always included in the timing — no cached compilations between runs.
+_RUNNER = """\
+import os, sys, time
+import numpy as np
+
+minutes = float(sys.argv[1])
+neurons = int(sys.argv[2])
+n_iterations = int(sys.argv[3])
+bin_size = float(sys.argv[4])
+device = sys.argv[5]
+dt = 0.02
+
+T = int(minutes * 60 / dt)
+rng = np.random.default_rng(42)
+velocity = 0.02 * rng.standard_normal((T, 2))
+traj = np.cumsum(velocity, axis=0)
+traj = traj - traj.min(axis=0)
+traj = traj / (traj.max(axis=0) + 1e-6)
+centers = rng.uniform(0.1, 0.9, size=(neurons, 2))
+widths = rng.uniform(0.05, 0.15, size=(neurons,))
+diff = traj[:, None, :] - centers[None, :, :]
+rates = np.exp(-0.5 * np.sum(diff**2, axis=2) / widths[None, :] ** 2) * 0.5
+spikes = rng.poisson(rates).astype(float)
+time_arr = np.arange(T) * dt
+
+from simpl import SIMPL
+import jax
+use_gpu = (device == "gpu")
+model = SIMPL(kernel_bandwidth=0.04, speed_prior=0.3, bin_size=bin_size, env_pad=0.05, use_gpu=use_gpu)
+t0 = time.perf_counter()
+model.fit(spikes, traj, time_arr, n_iterations=n_iterations, verbose=False)
+jax.block_until_ready(model.X_)
+jax.block_until_ready(model.F_)
+elapsed = time.perf_counter() - t0
+total_spikes = int(spikes.sum())
+spike_mb = spikes.nbytes / 1e6
+duration_s = float(time_arr[-1] - time_arr[0])
+print(f"OK {elapsed:.6f} {total_spikes} {duration_s:.2f} {spike_mb:.1f}")
+"""
+
+
+def time_fit(minutes, neurons, n_iterations, bin_size, device):
+    """Fit SIMPL in a fresh subprocess so JIT is always included in timing."""
+    script_path = Path(tempfile.gettempdir()) / "_simpl_scaling_runner.py"
+    script_path.write_text(_RUNNER)
+
+    env = os.environ.copy()
+    if device == "cpu":
+        env["JAX_PLATFORMS"] = "cpu"
+        env["CUDA_VISIBLE_DEVICES"] = ""
+    else:
+        env.pop("JAX_PLATFORMS", None)
+
+    proc = subprocess.run(
+        [sys.executable, str(script_path),
+         str(minutes), str(neurons), str(n_iterations), str(bin_size), device],
+        capture_output=True, text=True, env=env, timeout=3600,
     )
-    t0 = time.perf_counter()
-    model.fit(Y, Xb, time_arr, n_iterations=n_iterations, verbose=False)
-    jax.block_until_ready(model.X_)
-    jax.block_until_ready(model.F_)
-    elapsed = time.perf_counter() - t0
-    return elapsed
+
+    for line in reversed(proc.stdout.strip().split("\n")):
+        if line.startswith("OK"):
+            parts = line.split()
+            return float(parts[1]), int(parts[2]), float(parts[3]), float(parts[4])
+
+    stderr_tail = proc.stderr.strip().split("\n")[-1][:80] if proc.stderr else "no output"
+    raise RuntimeError(f"Subprocess failed: {stderr_tail}")
 
 
 _DEVICE_STYLE = {
@@ -168,16 +221,13 @@ def main():
 
     for minutes in args.minutes:
         T = int(minutes * 60 / DT)
-        Xb, Y, time_arr = generate_synthetic_data(T=T, N=args.neurons)
-        total_spikes = int(Y.sum())
-        duration_s = float(time_arr[-1] - time_arr[0])
-        spike_array_mb = Y.nbytes / 1e6
 
         for device in devices:
-            use_gpu = device == "gpu"
             print(f"{minutes:>5.1f}min (T={T:>7d}), device={device:>3s} ... ", end="", flush=True)
             try:
-                elapsed = time_fit(Y, Xb, time_arr, use_gpu, args.n_iterations, args.bin_size)
+                elapsed, total_spikes, duration_s, spike_array_mb = time_fit(
+                    minutes, args.neurons, args.n_iterations, args.bin_size, device
+                )
                 print(f"{elapsed:.2f}s")
                 results.append(
                     {
@@ -198,9 +248,9 @@ def main():
                         "timepoints": T,
                         "device": device,
                         "fit_time_s": float("nan"),
-                        "total_spikes": total_spikes,
-                        "duration_s": duration_s,
-                        "spike_array_mb": spike_array_mb,
+                        "total_spikes": 0,
+                        "duration_s": 0,
+                        "spike_array_mb": 0,
                     }
                 )
 
