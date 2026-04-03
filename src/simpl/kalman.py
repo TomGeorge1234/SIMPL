@@ -27,6 +27,7 @@ methods and are not intended for direct use.
 """
 
 import math
+import warnings
 
 import jax
 import jax.numpy as jnp
@@ -570,7 +571,7 @@ def _kalman_filter(
     Q: jax.Array,
     H: jax.Array,
     R: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
     is_boundary: jax.Array | None = None,
     mu0_all: jax.Array | None = None,
     sigma0_all: jax.Array | None = None,
@@ -615,6 +616,8 @@ def _kalman_filter(
     sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The filtered posterior state covariances
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     T = Y.shape[0]
     dim_Z = mu0.shape[0]
     if is_boundary is None:
@@ -638,22 +641,6 @@ def _kalman_filter(
     return jnp.stack(mu_all), jnp.stack(sigma_all)
 
 
-_nan_warning_issued = False
-
-
-def _nan_warning_callback(has_nan):
-    """Print a warning once if the smoother encounters NaN and falls back to filtered values."""
-    global _nan_warning_issued
-    if bool(has_nan) and not _nan_warning_issued:
-        _nan_warning_issued = True
-        warnings.warn(
-            "Kalman smoother encountered NaN (near-singular covariance). "
-            "Falling back to filtered values at affected timesteps. "
-            "Results may be slightly less smooth.",
-            stacklevel=2,
-        )
-
-
 @jit
 def _kalman_smoother(
     mu: jax.Array,
@@ -664,7 +651,7 @@ def _kalman_smoother(
     F: jax.Array,
     B: jax.Array,
     Q: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
     is_trial_end: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Runs the Kalman smoother on the data.
@@ -707,6 +694,8 @@ def _kalman_smoother(
     sigma_smooth : jax.Array, shape (T, dim_Z, dim_Z)
         The smoothed state covariances
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     T = mu.shape[0]
     if is_trial_end is None:
         is_trial_end = jnp.zeros(T, dtype=bool)
@@ -871,7 +860,7 @@ def _kalman_update(
     H: jax.Array,
     R: jax.Array,
     y: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Updates the state estimate given an observation.
 
@@ -903,6 +892,8 @@ def _kalman_update(
     sigma_post : jax.Array, shape (dim_Z, dim_Z)
         The posterior state covariance
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     S = _calculate_S_matrix(sigma, H, R)
     y_hat = H @ mu
     K = _calculate_K_matrix(sigma, H, S)
