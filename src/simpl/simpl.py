@@ -202,8 +202,18 @@ class SIMPL:
         self.is_fitted_ = False
 
         # Device setup
-        gpu_available = jax.default_backend() == "gpu"
-        if use_gpu is True:
+        gpu_available = jax.default_backend() in ("gpu", "METAL")
+        metal_backend = jax.default_backend() == "METAL"
+        if metal_backend and is_1D_angular and use_gpu is True:
+            warnings.warn(
+                "Angular mode (is_1D_angular=True) requires FFT which is not supported "
+                "on Apple Metal GPU. Falling back to CPU.",
+                stacklevel=2,
+            )
+            self.use_gpu_ = False
+        elif metal_backend and is_1D_angular:
+            self.use_gpu_ = False
+        elif use_gpu is True:
             if not gpu_available:
                 raise RuntimeError(
                     "use_gpu=True but no GPU is available. "
@@ -218,15 +228,23 @@ class SIMPL:
             raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
-            device = jax.devices("gpu")[0]
-            print(f"SIMPL: Using GPU ({device.device_kind})")
+            device = self._jax_device()
+            print(f"SIMPL: Using GPU ({device})")
         else:
             print("SIMPL: Using CPU")
+
+    @staticmethod
+    def _jax_gpu_device():
+        """Return the first available GPU/Metal device."""
+        backend = jax.default_backend()
+        if backend == "METAL":
+            return jax.devices("METAL")[0]
+        return jax.devices("gpu")[0]
 
     def _jax_device(self):
         """Return the JAX device to place arrays on."""
         if self.use_gpu_:
-            return jax.devices("gpu")[0]
+            return self._jax_gpu_device()
         return jax.devices("cpu")[0]
 
     def fit(
