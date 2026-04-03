@@ -82,6 +82,7 @@ class TestKDE:
         assert jnp.allclose(pos_density.sum(), 1.0, atol=1e-3)
 
 
+@pytest.mark.cpu_only
 class TestKDEAngular:
     def test_smooth_output(self):
         np.random.seed(42)
@@ -115,6 +116,7 @@ class TestPoissonLogLikelihood:
         result = poisson_log_likelihood(spikes, mean_rate)
         assert result.shape == (T, N_bins)
 
+    @pytest.mark.cpu_only
     def test_masking(self):
         np.random.seed(42)
         T, N_neurons, N_bins = 50, 5, 20
@@ -137,6 +139,7 @@ class TestPoissonLogLikelihoodTrajectory:
         result = poisson_log_likelihood_trajectory(spikes, mean_rate)
         assert result.shape == (T,)
 
+    @pytest.mark.cpu_only
     def test_masking(self):
         np.random.seed(42)
         T, N_neurons = 50, 5

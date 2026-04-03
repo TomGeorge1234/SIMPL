@@ -32,6 +32,7 @@ from simpl.utils import (
 )
 
 
+@pytest.mark.cpu_only
 class TestGaussianPdf:
     def test_correct_shape(self):
         x = jnp.array([0.0, 0.0])
@@ -56,6 +57,7 @@ class TestGaussianPdf:
         assert at_mean > off_mean
 
 
+@pytest.mark.cpu_only
 class TestLogGaussianPdf:
     def test_consistent_with_pdf(self):
         x = jnp.array([0.5, -0.3])
@@ -115,6 +117,7 @@ class TestFitGaussian:
         assert jnp.allclose(mus[1], jnp.array([1.0]), atol=0.1)
 
 
+@pytest.mark.cpu_only
 class TestGaussianSample:
     def test_correct_shape(self):
         key = random.PRNGKey(0)
@@ -465,6 +468,7 @@ class TestPrintDataSummary:
         assert "Simultaneously active neurons per bin" in captured
 
 
+@pytest.mark.cpu_only
 class TestCircularHelpers:
     def test_wrap_minuspi_pi(self):
         theta = jnp.array([0.0, jnp.pi, -jnp.pi, 3 * jnp.pi, -3 * jnp.pi])

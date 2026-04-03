@@ -89,6 +89,13 @@ def time_fit(Y, Xb, time_arr, use_gpu, n_iterations, bin_size):
     return elapsed
 
 
+_DEVICE_STYLE = {
+    "cpu": {"label": "CPU", "linestyle": "-", "color": "#ff595e"},
+    "gpu": {"label": "CUDA GPU", "linestyle": "-", "color": "#1982c4"},
+    "gpu_metal": {"label": "GPU (Macbook Pro M4, jax_metal)", "linestyle": "--", "color": "#1982c4"},
+}
+
+
 def plot_results(csv_path: str | Path):
     """Load CSV and plot recording duration vs fit time, grouped by device."""
     import matplotlib.pyplot as plt
@@ -98,7 +105,17 @@ def plot_results(csv_path: str | Path):
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for device, group in df.groupby("device"):
         group = group.sort_values("minutes")
-        ax.plot(group["minutes"], group["fit_time_s"], "o-", label=device.upper(), linewidth=2, markersize=6)
+        style = _DEVICE_STYLE.get(device, {"label": device.upper(), "linestyle": "-", "color": None})
+        ax.plot(
+            group["minutes"],
+            group["fit_time_s"],
+            "o",
+            linestyle=style["linestyle"],
+            color=style["color"],
+            label=style["label"],
+            linewidth=2,
+            markersize=6,
+        )
     ax.set_xlabel("Recording duration (minutes)")
     ax.set_ylabel("Fit time (s)")
     ax.legend()
@@ -121,7 +138,7 @@ def main():
 
     gpu_available = False
     try:
-        gpu_available = any(d.platform == "gpu" for d in jax.devices())
+        gpu_available = any(d.platform in ("gpu", "METAL") for d in jax.devices())
     except Exception:
         pass
 

@@ -570,7 +570,7 @@ def _kalman_filter(
     Q: jax.Array,
     H: jax.Array,
     R: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
     is_boundary: jax.Array | None = None,
     mu0_all: jax.Array | None = None,
     sigma0_all: jax.Array | None = None,
@@ -615,6 +615,8 @@ def _kalman_filter(
     sigma : jax.Array, shape (T, dim_Z, dim_Z)
         The filtered posterior state covariances
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     T = Y.shape[0]
     dim_Z = mu0.shape[0]
     if is_boundary is None:
@@ -648,7 +650,7 @@ def _kalman_smoother(
     F: jax.Array,
     B: jax.Array,
     Q: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
     is_trial_end: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Runs the Kalman smoother on the data.
@@ -691,6 +693,8 @@ def _kalman_smoother(
     sigma_smooth : jax.Array, shape (T, dim_Z, dim_Z)
         The smoothed state covariances
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     T = mu.shape[0]
     if is_trial_end is None:
         is_trial_end = jnp.zeros(T, dtype=bool)
@@ -701,12 +705,17 @@ def _kalman_smoother(
         # Standard RTS smoother step
         mu_predict, sigma_predict = _kalman_predict(mu_f_t, sigma_f_t, F, Q, B, u)
         mu_predict = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_predict), mu_predict)
+        sigma_predict = sigma_predict + jnp.eye(sigma_predict.shape[0]) * 1e-6
         J = sigma_f_t @ F.T @ jnp.linalg.inv(sigma_predict)
         diff = mu_s_next - mu_predict
         diff = jnp.where(is_1D_angular, _wrap_minuspi_pi(diff), diff)
         mu_smoothed = mu_f_t + J @ diff
         mu_smoothed = jnp.where(is_1D_angular, _wrap_minuspi_pi(mu_smoothed), mu_smoothed)
         sigma_smoothed = sigma_f_t + J @ (sigma_s_next - sigma_predict) @ J.T
+        # Fall back to filtered value if smoothing produced NaN (numerical instability)
+        has_nan = jnp.any(jnp.isnan(mu_smoothed)) | jnp.any(jnp.isnan(sigma_smoothed))
+        mu_smoothed = jnp.where(has_nan, mu_f_t, mu_smoothed)
+        sigma_smoothed = jnp.where(has_nan, sigma_f_t, sigma_smoothed)
         # At trial ends: override with filtered value (terminal condition)
         mu_out = jnp.where(is_end, mu_f_t, mu_smoothed)
         sigma_out = jnp.where(is_end, sigma_f_t, sigma_smoothed)
@@ -849,7 +858,7 @@ def _kalman_update(
     H: jax.Array,
     R: jax.Array,
     y: jax.Array,
-    is_1D_angular: jax.Array = jnp.array(False),
+    is_1D_angular: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Updates the state estimate given an observation.
 
@@ -881,6 +890,8 @@ def _kalman_update(
     sigma_post : jax.Array, shape (dim_Z, dim_Z)
         The posterior state covariance
     """
+    if is_1D_angular is None:
+        is_1D_angular = jnp.array(False)
     S = _calculate_S_matrix(sigma, H, R)
     y_hat = H @ mu
     K = _calculate_K_matrix(sigma, H, S)

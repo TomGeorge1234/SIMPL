@@ -61,6 +61,7 @@ testpaths = ["tests"]
 addopts = "--cov=simpl --cov-report=term-missing"
 markers = [
     "docs: tests that build the documentation",
+    "cpu_only: force test to run on CPU (for ops unsupported on Metal: linalg.inv, cholesky, fft)",
 ]
 filterwarnings = [
     "ignore:numpy.ndarray size changed:RuntimeWarning",

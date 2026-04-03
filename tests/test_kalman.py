@@ -90,6 +90,7 @@ class TestKalmanPredict:
         assert sigma_next.shape == (D, D)
 
 
+@pytest.mark.cpu_only
 class TestKalmanUpdate:
     def test_posterior_covariance_shrinks(self):
         D = 2
@@ -137,6 +138,7 @@ class TestKalmanFilterBatchConsistency:
         assert jnp.allclose(mu_s, mu_l, atol=1e-4)
 
 
+@pytest.mark.cpu_only
 class TestFitParameters:
     def test_recovers_known_parameters(self):
         np.random.seed(0)
@@ -155,6 +157,7 @@ class TestFitParameters:
         assert R.shape == (D_Y, D_Y)
 
 
+@pytest.mark.cpu_only
 class TestFitIndividualParameters:
     def test_match_fit_parameters(self):
         np.random.seed(1)
@@ -171,6 +174,7 @@ class TestFitIndividualParameters:
         assert jnp.allclose(_fit_R(Z, Y), R_all, atol=1e-5)
 
 
+@pytest.mark.cpu_only
 class TestKalmanLoglikelihood:
     def test_correct_shape(self):
         D = 2
