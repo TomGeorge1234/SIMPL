@@ -17,6 +17,7 @@ Each EM iteration proceeds as:
 
 # Jax, for the majority of the calculations
 import os
+import shutil
 import warnings
 
 import jax
@@ -48,7 +49,6 @@ from simpl.utils import (
     last_training_iteration,
     load_results,
     loglikelihoods_from_results,
-    print_data_summary,
     restore_E_step_state,
     restore_M_step_state,
     save_results_to_netcdf,
@@ -227,7 +227,7 @@ class SIMPL:
             raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
-            self._device_str = f"GPU ({jax.devices('gpu')[0].device_kind})"
+            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
         else:
             self._device_str = "CPU"
 
@@ -1034,6 +1034,7 @@ class SIMPL:
         )
 
         # Manifold alignment (fit-time only)
+        self._substatus("E···  aligning")
         align_dict = {}
         if self.align_mode_ == "fields":
             current_peaks = get_field_peaks(F, self.xF_)
@@ -1085,6 +1086,7 @@ class SIMPL:
                 return_position_density=True,
             )
 
+        self._substatus("E✓·M  tuning curves")
         stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
         all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
@@ -1136,6 +1138,7 @@ class SIMPL:
         store_log_maps = getattr(self, "save_full_history_", False)
 
         # Likelihood maps and Gaussian observation fits (batched internally)
+        self._substatus("E···  likelihood")
         obs = decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
         if store_log_maps:
             mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
@@ -1153,6 +1156,7 @@ class SIMPL:
         mu0_all, sigma0_all = self._per_trial_initial_states(mode_l, trial_slices)
 
         # Single-pass filter and smooth
+        self._substatus("E···  kalman filter")
         mu_f, sigma_f = self.kalman_filter_.filter(
             mu0=mu0_all[0],
             sigma0=sigma0_all[0],
@@ -1163,6 +1167,7 @@ class SIMPL:
             mu0_all=mu0_all,
             sigma0_all=sigma0_all,
         )
+        self._substatus("E···  kalman smooth")
         mu_s, sigma_s = self.kalman_filter_.smooth(
             mus_f=mu_f,
             sigmas_f=sigma_f,
@@ -1283,25 +1288,21 @@ class SIMPL:
         patience = 3
         best_val_ll = -np.inf
         iterations_without_improvement = 0
+        early_stopped = False
 
         if verbose:
             print()
             print(self._TABLE_HEADER)
-        self._print_iteration_summary()
+            self._print_row()
         for _ in range(N):
-            e_done = False
             try:
                 next_iter = self.iteration_ + 1
-                if verbose:
-                    self._print_step_status(next_iter, "E-step ···")
+                self._verbose_iter = next_iter if verbose else None
                 self._fit_iteration_E_step()
-                e_done = True
-                if verbose:
-                    self._print_step_status(next_iter, "E✓·M-step ···")
                 self._fit_iteration_M_step()
+                self._verbose_iter = None
                 if verbose:
-                    self._print_step_status(next_iter, "E✓·M✓")
-                    self._print_iteration_summary()
+                    self._print_row()
                 if early_stopping:
                     val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=self.iteration_).values)
                     if val_ll > best_val_ll:
@@ -1310,31 +1311,28 @@ class SIMPL:
                     else:
                         iterations_without_improvement += 1
                         if iterations_without_improvement >= patience:
-                            if verbose:
-                                self._print_iteration_summary(status_suffix=" · early stop")
+                            early_stopped = True
                             break
-            except (KeyboardInterrupt, Exception) as exc:
-                is_interrupt = isinstance(exc, (KeyboardInterrupt, SystemExit))
-                if not is_interrupt and "interrupt" not in str(exc).lower():
-                    raise
-                # Roll back to last completed iteration
+            except KeyboardInterrupt:
                 self.iteration_ -= 1
+                last_msg = getattr(self, "_last_substatus", "")
+                self._verbose_iter = None
                 if verbose:
-                    status = f"E{'✓' if e_done else '-'}·M-step ··· · interrupted"
-                    print(f"\r  {next_iter:>9}  {status:<{self._TABLE_WIDTH - 13}}", flush=True)
+                    step = last_msg.split("  ")[0] if last_msg else ""
+                    status = f"{step} · interrupted" if step else "interrupted"
+                    self._print_status(next_iter, status)
+                    print(flush=True)
                 break
         if verbose:
-            self._print_fit_summary()
+            if early_stopped:
+                self._print_row(" · early stop")
+            self._print_summary()
             print(f"{'━' * self._TABLE_WIDTH}")
-
-    def _print_step_status(self, iteration: int, status: str) -> None:
-        """Print an in-place progress indicator for the current E/M step."""
-        print(f"\r  {iteration:>9}  {status:<{self._TABLE_WIDTH - 13}}"[:self._TABLE_WIDTH], end="", flush=True)
 
     def _run_iteration_zero(self, verbose: bool) -> None:
         """Run iteration 0 (M-step on behavioral trajectory) and print diagnostics."""
         if verbose:
-            self._print_data_summary_header()
+            self._print_header()
 
         self._fit_iteration()
         self.FX_first_iteration_ = self.M_["FX"]
@@ -1342,18 +1340,14 @@ class SIMPL:
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
 
         if verbose:
-            si = np.array(self.results_.spatial_information.sel(iteration=0))
-            info_rate = float(si.sum())
-            self._print_data_summary_spatial_info(info_rate)
+            info_rate = float(np.array(self.results_.spatial_information.sel(iteration=0)).sum())
+            print(f" · spatial info={info_rate:.1f} bits/s")
 
             # Warnings
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
-                print(
-                    "  ⚠ fewer than 5% of time bins have 2+ active neurons. "
-                    "Try coarsen_dt() or add more neurons."
-                )
+                print("  ⚠ fewer than 5% of time bins have 2+ active neurons. Try coarsen_dt() or add more neurons.")
             if info_rate < 1.0:
                 print(
                     f"  ⚠ spatial information rate is very low ({info_rate:.1f} bits/s). "
@@ -1640,91 +1634,103 @@ class SIMPL:
     # Display
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _format_spike_count(self) -> str:
-        """Format total spike count as a human-readable string."""
-        total_spikes = int(np.array(self.Y_).sum())
-        if total_spikes >= 1_000_000:
-            return f"{total_spikes / 1_000_000:.1f}M"
-        elif total_spikes >= 1_000:
-            return f"{total_spikes / 1_000:.1f}K"
-        return str(total_spikes)
+    _TABLE_HEADER = f"  {'iteration':>9}  {'status':<19}{'bits-per-spike (train / val)':>29}"
+    _TABLE_WIDTH = len(_TABLE_HEADER)
 
-    def _print_data_summary_header(self) -> None:
-        """Print the summary header immediately (before iteration 0)."""
+    @staticmethod
+    def _term_width() -> int:
+        """Return the terminal width, defaulting to a large value if unavailable."""
+        return shutil.get_terminal_size((200, 24)).columns
+
+    def _print_status(self, iteration: int, status: str) -> None:
+        """Overwrite the current line with an in-place progress indicator."""
+        line = f"\r  {iteration:>9}  {status:<{self._TABLE_WIDTH - 13}}"[: self._TABLE_WIDTH]
+        print(line[: self._term_width()], end="", flush=True)
+
+    def _substatus(self, msg: str) -> None:
+        """Update the in-place status line if verbose printing is active."""
+        if getattr(self, "_verbose_iter", None) is not None:
+            self._last_substatus = msg
+            self._print_status(self._verbose_iter, msg)
+
+    def _print_row(self, suffix: str = "") -> None:
+        """Print a one-line table row for the current iteration's metrics."""
+        e = self.iteration_
+        bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
+        bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
+
+        arrow = "  "
+        status = "   M✓" if e == 0 else "E✓·M✓"
+        if e > 0:
+            prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
+            arrow = " ↑" if bps_val > prev_bps_val else " ↓"
+            val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
+            if val_ll < float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values):
+                status = "E✓·M✓ !bps<iter 0"
+
+        bps_str = f"{bps_train:.3f} / {bps_val:.3f}{arrow}"
+        row = f"  {e:>9}  {status + suffix:<20}  {bps_str:>29}"
+        line = f"\r{row:<{self._TABLE_WIDTH}}"
+        print(line[: self._term_width() + 1], flush=True)  # +1 for \r
+
+    def _print_header(self) -> None:
+        """Print the banner with data summary (before iteration 0)."""
         env = self.environment_
         duration = float(self.time_[-1] - self.time_[0]) + self.dt_
         grid_str = "x".join(str(s) for s in env.discrete_env_shape)
-        line1_parts = [
+        total_spikes = int(np.array(self.Y_).sum())
+        spike_str = (
+            f"{total_spikes / 1_000_000:.1f}M"
+            if total_spikes >= 1_000_000
+            else f"{total_spikes / 1_000:.1f}K"
+            if total_spikes >= 1_000
+            else str(total_spikes)
+        )
+        mean_fr = total_spikes / duration / self.N_neurons_
+        empty_frac = float(np.mean(np.array(self.Y_).sum(axis=1) == 0)) * 100
+        n_trials = len(self.trial_boundaries_)
+        line1 = [
             f"{self.N_neurons_} neurons",
-            f"{self.D_}D",
-            f"{duration:.1f}s (dt={self.dt_:.2g}s)",
-            f"env-grid ({grid_str})",
+            f"{spike_str} spikes",
+            f"mean rate={mean_fr:.1f}Hz",
+            f"empty time-bins={empty_frac:.0f}%",
         ]
-        print(f"━━ SIMPL {'━' * (self._TABLE_WIDTH - 9)}")
-        print(f"{' · '.join(line1_parts)}")
-        print(f"{self._format_spike_count()} spikes · {self._device_str}", end="", flush=True)
+        line2 = [
+            f"{self.D_}D",
+            f"env-grid ({grid_str})",
+            f"{duration:.1f}s (dt={self.dt_:.2g}s)",
+            f"n_trials={n_trials}",
+        ]
+        title = f"━━ SIMPL ━━━ {self._device_str} "
+        print(f"{title}{'━' * (self._TABLE_WIDTH - len(title))}")
+        print(" · ".join(line1))
+        print(" · ".join(line2), end="", flush=True)
 
-    def _print_data_summary_spatial_info(self, info_rate: float) -> None:
-        """Append spatial info to the summary (after iteration 0 completes)."""
-        print(f" · spatial info={info_rate:.1f} bits/s")
-
-    def _print_fit_summary(self) -> None:
-        """Print a diagnostic summary line after fitting completes."""
+    def _print_summary(self) -> None:
+        """Print the end-of-fitting summary with percentage changes."""
         try:
-            bps_first = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
-            bps_last = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=self.iteration_).values)
-            bps_pct = (bps_last - bps_first) / abs(bps_first) * 100 if bps_first != 0 else 0.0
-
-            si_first = float(self.results_.spatial_information.sel(iteration=0).mean().values)
-            si_last = float(self.results_.spatial_information.sel(iteration=self.iteration_).mean().values)
-            si_pct = (si_last - si_first) / abs(si_first) * 100 if si_first != 0 else 0.0
-
-            sign_bps = "+" if bps_pct >= 0 else ""
-            sign_si = "+" if si_pct >= 0 else ""
-            label = "  SIMPL finished. "
+            bps_0 = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
+            bps_n = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=self.iteration_).values)
+            si_0 = float(self.results_.spatial_information.sel(iteration=0).sum().values)
+            si_n = float(self.results_.spatial_information.sel(iteration=self.iteration_).sum().values)
+            bps_pct = (bps_n - bps_0) / abs(bps_0) * 100 if bps_0 != 0 else 0.0
+            si_pct = (si_n - si_0) / abs(si_0) * 100 if si_0 != 0 else 0.0
+            label = "  Finished. "
             pad = " " * len(label)
-            bps_line = f"bits-per-spike {sign_bps}{bps_pct:.1f}% ({bps_first:.3f}→{bps_last:.3f})"
-            si_line = f"spatial info   {sign_si}{si_pct:.1f}% ({si_first:.3f}→{si_last:.3f})"
-            print(
-                f"{label}{bps_line}\n"
-                f"{pad}{si_line}\n"
-                f"{pad}see full results in model.results_"
-            )
+
+            def _pct(v):
+                return f"{'+' if v >= 0 else ''}{v:.1f}%"
+
+            bps_left = f"bits-per-spike {_pct(bps_pct)}"
+            si_left = f"spatial info   {_pct(si_pct)}"
+            w = max(len(bps_left), len(si_left))
+            bps = f"{bps_left:<{w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
+            si = f"{si_left:<{w}} ({si_0:.1f}→{si_n:.1f} bits/s)"
+            print()
+            print(f"{label}{bps}")
+            print(f"{pad}{si}")
         except Exception:
-            print("  SIMPL finished.")
-
-    _TABLE_HEADER = (
-        f"  {'iteration':>9}  {'status':<20}"
-        f"  {'bits-per-spike (train / val)':>28}"
-        f"  {'spatial info (bits/s)':>22}"
-    )
-    _TABLE_WIDTH = len(_TABLE_HEADER)
-
-    def _print_iteration_summary(self, status_suffix: str = "") -> None:
-        """Print a one-line table row for the current iteration's metrics."""
-        e = self.iteration_
-        try:
-            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
-            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
-            si = float(self.results_.spatial_information.sel(iteration=e).mean().values)
-
-            # Arrow indicating val bits-per-spike direction + overfitting warning
-            arrow = "  "
-            status = "   M✓" if e == 0 else "E✓·M✓"
-            if e > 0:
-                prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
-                arrow = " ↑" if bps_val > prev_bps_val else " ↓"
-                val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
-                iter0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values)
-                if val_ll < iter0_val_ll:
-                    status = "E✓·M✓ ⚠ bps<iter 0"
-
-            status += status_suffix
-            bps_str = f"{bps_train:.3f} / {bps_val:.3f}{arrow}"
-            row = f"  {e:>9}  {status:<20}  {bps_str:>28}  {si:>22.3f}"
-            print(f"\r{row:<{self._TABLE_WIDTH}}", flush=True)
-        except Exception:
-            print(f"  {e:>9}")
+            print("  Finished.")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Utilities and static methods
