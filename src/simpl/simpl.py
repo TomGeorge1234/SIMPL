@@ -1289,11 +1289,13 @@ class SIMPL:
             print(self._TABLE_HEADER)
         self._print_iteration_summary()
         for _ in range(N):
+            e_done = False
             try:
                 next_iter = self.iteration_ + 1
                 if verbose:
                     self._print_step_status(next_iter, "E-step ···")
                 self._fit_iteration_E_step()
+                e_done = True
                 if verbose:
                     self._print_step_status(next_iter, "E✓·M-step ···")
                 self._fit_iteration_M_step()
@@ -1309,17 +1311,25 @@ class SIMPL:
                         iterations_without_improvement += 1
                         if iterations_without_improvement >= patience:
                             if verbose:
-                                print(f"  Early stopping: no improvement for {patience} iterations.")
+                                self._print_iteration_summary(status_suffix=" · early stop")
                             break
-            except KeyboardInterrupt:
-                print(f"\n  Training interrupted after {self.iteration_} iterations.")
+            except (KeyboardInterrupt, Exception) as exc:
+                is_interrupt = isinstance(exc, (KeyboardInterrupt, SystemExit))
+                if not is_interrupt and "interrupt" not in str(exc).lower():
+                    raise
+                # Roll back to last completed iteration
+                self.iteration_ -= 1
+                if verbose:
+                    status = f"E{'✓' if e_done else '-'}·M-step ··· · interrupted"
+                    print(f"\r  {next_iter:>9}  {status:<{self._TABLE_WIDTH - 13}}", flush=True)
                 break
         if verbose:
+            self._print_fit_summary()
             print(f"{'━' * self._TABLE_WIDTH}")
 
     def _print_step_status(self, iteration: int, status: str) -> None:
         """Print an in-place progress indicator for the current E/M step."""
-        print(f"\r  {iteration:>4}  {status:<{self._TABLE_WIDTH - 8}}", end="", flush=True)
+        print(f"\r  {iteration:>9}  {status:<{self._TABLE_WIDTH - 13}}"[:self._TABLE_WIDTH], end="", flush=True)
 
     def _run_iteration_zero(self, verbose: bool) -> None:
         """Run iteration 0 (M-step on behavioral trajectory) and print diagnostics."""
@@ -1648,9 +1658,9 @@ class SIMPL:
             f"{self.N_neurons_} neurons",
             f"{self.D_}D",
             f"{duration:.1f}s (dt={self.dt_:.2g}s)",
-            f"grid ({grid_str})",
+            f"env-grid ({grid_str})",
         ]
-        print(f"━━ SIMPL fit ━{'━' * 55}")
+        print(f"━━ SIMPL {'━' * (self._TABLE_WIDTH - 9)}")
         print(f"{' · '.join(line1_parts)}")
         print(f"{self._format_spike_count()} spikes · {self._device_str}", end="", flush=True)
 
@@ -1658,10 +1668,39 @@ class SIMPL:
         """Append spatial info to the summary (after iteration 0 completes)."""
         print(f" · spatial info={info_rate:.1f} bits/s")
 
-    _TABLE_HEADER = f"  {'iter':>4}  {'status':<12}  {'bits per spike(train)':>21}  {'bits per spike(val)':>19}  {'spatial_info':>12}"
+    def _print_fit_summary(self) -> None:
+        """Print a diagnostic summary line after fitting completes."""
+        try:
+            bps_first = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
+            bps_last = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=self.iteration_).values)
+            bps_pct = (bps_last - bps_first) / abs(bps_first) * 100 if bps_first != 0 else 0.0
+
+            si_first = float(self.results_.spatial_information.sel(iteration=0).mean().values)
+            si_last = float(self.results_.spatial_information.sel(iteration=self.iteration_).mean().values)
+            si_pct = (si_last - si_first) / abs(si_first) * 100 if si_first != 0 else 0.0
+
+            sign_bps = "+" if bps_pct >= 0 else ""
+            sign_si = "+" if si_pct >= 0 else ""
+            label = "  SIMPL finished. "
+            pad = " " * len(label)
+            bps_line = f"bits-per-spike {sign_bps}{bps_pct:.1f}% ({bps_first:.3f}→{bps_last:.3f})"
+            si_line = f"spatial info   {sign_si}{si_pct:.1f}% ({si_first:.3f}→{si_last:.3f})"
+            print(
+                f"{label}{bps_line}\n"
+                f"{pad}{si_line}\n"
+                f"{pad}see full results in model.results_"
+            )
+        except Exception:
+            print("  SIMPL finished.")
+
+    _TABLE_HEADER = (
+        f"  {'iteration':>9}  {'status':<20}"
+        f"  {'bits-per-spike (train / val)':>28}"
+        f"  {'spatial info (bits/s)':>22}"
+    )
     _TABLE_WIDTH = len(_TABLE_HEADER)
 
-    def _print_iteration_summary(self) -> None:
+    def _print_iteration_summary(self, status_suffix: str = "") -> None:
         """Print a one-line table row for the current iteration's metrics."""
         e = self.iteration_
         try:
@@ -1669,21 +1708,23 @@ class SIMPL:
             bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
             si = float(self.results_.spatial_information.sel(iteration=e).mean().values)
 
-            # Arrow indicating val bits per spike direction
-            arrow = ""
+            # Arrow indicating val bits-per-spike direction + overfitting warning
+            arrow = "  "
+            status = "   M✓" if e == 0 else "E✓·M✓"
             if e > 0:
                 prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
                 arrow = " ↑" if bps_val > prev_bps_val else " ↓"
-
-            row = f"  {e:>4}  {'E✓·M✓':<12}  {bps_train:>21.3f}  {bps_val:>19.3f}{arrow:<3} {si:>12.3f}"
-            print(f"\r{row:<{self._TABLE_WIDTH}}", flush=True)
-            if e > 0:
                 val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
                 iter0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values)
                 if val_ll < iter0_val_ll:
-                    print("    ⚠ validation LL below iteration 0 — possible overfitting")
+                    status = "E✓·M✓ ⚠ bps<iter 0"
+
+            status += status_suffix
+            bps_str = f"{bps_train:.3f} / {bps_val:.3f}{arrow}"
+            row = f"  {e:>9}  {status:<20}  {bps_str:>28}  {si:>22.3f}"
+            print(f"\r{row:<{self._TABLE_WIDTH}}", flush=True)
         except Exception:
-            print(f"  {e:>4}")
+            print(f"  {e:>9}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Utilities and static methods
