@@ -379,6 +379,52 @@ class TestSIMPLGetLoglikelihoods:
         assert "logPYXF_val" in lls
 
 
+class TestSIMPLCalculateSpikeLoglikelihoods:
+    def test_mode_l_iteration_1_matches_manual_calculation(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL()
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+        )
+
+        lls = model.calculate_spike_loglikelihoods(field_iteration=1, trajectory_var="mode_l")
+
+        F = model.results_["F"].sel(iteration=1).values
+        mode_l = model.results_["mode_l"].sel(iteration=1).values
+        FX = model._interpolate_firing_rates(mode_l, F)
+        expected = model._get_loglikelihoods(model.Y_, FX)
+
+        assert lls["logPYXF"] == pytest.approx(float(expected["logPYXF"]))
+        assert lls["logPYXF_val"] == pytest.approx(float(expected["logPYXF_val"]))
+        assert lls["bits_per_spike"] == pytest.approx(float(expected["bits_per_spike"]))
+        assert lls["bits_per_spike_val"] == pytest.approx(float(expected["bits_per_spike_val"]))
+
+    def test_X_iteration_1_matches_logged_iteration_metrics(self, demo_data):
+        N = 1000
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL()
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+        )
+
+        lls = model.calculate_spike_loglikelihoods(field_iteration=1, trajectory_var="X")
+
+        assert lls["logPYXF"] == pytest.approx(float(model.loglikelihoods_.logPYXF.sel(iteration=1).values))
+        assert lls["logPYXF_val"] == pytest.approx(float(model.loglikelihoods_.logPYXF_val.sel(iteration=1).values))
+
+    def test_raises_when_mode_l_is_unavailable(self, small_simpl_model):
+        model = small_simpl_model
+        with pytest.raises(ValueError, match="contains non-finite values"):
+            model.calculate_spike_loglikelihoods(field_iteration=0, trajectory_var="mode_l")
+
+
 class TestSIMPLSeeding:
     """Tests for the random seeding mechanism."""
 
