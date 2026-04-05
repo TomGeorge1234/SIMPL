@@ -169,9 +169,20 @@ SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloade
 > **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. "Typical" neural recording lengths (< 2hrs, 1,000,000 spikes) take under 60 seconds to fit on modern CPUs though SIMPL can handle much larger. 
 
 ```python
-# Force CPU usage even if GPU is avaiable
+# Force CPU usage even if GPU is available
 model = SIMPL(use_gpu=False)
 ```
+
+#### NVIDIA GPU (CUDA)
+
+SIMPL installs JAX in CPU-only mode by default. To enable CUDA GPU support, install the appropriate JAX CUDA build **after** installing SIMPL:
+
+```bash
+pip install -e .                      # install SIMPL (CPU-only JAX)
+pip install -U "jax[cuda12]"          # upgrade JAX with CUDA 12 support
+```
+
+Replace `cuda12` with `cuda11` if you are on an older CUDA toolkit. See the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html) for details. No code changes are needed — SIMPL auto-detects the GPU at runtime.
 
 #### Apple Silicon GPU (experimental)
 
