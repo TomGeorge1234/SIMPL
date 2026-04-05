@@ -231,19 +231,9 @@ class SIMPL:
         else:
             self._device_str = "CPU"
 
-    @staticmethod
-    def _jax_gpu_device():
-        """Return the first available GPU/Metal device."""
-        backend = jax.default_backend()
-        if backend == "METAL":
-            return jax.devices("METAL")[0]
-        return jax.devices("gpu")[0]
-
-    def _jax_device(self):
-        """Return the JAX device to place arrays on."""
-        if self.use_gpu_:
-            return self._jax_gpu_device()
-        return jax.devices("cpu")[0]
+    # ──────────────────────────────────────────────────────────────────────────
+    # Public API
+    # ──────────────────────────────────────────────────────────────────────────
 
     def fit(
         self,
@@ -626,78 +616,6 @@ class SIMPL:
         """Deprecated: use ``add_baselines`` instead."""
         warnings.warn("add_baselines_to_results is deprecated, use add_baselines instead.", DeprecationWarning)
         self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
-
-    def _apply_baselines_to_results(self) -> None:
-        """Process stored ground truth and compute baseline iterations."""
-        Xt = self._Xt_raw
-        if Xt.shape[0] != self.T_:
-            raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
-
-        Xt_jax = jnp.array(Xt)
-        self.Xt_ = Xt_jax
-
-        # Store Xt in results
-        self.results_ = xr.merge(
-            [self.results_, _dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
-            compat="override",
-        )
-
-        # Interpolate Ft onto environment grid if provided
-        Ft = self._Ft_raw
-        Ft_coords_dict = self._Ft_coords_dict_raw
-        if Ft is not None and Ft_coords_dict is not None:
-            Ft_da = xr.DataArray(
-                Ft,
-                dims=["neuron", *Ft_coords_dict.keys()],
-                coords={"neuron": self.neuron_, **Ft_coords_dict},
-            )
-            Ft_interp = (
-                Ft_da.interp(
-                    **self.environment_.coords_dict,
-                    method="linear",
-                    kwargs={"fill_value": "extrapolate"},
-                )
-                * self.dt_
-            )
-            Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
-            self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
-            self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
-            self.results_ = xr.merge(
-                [self.results_, _dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
-                compat="override",
-            )
-
-        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
-        M_best = self._M_step(self.Y_, self.Xt_)
-        E_best = self._E_step(self.Y_, M_best["F"])
-        self._append_baseline_iteration(M_best, E_best, iteration_id=-1)
-
-        if self.Ft_ is not None:
-            # EXACT MODEL: Ft (use the exact receptive fields)
-            M_exact = {
-                "F": self.Ft_,
-                "FX": self._interpolate_firing_rates(self.Xt_, self.Ft_),
-                "PX": M_best["PX"],
-            }
-            E_exact = self._E_step(self.Y_, self.Ft_)
-            self._append_baseline_iteration(M_exact, E_exact, iteration_id=-2)
-            self.results_ = self.results_.sortby("iteration")
-        else:
-            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
-
-        # Backfill F_err for training iterations now that Ft_ is available
-        if self.Ft_ is not None and "F_err" in self.results_:
-            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
-            for i, ep in enumerate(self.results_.iteration.values):
-                if ep >= 0:
-                    F_ep = jnp.array(self.results_.F.sel(iteration=ep).values.reshape(self.N_neurons_, self.N_bins_))
-                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
-            self.results_["F_err"] = xr.DataArray(
-                f_err_vals,
-                dims=("iteration",),
-                coords={"iteration": self.results_.iteration},
-                attrs=self.results_["F_err"].attrs,
-            )
 
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
@@ -1354,30 +1272,6 @@ class SIMPL:
                     "Try coarsen_dt() or add more neurons."
                 )
 
-    def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
-        """Evaluate a baseline model and append it as a single iteration to results."""
-        evals = self._get_metrics(
-            X=E["X"],
-            F=M["F"],
-            Y=self.Y_,
-            FX=M["FX"],
-            F_odd_mins=M.get("F_odd_minutes"),
-            F_even_mins=M.get("F_even_minutes"),
-            X_prev=None,
-            F_prev=None,
-            Xt=self.Xt_,
-            Ft=self.Ft_,
-            PX=M["PX"],
-        )
-        data = {**M, **E, **evals}
-        if not self.save_full_history_:
-            data.pop("FX", None)
-        data.pop("logPYXF_maps", None)
-        results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-            {"iteration": [iteration_id]}
-        )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
-
     # ──────────────────────────────────────────────────────────────────────────
     # Initialisation
     # ──────────────────────────────────────────────────────────────────────────
@@ -1733,8 +1627,22 @@ class SIMPL:
             print("  Finished.")
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Utilities and static methods
+    # Internal utilities
     # ──────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _jax_gpu_device():
+        """Return the first available GPU/Metal device."""
+        backend = jax.default_backend()
+        if backend == "METAL":
+            return jax.devices("METAL")[0]
+        return jax.devices("gpu")[0]
+
+    def _jax_device(self):
+        """Return the JAX device to place arrays on."""
+        if self.use_gpu_:
+            return self._jax_gpu_device()
+        return jax.devices("cpu")[0]
 
     def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """Predict firing rates at arbitrary positions by interpolating the discretised fields.
@@ -1900,6 +1808,102 @@ class SIMPL:
             metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
 
         return metrics
+
+    def _apply_baselines_to_results(self) -> None:
+        """Process stored ground truth and compute baseline iterations."""
+        Xt = self._Xt_raw
+        if Xt.shape[0] != self.T_:
+            raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
+
+        Xt_jax = jnp.array(Xt)
+        self.Xt_ = Xt_jax
+
+        # Store Xt in results
+        self.results_ = xr.merge(
+            [self.results_, _dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
+            compat="override",
+        )
+
+        # Interpolate Ft onto environment grid if provided
+        Ft = self._Ft_raw
+        Ft_coords_dict = self._Ft_coords_dict_raw
+        if Ft is not None and Ft_coords_dict is not None:
+            Ft_da = xr.DataArray(
+                Ft,
+                dims=["neuron", *Ft_coords_dict.keys()],
+                coords={"neuron": self.neuron_, **Ft_coords_dict},
+            )
+            Ft_interp = (
+                Ft_da.interp(
+                    **self.environment_.coords_dict,
+                    method="linear",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+                * self.dt_
+            )
+            Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
+            self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
+            self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
+            self.results_ = xr.merge(
+                [self.results_, _dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
+                compat="override",
+            )
+
+        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
+        M_best = self._M_step(self.Y_, self.Xt_)
+        E_best = self._E_step(self.Y_, M_best["F"])
+        self._append_baseline_iteration(M_best, E_best, iteration_id=-1)
+
+        if self.Ft_ is not None:
+            # EXACT MODEL: Ft (use the exact receptive fields)
+            M_exact = {
+                "F": self.Ft_,
+                "FX": self._interpolate_firing_rates(self.Xt_, self.Ft_),
+                "PX": M_best["PX"],
+            }
+            E_exact = self._E_step(self.Y_, self.Ft_)
+            self._append_baseline_iteration(M_exact, E_exact, iteration_id=-2)
+            self.results_ = self.results_.sortby("iteration")
+        else:
+            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
+
+        # Backfill F_err for training iterations now that Ft_ is available
+        if self.Ft_ is not None and "F_err" in self.results_:
+            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
+            for i, ep in enumerate(self.results_.iteration.values):
+                if ep >= 0:
+                    F_ep = jnp.array(self.results_.F.sel(iteration=ep).values.reshape(self.N_neurons_, self.N_bins_))
+                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
+            self.results_["F_err"] = xr.DataArray(
+                f_err_vals,
+                dims=("iteration",),
+                coords={"iteration": self.results_.iteration},
+                attrs=self.results_["F_err"].attrs,
+            )
+
+    def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
+        """Evaluate a baseline model and append it as a single iteration to results."""
+        evals = self._get_metrics(
+            X=E["X"],
+            F=M["F"],
+            Y=self.Y_,
+            FX=M["FX"],
+            F_odd_mins=M.get("F_odd_minutes"),
+            F_even_mins=M.get("F_even_minutes"),
+            X_prev=None,
+            F_prev=None,
+            Xt=self.Xt_,
+            Ft=self.Ft_,
+            PX=M["PX"],
+        )
+        data = {**M, **E, **evals}
+        if not self.save_full_history_:
+            data.pop("FX", None)
+        data.pop("logPYXF_maps", None)
+        results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+            {"iteration": [iteration_id]}
+        )
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     @staticmethod
     def _validate_trial_boundaries(trial_boundaries, T):
