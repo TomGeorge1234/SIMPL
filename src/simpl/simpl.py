@@ -1259,17 +1259,17 @@ class SIMPL:
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
 
         if verbose:
-            mi_rate = float(np.array(self.results_.mutual_information.sel(iteration=0)).sum())
-            print(f" · mutual info={mi_rate:.1f} bits/s")
+            print()  # newline after header
 
             # Warnings
+            mi_rate = float(np.array(self.results_.mutual_information.sel(iteration=0)).sum())
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
                 print("  ⚠ fewer than 5% of time bins have 2+ active neurons. Try coarsen_dt() or add more neurons.")
             if mi_rate < 1.0:
                 print(
-                    f"  ⚠ mutual information rate is very low ({mi_rate:.1f} bits/s). "
+                    f"  ⚠ mutual info MI(Y;λ(X)) is very low ({mi_rate:.1f} bits/s). "
                     "Try coarsen_dt() or add more neurons."
                 )
 
@@ -1596,7 +1596,7 @@ class SIMPL:
             f"{duration:.1f}s (dt={self.dt_:.2g}s)",
             f"n_trials={n_trials}",
         ]
-        title = f"━━ SIMPL ━━━ {self._device_str} "
+        title = f"━━ SIMPL ━━━━━ {self._device_str} "
         print(f"{title}{'━' * (self._TABLE_WIDTH - len(title))}")
         print(" · ".join(line1))
         print(" · ".join(line2), end="", flush=True)
@@ -1616,11 +1616,12 @@ class SIMPL:
             def _pct(v):
                 return f"{'+' if v >= 0 else ''}{v:.1f}%"
 
-            bps_left = f"bits-per-spike {_pct(bps_pct)}"
-            mi_left = f"mutual info    {_pct(mi_pct)}"
-            w = max(len(bps_left), len(mi_left))
-            bps = f"{bps_left:<{w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
-            mi = f"{mi_left:<{w}} ({mi_0:.1f}→{mi_n:.1f} bits/s)"
+            name_w = len("mutual info MI(Y;λ(X)) ")
+            bps_name = f"{'bits-per-spike':<{name_w}}"
+            mi_name = f"{'mutual info MI(Y;λ(X))':<{name_w}}"
+            pct_w = max(len(_pct(bps_pct)), len(_pct(mi_pct)))
+            bps = f"{bps_name}{_pct(bps_pct):>{pct_w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
+            mi = f"{mi_name}{_pct(mi_pct):>{pct_w}} ({mi_0:.1f}→{mi_n:.1f} bits/s)"
             print()
             print(f"{label}{bps}")
             print(f"{pad}{mi}")

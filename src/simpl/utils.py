@@ -563,6 +563,57 @@ def coarsen_dt(
     return Y_coarse, Xb_coarse, time_coarse
 
 
+def train_test_split(
+    *arrays: np.ndarray,
+    test_seconds: float = 60.0,
+    dt: float | None = None,
+) -> tuple:
+    """Split arrays into train and test sets by holding out the last N seconds.
+
+    If ``dt`` is not provided, it is inferred from the last 1D array in
+    ``arrays`` (assumed to be a time-stamps array).
+
+    Parameters
+    ----------
+    *arrays : np.ndarray
+        Arrays to split, all with the same first dimension (T).
+    test_seconds : float
+        Duration of test set in seconds. Default 60.
+    dt : float or None
+        Time bin size in seconds. If None, inferred from the last 1D array.
+
+    Returns
+    -------
+    splits : tuple
+        ``(train_1, test_1, train_2, test_2, ...)`` — alternating train/test
+        for each input array.
+
+    Examples
+    --------
+    >>> Y, Y_test, Xb, Xb_test, time, time_test = train_test_split(
+    ...     Y_all, Xb_all, time_all, test_seconds=60
+    ... )
+    """
+    if dt is None:
+        # Infer dt from the last 1D array (assumed to be timestamps)
+        for arr in reversed(arrays):
+            if arr.ndim == 1:
+                dt = float(arr[1] - arr[0])
+                break
+    if dt is None:
+        raise ValueError("Could not infer dt. Pass dt= explicitly or include a 1D time array.")
+
+    T = arrays[0].shape[0]
+    N_test = int(test_seconds / dt)
+    N_train = T - N_test
+
+    result = []
+    for arr in arrays:
+        result.append(arr[:N_train])
+        result.append(arr[N_train:])
+    return tuple(result)
+
+
 def create_speckled_mask(
     size: tuple[int, int],
     sparsity: float = 0.1,

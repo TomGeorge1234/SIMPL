@@ -416,7 +416,7 @@ class TestSIMPLSpatialInformation:
     def test_spatial_information_in_results(self, small_simpl_model):
         model = small_simpl_model
         assert "spatial_information" in model.results_
-        assert "spatial_information_rate" in model.results_
+        assert "mutual_information" in model.results_
 
     def test_spatial_information_shape(self, small_simpl_model):
         model = small_simpl_model
@@ -428,11 +428,10 @@ class TestSIMPLSpatialInformation:
         si = model.results_.spatial_information.sel(iteration=0).values
         assert np.all(si >= -1e-6)
 
-    def test_spatial_information_rate_is_sum(self, small_simpl_model):
+    def test_mutual_information_nonnegative(self, small_simpl_model):
         model = small_simpl_model
-        si = model.results_.spatial_information.sel(iteration=0).values
-        sir = float(model.results_.spatial_information_rate.sel(iteration=0))
-        assert np.isclose(sir, si.sum(), atol=1e-3)
+        mi = model.results_.mutual_information.sel(iteration=0).values
+        assert np.all(mi >= -1e-6)
 
 
 class TestSIMPLIterationZeroInFit:
