@@ -1,0 +1,2747 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://tomge.org/SIMPL/api/kde/">
+      
+      
+        <link rel="prev" href="../kalman/">
+      
+      
+        <link rel="next" href="../plotting/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>KDE - SIMPL</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CFira+Code:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"Fira Code"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#kde" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="SIMPL" class="md-header__button md-logo" aria-label="SIMPL" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SIMPL
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              KDE
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TomGeorge1234/SIMPL" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="SIMPL" class="md-nav__button md-logo" aria-label="SIMPL" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SIMPL
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TomGeorge1234/SIMPL" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simpl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SIMPL
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kalman/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kalman Filter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KDE
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    KDE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kde
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.decode_observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        decode_observations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.gaussian_kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gaussian_kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.kde" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kde
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.kde_angular" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kde_angular
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.poisson_log_likelihood" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        poisson_log_likelihood
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simpl.kde.poisson_log_likelihood_trajectory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        poisson_log_likelihood_trajectory
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../variable_registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Variable Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="kde">KDE</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="simpl.kde"></a>
+    <div class="doc doc-contents first">
+
+        <p>Kernel density estimation (KDE) of neural firing-rate maps and Poisson log-likelihood.</p>
+<p>The M-step of the SIMPL EM loop estimates each neuron's receptive field using
+KDE: spikes are smoothed with a Gaussian kernel over the spatial grid, and
+normalised by occupancy, yielding a firing-rate map in units of spikes per
+time bin.</p>
+<p>For 1-D angular environments (<code>is_1D_angular=True</code>), the specialised
+<code>kde_angular</code> function convolves with a wrapped Gaussian kernel via FFT so
+that the estimate is seamless across the <span class="arithmatex">\([-\pi, \pi)\)</span> boundary.</p>
+<p>The Poisson log-likelihood functions (<code>poisson_log_likelihood</code> and
+<code>poisson_log_likelihood_trajectory</code>) evaluate how well the estimated
+receptive fields explain the observed spike counts and are used during the
+E-step to construct likelihood maps over position space.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.decode_observations" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">decode_observations</span><span class="p">(</span><span class="n">xF</span><span class="p">,</span> <span class="n">spikes</span><span class="p">,</span> <span class="n">mean_rate</span><span class="p">,</span> <span class="n">mask</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">return_log_maps</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Compute Poisson likelihood maps, fit Gaussian observations, and flag silent bins.</p>
+<p>This combines <code>poisson_log_likelihood</code> and <code>fit_gaussian</code> in a single
+batched pipeline so that the full <code>(T, N_bins)</code> likelihood tensor is never
+materialised at once, keeping peak memory low for long sessions.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>xF</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_bins">N_bins</span>, <span title="D">D</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Spatial bin centres.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>spikes</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Spike counts.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mean_rate</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_neurons">N_neurons</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Receptive fields (expected spike counts per bin per time step).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mask</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean mask (True = use neuron at this time step).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>batch_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> or None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of time bins per batch. If None (default), chosen adaptively
+to target ~64 MB peak memory for the likelihood tensor.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>return_log_maps</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, also return the full <code>(T, N_bins)</code> log-likelihood maps.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code>mu_l, mode_l, sigma_l : jax.Array</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Gaussian observation parameters fitted from the likelihood.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>no_spikes</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean, True where total (masked) spike count is zero.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>logPYXF_maps</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Only returned when <code>return_log_maps</code> is True.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">decode_observations</span><span class="p">(</span>
+    <span class="n">xF</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">spikes</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mean_rate</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">return_log_maps</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute Poisson likelihood maps, fit Gaussian observations, and flag silent bins.</span>
+
+<span class="sd">    This combines ``poisson_log_likelihood`` and ``fit_gaussian`` in a single</span>
+<span class="sd">    batched pipeline so that the full ``(T, N_bins)`` likelihood tensor is never</span>
+<span class="sd">    materialised at once, keeping peak memory low for long sessions.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    xF : jax.Array, shape (N_bins, D)</span>
+<span class="sd">        Spatial bin centres.</span>
+<span class="sd">    spikes : jax.Array, shape (T, N_neurons)</span>
+<span class="sd">        Spike counts.</span>
+<span class="sd">    mean_rate : jax.Array, shape (N_neurons, N_bins)</span>
+<span class="sd">        Receptive fields (expected spike counts per bin per time step).</span>
+<span class="sd">    mask : jax.Array, shape (T, N_neurons)</span>
+<span class="sd">        Boolean mask (True = use neuron at this time step).</span>
+<span class="sd">    batch_size : int or None</span>
+<span class="sd">        Number of time bins per batch. If None (default), chosen adaptively</span>
+<span class="sd">        to target ~64 MB peak memory for the likelihood tensor.</span>
+<span class="sd">    return_log_maps : bool</span>
+<span class="sd">        If True, also return the full ``(T, N_bins)`` log-likelihood maps.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    mu_l, mode_l, sigma_l : jax.Array</span>
+<span class="sd">        Gaussian observation parameters fitted from the likelihood.</span>
+<span class="sd">    no_spikes : jax.Array, shape (T,)</span>
+<span class="sd">        Boolean, True where total (masked) spike count is zero.</span>
+<span class="sd">    logPYXF_maps : jax.Array, shape (T, N_bins)</span>
+<span class="sd">        Only returned when ``return_log_maps`` is True.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">simpl.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_gaussian</span>  <span class="c1"># local to avoid circular import</span>
+
+    <span class="n">T</span> <span class="o">=</span> <span class="n">spikes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">N_bins</span> <span class="o">=</span> <span class="n">xF</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">batch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Target ~256 MB peak for the (batch_size, N_bins) float32 likelihood tensor</span>
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">64_000_000</span> <span class="o">//</span> <span class="n">N_bins</span><span class="p">)</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+
+    <span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnames</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;_return_log_maps&quot;</span><span class="p">,))</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_process_batch</span><span class="p">(</span><span class="n">xF</span><span class="p">,</span> <span class="n">spikes_batch</span><span class="p">,</span> <span class="n">mean_rate</span><span class="p">,</span> <span class="n">mask_batch</span><span class="p">,</span> <span class="n">_return_log_maps</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="n">log_maps</span> <span class="o">=</span> <span class="n">poisson_log_likelihood</span><span class="p">(</span><span class="n">spikes_batch</span><span class="p">,</span> <span class="n">mean_rate</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="n">mask_batch</span><span class="p">)</span>
+        <span class="n">mu</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">sigma</span> <span class="o">=</span> <span class="n">fit_gaussian</span><span class="p">(</span><span class="n">xF</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_maps</span><span class="p">))</span>
+        <span class="n">no_spk</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">spikes_batch</span> <span class="o">*</span> <span class="n">mask_batch</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="n">_return_log_maps</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">mu</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">sigma</span><span class="p">,</span> <span class="n">no_spk</span><span class="p">,</span> <span class="n">log_maps</span>
+        <span class="k">return</span> <span class="n">mu</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">sigma</span><span class="p">,</span> <span class="n">no_spk</span>
+
+    <span class="n">mu_batches</span><span class="p">,</span> <span class="n">mode_batches</span><span class="p">,</span> <span class="n">sigma_batches</span><span class="p">,</span> <span class="n">no_spike_batches</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="n">log_map_batches</span> <span class="o">=</span> <span class="p">[]</span> <span class="k">if</span> <span class="n">return_log_maps</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="k">for</span> <span class="n">start</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">):</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">_process_batch</span><span class="p">(</span>
+            <span class="n">xF</span><span class="p">,</span>
+            <span class="n">spikes</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span>
+            <span class="n">mean_rate</span><span class="p">,</span>
+            <span class="n">mask</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span>
+            <span class="n">_return_log_maps</span><span class="o">=</span><span class="n">return_log_maps</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">return_log_maps</span><span class="p">:</span>
+            <span class="n">mu_b</span><span class="p">,</span> <span class="n">mode_b</span><span class="p">,</span> <span class="n">sigma_b</span><span class="p">,</span> <span class="n">no_spk_b</span><span class="p">,</span> <span class="n">log_maps_b</span> <span class="o">=</span> <span class="n">result</span>
+            <span class="n">log_map_batches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">log_maps_b</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">mu_b</span><span class="p">,</span> <span class="n">mode_b</span><span class="p">,</span> <span class="n">sigma_b</span><span class="p">,</span> <span class="n">no_spk_b</span> <span class="o">=</span> <span class="n">result</span>
+        <span class="n">mu_batches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mu_b</span><span class="p">)</span>
+        <span class="n">mode_batches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mode_b</span><span class="p">)</span>
+        <span class="n">sigma_batches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sigma_b</span><span class="p">)</span>
+        <span class="n">no_spike_batches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">no_spk_b</span><span class="p">)</span>
+
+    <span class="n">mu_l</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">mu_batches</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">mode_l</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">mode_batches</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">sigma_l</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">sigma_batches</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">no_spikes</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">no_spike_batches</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">return_log_maps</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">mu_l</span><span class="p">,</span> <span class="n">mode_l</span><span class="p">,</span> <span class="n">sigma_l</span><span class="p">,</span> <span class="n">no_spikes</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">log_map_batches</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">mu_l</span><span class="p">,</span> <span class="n">mode_l</span><span class="p">,</span> <span class="n">sigma_l</span><span class="p">,</span> <span class="n">no_spikes</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.gaussian_kernel" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">gaussian_kernel</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span> <span class="n">x2</span><span class="p">,</span> <span class="n">bandwidth</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Evaluates the Gaussian kernel between two points <span class="arithmatex">\(x_1\)</span> and <span class="arithmatex">\(x_2\)</span>:</p>
+<div class="arithmatex">\[K(x_1, x_2) = \frac{1}{\sqrt{(2\pi)^D |\Sigma|}}
+\exp\!\left(-\frac{1}{2}(x_1 - x_2)^\top \Sigma^{-1} (x_1 - x_2)\right)\]</div>
+<p>where <span class="arithmatex">\(\Sigma = \sigma^2 I\)</span> is the isotropic covariance with bandwidth <span class="arithmatex">\(\sigma\)</span>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>x1</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The first position</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>x2</code>
+            </td>
+            <td>
+                  <code><span title="jax.Array">Array</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The second position</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>bandwidth</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The bandwidth of the kernel</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>kernel</code></td>            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The probability density at x</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">gaussian_kernel</span><span class="p">(</span>
+    <span class="n">x1</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">x2</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">bandwidth</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Evaluates the Gaussian kernel between two points \\(x_1\\) and \\(x_2\\):</span>
+
+<span class="sd">    $$K(x_1, x_2) = \\frac{1}{\\sqrt{(2\\pi)^D |\\Sigma|}}</span>
+<span class="sd">    \\exp\\!\\left(-\\frac{1}{2}(x_1 - x_2)^\\top \\Sigma^{-1} (x_1 - x_2)\\right)$$</span>
+
+<span class="sd">    where \\(\\Sigma = \\sigma^2 I\\) is the isotropic covariance with bandwidth \\(\\sigma\\).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x1: (D,) jax.Array</span>
+<span class="sd">        The first position</span>
+<span class="sd">    x2: (D,) jax.Array</span>
+<span class="sd">        The second position</span>
+<span class="sd">    bandwidth: float</span>
+<span class="sd">        The bandwidth of the kernel</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    kernel: float</span>
+<span class="sd">        The probability density at x</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">diff</span> <span class="o">=</span> <span class="n">x1</span> <span class="o">-</span> <span class="n">x2</span>
+    <span class="n">D</span> <span class="o">=</span> <span class="n">x1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">norm_const</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">((</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">**</span> <span class="p">(</span><span class="n">D</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">bandwidth</span><span class="o">**</span><span class="n">D</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">norm_const</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">diff</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="n">bandwidth</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.kde" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">kde</span><span class="p">(</span><span class="n">bins</span><span class="p">,</span> <span class="n">trajectory</span><span class="p">,</span> <span class="n">spikes</span><span class="p">,</span> <span class="n">kernel</span><span class="o">=</span><span class="n">gaussian_kernel</span><span class="p">,</span> <span class="n">kernel_bandwidth</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">return_position_density</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Performs KDE to estimate the expected number of spikes each neuron will fire
+at each position in <code>bins</code> given past <code>trajectory</code> and <code>spikes</code> data. This
+estimate is an expected-spike-count-per-timebin, in order to get firing rate
+in Hz, divide this by dt.</p>
+<p>Kernel Density Estimation goes as follows (the denominator corrects for
+non-uniform position density):</p>
+<div class="arithmatex">\[\mu(x) = \frac{\sum_{t_s \in \text{spike times}} K(x, x(t_s))}{\sum_{t} K(x, x(t))} = \frac{K_s}{K_x}\]</div>
+<p>In practice this is computed in log-space as
+<span class="arithmatex">\(\mu(x) = \exp[\log(K_s) - \log(K_x)]\)</span>.</p>
+<p>Optionally, a boolean mask same shape as spikes can be passed to ignore
+certain spikes. This restricts the KDE calculation to only the spikes
+where mask is True.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>bins</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_bins">N_bins</span>, <span title="D">D</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The position bins at which to estimate the firing rate</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>trajectory</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="D">D</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The position of the agent at each time step</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>spikes</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The spike counts of the neuron at each time step (integer array, can be &gt; 1)</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>kernel</code>
+            </td>
+            <td>
+                  <code><span title="function">function</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The kernel function to use for density estimation. See <code>kernels.py</code> for signature and examples.</p>
+              </div>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="gaussian_kernel(x1, x2, bandwidth) (simpl.kde.gaussian_kernel)" href="#simpl.kde.gaussian_kernel">gaussian_kernel</a></code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>kernel_bandwidth</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The bandwidth of the kernel</p>
+              </div>
+            </td>
+            <td>
+                  <code>0.01</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mask</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>batch_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> or None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The time axis is split into batches of this size to avoid memory
+errors, each batch is then processed in series. If None (default),
+chosen adaptively to target ~64 MB peak for the kernel matrix.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>return_position_density</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, this function also returns the position density (the denominator of the KDE) at each bin.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>kernel_density_estimate</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_neurons">N_neurons</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>position_density</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_bins">N_bins</span>)(<span title="optional">optional</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Normalised position density (sums to 1 over bins), independent of neuron masks.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">kde</span><span class="p">(</span>
+    <span class="n">bins</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">trajectory</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">spikes</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">kernel</span><span class="p">:</span> <span class="n">Callable</span> <span class="o">=</span> <span class="n">gaussian_kernel</span><span class="p">,</span>
+    <span class="n">kernel_bandwidth</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">return_position_density</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Performs KDE to estimate the expected number of spikes each neuron will fire</span>
+<span class="sd">    at each position in `bins` given past `trajectory` and `spikes` data. This</span>
+<span class="sd">    estimate is an expected-spike-count-per-timebin, in order to get firing rate</span>
+<span class="sd">    in Hz, divide this by dt.</span>
+
+<span class="sd">    Kernel Density Estimation goes as follows (the denominator corrects for</span>
+<span class="sd">    non-uniform position density):</span>
+
+<span class="sd">    $$\\mu(x) = \\frac{\\sum_{t_s \\in \\text{spike times}} K(x, x(t_s))}{\\sum_{t} K(x, x(t))} = \\frac{K_s}{K_x}$$</span>
+
+<span class="sd">    In practice this is computed in log-space as</span>
+<span class="sd">    \\(\\mu(x) = \\exp[\\log(K_s) - \\log(K_x)]\\).</span>
+
+<span class="sd">    Optionally, a boolean mask same shape as spikes can be passed to ignore</span>
+<span class="sd">    certain spikes. This restricts the KDE calculation to only the spikes</span>
+<span class="sd">    where mask is True.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    bins : jax.Array, shape (N_bins, D,)</span>
+<span class="sd">        The position bins at which to estimate the firing rate</span>
+<span class="sd">    trajectory : jax.Array, shape (T, D)</span>
+<span class="sd">        The position of the agent at each time step</span>
+<span class="sd">    spikes : jax.Array, shape (T, N_neurons)</span>
+<span class="sd">        The spike counts of the neuron at each time step (integer array, can be &gt; 1)</span>
+<span class="sd">    kernel : function</span>
+<span class="sd">        The kernel function to use for density estimation. See `kernels.py` for signature and examples.</span>
+<span class="sd">    kernel_bandwidth : float</span>
+<span class="sd">        The bandwidth of the kernel</span>
+<span class="sd">    mask : jax.Array, shape (T, N_neurons), optional</span>
+<span class="sd">        A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</span>
+<span class="sd">    batch_size : int or None</span>
+<span class="sd">        The time axis is split into batches of this size to avoid memory</span>
+<span class="sd">        errors, each batch is then processed in series. If None (default),</span>
+<span class="sd">        chosen adaptively to target ~64 MB peak for the kernel matrix.</span>
+<span class="sd">    return_position_density : bool</span>
+<span class="sd">        If True, this function also returns the position density (the denominator of the KDE) at each bin.</span>
+
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    kernel_density_estimate : jax.Array, shape (N_neurons, N_bins)</span>
+<span class="sd">    position_density : jax.Array, shape (N_bins,) (optional)</span>
+<span class="sd">        Normalised position density (sums to 1 over bins), independent of neuron masks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">bins</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>
+    <span class="k">assert</span> <span class="n">trajectory</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>
+    <span class="k">assert</span> <span class="n">spikes</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>
+
+    <span class="n">N_neurons</span> <span class="o">=</span> <span class="n">spikes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">N_bins</span> <span class="o">=</span> <span class="n">bins</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">trajectory</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">batch_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Target ~256 MB peak for the (N_bins, batch_size) float32 kernel matrix</span>
+        <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span> <span class="mi">64_000_000</span> <span class="o">//</span> <span class="n">N_bins</span><span class="p">)</span>
+    <span class="n">batch_size</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">batch_size</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+
+    <span class="c1"># If not passed make a trivial mask (all True)</span>
+    <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">spikes</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="c1"># vmap the kernel K(x,mu,sigma) so it takes in a vector of positions and a vector of means</span>
+    <span class="n">kernel_fn</span> <span class="o">=</span> <span class="n">partial</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">bandwidth</span><span class="o">=</span><span class="n">kernel_bandwidth</span><span class="p">)</span>
+    <span class="n">vmapped_kernel</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">vmap</span><span class="p">(</span><span class="n">kernel_fn</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)),</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+    <span class="n">spike_density</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">N_bins</span><span class="p">,</span> <span class="n">N_neurons</span><span class="p">))</span>
+    <span class="n">position_density_internal</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">N_bins</span><span class="p">,</span> <span class="n">N_neurons</span><span class="p">)</span>
+    <span class="p">)</span>  <span class="c1"># Seperate position density for neuron-specific masks, used to calculate KDE estimates</span>
+    <span class="n">position_density</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">N_bins</span><span class="p">,)</span>
+    <span class="p">)</span>  <span class="c1"># Mask agnostic density, just &quot;where has the animal been&quot;, optionally returned for downstream calculations.</span>
+
+    <span class="n">N_batchs</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">T</span> <span class="o">/</span> <span class="n">batch_size</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N_batchs</span><span class="p">):</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">batch_size</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">((</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span>
+        <span class="c1"># Get the batch of trajectory, spikes and mask</span>
+        <span class="n">trajectory_batch</span> <span class="o">=</span> <span class="n">trajectory</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+        <span class="n">spikes_batch</span> <span class="o">=</span> <span class="n">spikes</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+        <span class="n">mask_batch</span> <span class="o">=</span> <span class="n">mask</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+        <span class="c1"># Pairwise kernel values for each trajectory-bin position pair. The bulk of the computation is done here.</span>
+        <span class="n">kernel_values</span> <span class="o">=</span> <span class="n">vmapped_kernel</span><span class="p">(</span><span class="n">trajectory_batch</span><span class="p">,</span> <span class="n">bins</span><span class="p">)</span>
+        <span class="c1"># Calculate normalisation position density (the +epsilon means unvisited</span>
+        <span class="c1"># positions should approach 0 density and avoid nans)</span>
+        <span class="n">position_density_internal_batch</span> <span class="o">=</span> <span class="n">kernel_values</span> <span class="o">@</span> <span class="n">mask_batch</span> <span class="o">+</span> <span class="mf">1e-6</span>
+        <span class="c1"># Mask-free position density for return</span>
+        <span class="n">position_density</span> <span class="o">+=</span> <span class="n">kernel_values</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Calculate spike density, replace nans from no-spikes with 0</span>
+        <span class="n">spike_density_batch</span> <span class="o">=</span> <span class="n">kernel_values</span> <span class="o">@</span> <span class="p">(</span><span class="n">mask_batch</span> <span class="o">*</span> <span class="n">spikes_batch</span><span class="p">)</span>
+        <span class="n">spike_density_batch</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">spike_density_batch</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="n">spike_density_batch</span><span class="p">)</span>
+
+        <span class="c1"># Add these to the running total</span>
+        <span class="n">spike_density</span> <span class="o">+=</span> <span class="n">spike_density_batch</span>
+        <span class="n">position_density_internal</span> <span class="o">+=</span> <span class="n">position_density_internal_batch</span>
+
+    <span class="c1"># calculate kde at each bin position</span>
+    <span class="n">kernel_density_estimate</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">spike_density</span><span class="p">)</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">position_density_internal</span><span class="p">))</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">if</span> <span class="n">return_position_density</span><span class="p">:</span>
+        <span class="c1"># Normalise position density to a valid PDF</span>
+        <span class="n">position_density</span> <span class="o">=</span> <span class="n">position_density</span> <span class="o">/</span> <span class="n">position_density</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">kernel_density_estimate</span><span class="p">,</span> <span class="n">position_density</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">kernel_density_estimate</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.kde_angular" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">kde_angular</span><span class="p">(</span><span class="n">bins</span><span class="p">,</span> <span class="n">trajectory</span><span class="p">,</span> <span class="n">spikes</span><span class="p">,</span> <span class="n">kernel</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">kernel_bandwidth</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">return_position_density</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-06</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Circular KDE for angular data. Estimates expected spike count per timebin
+at each angular bin (divide by dt for Hz). See <code>kde()</code> for the linear
+equivalent.</p>
+<div class="arithmatex">\[\mu(\theta) = \frac{K_s}{K_x}\]</div>
+<p>where <span class="arithmatex">\(K_s\)</span> and <span class="arithmatex">\(K_x\)</span> are the kernel-smoothed spike count and
+occupancy histograms, respectively.</p>
+<p>Unlike <code>kde()</code>, which evaluates all pairwise kernel values, this function
+first histograms the data then smooths via FFT-based circular convolution
+with a von Mises kernel:</p>
+<div class="arithmatex">\[\text{smooth}(x) = \mathcal{F}^{-1}\!\big[\mathcal{F}(\text{histogram})
+\cdot \mathcal{F}(\text{von Mises kernel})\big]\]</div>
+<p>This is <span class="arithmatex">\(O(N_{\text{bins}} \log N_{\text{bins}})\)</span> rather than
+<span class="arithmatex">\(O(N_{\text{bins}} \cdot T)\)</span>.</p>
+<p>Both <code>bins</code> and <code>trajectory</code> must be in radians in <span class="arithmatex">\([-\pi, \pi)\)</span>. Bins
+must be uniformly spaced. <code>kernel_bandwidth</code> is in radians and is converted
+internally to von Mises concentration <span class="arithmatex">\(\kappa = 1 / \sigma^2\)</span>
+(accurate for <span class="arithmatex">\(\kappa &gt; 2\)</span>, i.e. small bandwidth <span class="arithmatex">\(\sigma &lt; {\sim}0.7\)</span> rad).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>bins</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_bins">N_bins</span>) or (<span title="N_bins">N_bins</span>, 1))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Angle bin centres in radians, uniformly spaced in [-pi, pi).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>trajectory</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>) or (<span title="T">T</span>, 1))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Angular position of the agent at each time step, in radians in [-pi, pi).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>spikes</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Spike counts at each time step (integer array, can be &gt; 1).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>kernel</code>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Unused, kept for API consistency with <code>kde()</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>kernel_bandwidth</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Std dev of smoothing kernel in radians. Larger = smoother.
+Converted to von Mises kappa = 1 / kernel_bandwidth^2.</p>
+              </div>
+            </td>
+            <td>
+                  <code>0.3</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mask</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Boolean mask for spikes. Default is None (no masking).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>return_position_density</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, also returns normalised position density. Default is False.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>eps</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Small constant to avoid division by zero. Default is 1e-6.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1e-06</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>kernel_density_estimate</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_neurons">N_neurons</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td><code>position_density</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_bins">N_bins</span>)(<span title="optional">optional</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Normalised position density (sums to 1), independent of neuron masks.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span>
+<span class="normal">455</span>
+<span class="normal">456</span>
+<span class="normal">457</span>
+<span class="normal">458</span>
+<span class="normal">459</span>
+<span class="normal">460</span>
+<span class="normal">461</span>
+<span class="normal">462</span>
+<span class="normal">463</span>
+<span class="normal">464</span>
+<span class="normal">465</span>
+<span class="normal">466</span>
+<span class="normal">467</span>
+<span class="normal">468</span>
+<span class="normal">469</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span>
+<span class="normal">474</span>
+<span class="normal">475</span>
+<span class="normal">476</span>
+<span class="normal">477</span>
+<span class="normal">478</span>
+<span class="normal">479</span>
+<span class="normal">480</span>
+<span class="normal">481</span>
+<span class="normal">482</span>
+<span class="normal">483</span>
+<span class="normal">484</span>
+<span class="normal">485</span>
+<span class="normal">486</span>
+<span class="normal">487</span>
+<span class="normal">488</span>
+<span class="normal">489</span>
+<span class="normal">490</span>
+<span class="normal">491</span>
+<span class="normal">492</span>
+<span class="normal">493</span>
+<span class="normal">494</span>
+<span class="normal">495</span>
+<span class="normal">496</span>
+<span class="normal">497</span>
+<span class="normal">498</span>
+<span class="normal">499</span>
+<span class="normal">500</span>
+<span class="normal">501</span>
+<span class="normal">502</span>
+<span class="normal">503</span>
+<span class="normal">504</span>
+<span class="normal">505</span>
+<span class="normal">506</span>
+<span class="normal">507</span>
+<span class="normal">508</span>
+<span class="normal">509</span>
+<span class="normal">510</span>
+<span class="normal">511</span>
+<span class="normal">512</span>
+<span class="normal">513</span>
+<span class="normal">514</span>
+<span class="normal">515</span>
+<span class="normal">516</span>
+<span class="normal">517</span>
+<span class="normal">518</span>
+<span class="normal">519</span>
+<span class="normal">520</span>
+<span class="normal">521</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@partial</span><span class="p">(</span><span class="n">jax</span><span class="o">.</span><span class="n">jit</span><span class="p">,</span> <span class="n">static_argnames</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;kernel&quot;</span><span class="p">,</span> <span class="s2">&quot;return_position_density&quot;</span><span class="p">))</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kde_angular</span><span class="p">(</span>
+    <span class="n">bins</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>  <span class="c1"># (N_bins,) bin centers in [-pi, pi)</span>
+    <span class="n">trajectory</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>  <span class="c1"># (T,) angles in radians</span>
+    <span class="n">spikes</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>  <span class="c1"># (T, N_neurons) spike counts</span>
+    <span class="n">kernel</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># unused placeholder</span>
+    <span class="n">kernel_bandwidth</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>  <span class="c1"># std dev of smoothing kernel in radians</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># (T, N_neurons) boolean</span>
+    <span class="n">return_position_density</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">eps</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Circular KDE for angular data. Estimates expected spike count per timebin</span>
+<span class="sd">    at each angular bin (divide by dt for Hz). See `kde()` for the linear</span>
+<span class="sd">    equivalent.</span>
+
+<span class="sd">    $$\\mu(\\theta) = \\frac{K_s}{K_x}$$</span>
+
+<span class="sd">    where \\(K_s\\) and \\(K_x\\) are the kernel-smoothed spike count and</span>
+<span class="sd">    occupancy histograms, respectively.</span>
+
+<span class="sd">    Unlike `kde()`, which evaluates all pairwise kernel values, this function</span>
+<span class="sd">    first histograms the data then smooths via FFT-based circular convolution</span>
+<span class="sd">    with a von Mises kernel:</span>
+
+<span class="sd">    $$\\text{smooth}(x) = \\mathcal{F}^{-1}\\!\\big[\\mathcal{F}(\\text{histogram})</span>
+<span class="sd">    \\cdot \\mathcal{F}(\\text{von Mises kernel})\\big]$$</span>
+
+<span class="sd">    This is \\(O(N_{\\text{bins}} \\log N_{\\text{bins}})\\) rather than</span>
+<span class="sd">    \\(O(N_{\\text{bins}} \\cdot T)\\).</span>
+
+<span class="sd">    Both `bins` and `trajectory` must be in radians in \\([-\\pi, \\pi)\\). Bins</span>
+<span class="sd">    must be uniformly spaced. `kernel_bandwidth` is in radians and is converted</span>
+<span class="sd">    internally to von Mises concentration \\(\\kappa = 1 / \\sigma^2\\)</span>
+<span class="sd">    (accurate for \\(\\kappa &gt; 2\\), i.e. small bandwidth \\(\\sigma &lt; {\\sim}0.7\\) rad).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    bins : jax.Array, shape (N_bins,) or (N_bins, 1)</span>
+<span class="sd">        Angle bin centres in radians, uniformly spaced in [-pi, pi).</span>
+<span class="sd">    trajectory : jax.Array, shape (T,) or (T, 1)</span>
+<span class="sd">        Angular position of the agent at each time step, in radians in [-pi, pi).</span>
+<span class="sd">    spikes : jax.Array, shape (T, N_neurons)</span>
+<span class="sd">        Spike counts at each time step (integer array, can be &gt; 1).</span>
+<span class="sd">    kernel : None</span>
+<span class="sd">        Unused, kept for API consistency with `kde()`.</span>
+<span class="sd">    kernel_bandwidth : float</span>
+<span class="sd">        Std dev of smoothing kernel in radians. Larger = smoother.</span>
+<span class="sd">        Converted to von Mises kappa = 1 / kernel_bandwidth^2.</span>
+<span class="sd">    mask : jax.Array, shape (T, N_neurons), optional</span>
+<span class="sd">        Boolean mask for spikes. Default is None (no masking).</span>
+<span class="sd">    return_position_density : bool</span>
+<span class="sd">        If True, also returns normalised position density. Default is False.</span>
+<span class="sd">    eps : float</span>
+<span class="sd">        Small constant to avoid division by zero. Default is 1e-6.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    kernel_density_estimate : jax.Array, shape (N_neurons, N_bins)</span>
+<span class="sd">    position_density : jax.Array, shape (N_bins,) (optional)</span>
+<span class="sd">        Normalised position density (sums to 1), independent of neuron masks.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">bins</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="p">(</span><span class="n">bins</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">bins</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">),</span> <span class="s2">&quot;bins should be shape (N_bins,) or (N_bins, 1).&quot;</span>
+    <span class="k">assert</span> <span class="n">trajectory</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">or</span> <span class="p">(</span><span class="n">trajectory</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">trajectory</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span>
+        <span class="s2">&quot;trajectory should be shape (T,) or (T, 1). kde_angular only supports 1D circular data.&quot;</span>
+    <span class="p">)</span>
+
+    <span class="n">bins</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">bins</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">trajectory</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">trajectory</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">spikes</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">spikes</span><span class="p">)</span>
+
+    <span class="n">n_bins</span> <span class="o">=</span> <span class="n">bins</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="n">n_bins</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;n_bins should be even for FFT-based circular convolution.&quot;</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">trajectory</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">n_neurons</span> <span class="o">=</span> <span class="n">spikes</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">T</span><span class="p">,</span> <span class="n">n_neurons</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">mask_f</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="c1"># 1) bin indices consistent with [-pi, pi)</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">_bin_indices_minuspi_pi</span><span class="p">(</span><span class="n">trajectory</span><span class="p">,</span> <span class="n">n_bins</span><span class="p">)</span>  <span class="c1"># (T,)</span>
+
+    <span class="c1"># 2) von Mises kernel over offsets in [-pi, pi)</span>
+    <span class="c1"># Build on symmetric grid =&gt; delta_theta=0 sits at index n_bins//2</span>
+    <span class="n">dtheta</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">n_bins</span><span class="p">,</span> <span class="n">endpoint</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="c1"># Convert bandwidth (std in radians) to von Mises concentration.</span>
+    <span class="c1"># kappa ~ 1/sigma^2 is a good approximation for kappa &gt; 2 (sigma &lt; ~0.7 rad).</span>
+    <span class="n">kappa</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">kernel_bandwidth</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">vm</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">kappa</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">dtheta</span><span class="p">))</span>
+    <span class="n">vm</span> <span class="o">=</span> <span class="n">vm</span> <span class="o">/</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">vm</span><span class="p">)</span>
+
+    <span class="c1"># Align for FFT: put delta_theta=0 at index 0</span>
+    <span class="n">vm</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">vm</span><span class="p">,</span> <span class="o">-</span><span class="n">n_bins</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="c1"># 3) histogram per neuron using bincount (vmap over neurons)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">hist_for_neuron</span><span class="p">(</span><span class="n">weights_t</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">jnp</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights_t</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="n">n_bins</span><span class="p">)</span>
+
+    <span class="c1"># occupancy: mask only (per-neuron, used internally for KDE denominator)</span>
+    <span class="n">pos_hist</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">hist_for_neuron</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">out_axes</span><span class="o">=</span><span class="mi">0</span><span class="p">)(</span><span class="n">mask_f</span><span class="p">)</span>  <span class="c1"># (N, B)</span>
+
+    <span class="c1"># mask-free position histogram for return</span>
+    <span class="n">pos_hist_total</span> <span class="o">=</span> <span class="n">hist_for_neuron</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>  <span class="c1"># (B,)</span>
+
+    <span class="c1"># spikes: spikes * mask</span>
+    <span class="n">spike_w</span> <span class="o">=</span> <span class="n">spikes</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">*</span> <span class="n">mask_f</span>  <span class="c1"># (T, N)</span>
+    <span class="n">spike_hist</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">hist_for_neuron</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">out_axes</span><span class="o">=</span><span class="mi">0</span><span class="p">)(</span><span class="n">spike_w</span><span class="p">)</span>  <span class="c1"># (N, B)</span>
+
+    <span class="c1"># 4) smooth via circular convolution</span>
+    <span class="n">pos_smooth</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">_circular_conv_fft_1d</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="n">out_axes</span><span class="o">=</span><span class="mi">0</span><span class="p">)(</span><span class="n">pos_hist</span><span class="p">,</span> <span class="n">vm</span><span class="p">)</span>
+    <span class="n">spike_smooth</span> <span class="o">=</span> <span class="n">vmap</span><span class="p">(</span><span class="n">_circular_conv_fft_1d</span><span class="p">,</span> <span class="n">in_axes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span> <span class="n">out_axes</span><span class="o">=</span><span class="mi">0</span><span class="p">)(</span><span class="n">spike_hist</span><span class="p">,</span> <span class="n">vm</span><span class="p">)</span>
+    <span class="n">pos_smooth_total</span> <span class="o">=</span> <span class="n">_circular_conv_fft_1d</span><span class="p">(</span><span class="n">pos_hist_total</span><span class="p">,</span> <span class="n">vm</span><span class="p">)</span>  <span class="c1"># (B,)</span>
+
+    <span class="c1"># 5) ratio</span>
+    <span class="n">kde_result</span> <span class="o">=</span> <span class="n">spike_smooth</span> <span class="o">/</span> <span class="p">(</span><span class="n">pos_smooth</span> <span class="o">+</span> <span class="n">eps</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">return_position_density</span><span class="p">:</span>
+        <span class="n">position_density</span> <span class="o">=</span> <span class="n">pos_smooth_total</span> <span class="o">/</span> <span class="n">pos_smooth_total</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">kde_result</span><span class="p">,</span> <span class="n">position_density</span>
+    <span class="k">return</span> <span class="n">kde_result</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.poisson_log_likelihood" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">poisson_log_likelihood</span><span class="p">(</span><span class="n">spikes</span><span class="p">,</span> <span class="n">mean_rate</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">renormalise</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Takes an array of spike counts and an array of mean rates and returns
+the log-likelihood of the spikes given the mean rate of the neuron
+(its receptive field).</p>
+<p>The Poisson probability of observing <span class="arithmatex">\(X\)</span> spikes given mean rate <span class="arithmatex">\(\mu\)</span> is:</p>
+<div class="arithmatex">\[P(X \mid \mu) = \frac{\mu^X \, e^{-\mu}}{X!}\]</div>
+<p>The log-likelihood summed over neurons is:</p>
+<div class="arithmatex">\[\log P(X \mid \mu) = \sum_{\text{neurons}} \left[ X \log \mu - \mu - \log(X!) \right]\]</div>
+<p>where <span class="arithmatex">\(\log(X!)\)</span> is computed via Stirling's approximation (manually
+correcting for when <span class="arithmatex">\(X = 0\)</span>):</p>
+<div class="arithmatex">\[\log(X!) \approx \log\sqrt{2\pi} + (X + 0.5)\log X - X\]</div>
+<p>This Stirling's approximation IS necessary as it avoids computing
+<span class="arithmatex">\(n!\)</span> directly, which can be enormous and produce NaNs for large spike
+counts.</p>
+<p>Optionally, a boolean mask same shape as spikes can be passed to ignore
+certain spikes. This restricts the likelihood calculation to only the
+spikes where mask is True.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spikes</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many spikes the neuron actually fired at each bin (int, can be &gt; 1)</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mean_rate</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="N_neurons">N_neurons</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The mean rate of the neuron (it's receptive field) at each bin.
+This is how many spikes you would <em>expect</em> in at this position
+in a time dt.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mask</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>renormalise</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True this renormalises so the maximum log-likelihood is always 0
+(max likelihood is 1). Recommended to avoid nan errors when
+likelihoods are small. Default is True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>log_likelihood</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_bins">N_bins</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">poisson_log_likelihood</span><span class="p">(</span>
+    <span class="n">spikes</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mean_rate</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">renormalise</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Takes an array of spike counts and an array of mean rates and returns</span>
+<span class="sd">    the log-likelihood of the spikes given the mean rate of the neuron</span>
+<span class="sd">    (its receptive field).</span>
+
+<span class="sd">    The Poisson probability of observing \\(X\\) spikes given mean rate \\(\\mu\\) is:</span>
+
+<span class="sd">    $$P(X \\mid \\mu) = \\frac{\\mu^X \\, e^{-\\mu}}{X!}$$</span>
+
+<span class="sd">    The log-likelihood summed over neurons is:</span>
+
+<span class="sd">    $$\\log P(X \\mid \\mu) = \\sum_{\\text{neurons}} \\left[ X \\log \\mu - \\mu - \\log(X!) \\right]$$</span>
+
+<span class="sd">    where \\(\\log(X!)\\) is computed via Stirling&#39;s approximation (manually</span>
+<span class="sd">    correcting for when \\(X = 0\\)):</span>
+
+<span class="sd">    $$\\log(X!) \\approx \\log\\sqrt{2\\pi} + (X + 0.5)\\log X - X$$</span>
+
+<span class="sd">    This Stirling&#39;s approximation IS necessary as it avoids computing</span>
+<span class="sd">    \\(n!\\) directly, which can be enormous and produce NaNs for large spike</span>
+<span class="sd">    counts.</span>
+
+<span class="sd">    Optionally, a boolean mask same shape as spikes can be passed to ignore</span>
+<span class="sd">    certain spikes. This restricts the likelihood calculation to only the</span>
+<span class="sd">    spikes where mask is True.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    spikes : jax.Array, shape (T, N_neurons,)</span>
+<span class="sd">        How many spikes the neuron actually fired at each bin (int, can be &gt; 1)</span>
+<span class="sd">    mean_rate : jax.Array, shape (N_neurons, N_bins,)</span>
+<span class="sd">        The mean rate of the neuron (it&#39;s receptive field) at each bin.</span>
+<span class="sd">        This is how many spikes you would _expect_ in at this position</span>
+<span class="sd">        in a time dt.</span>
+<span class="sd">    mask : jax.Array, shape (T, N_neurons,), optional</span>
+<span class="sd">        A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</span>
+<span class="sd">    renormalise : bool, optional</span>
+<span class="sd">        If True this renormalises so the maximum log-likelihood is always 0</span>
+<span class="sd">        (max likelihood is 1). Recommended to avoid nan errors when</span>
+<span class="sd">        likelihoods are small. Default is True.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    log_likelihood : jax.Array, shape (T, N_bins,)</span>
+<span class="sd">        The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># If not passed make a no-mask mask (all True)</span>
+    <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">spikes</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="c1"># Calculate log factorial of spike counts NOTE this could be removed if you dont care about absolute likelihoods</span>
+    <span class="n">spikes_</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">spikes</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">spikes</span><span class="p">)</span>  <span class="c1"># replace 0 spikes with 1s because 0! = 1</span>
+    <span class="n">log_spikecount_factorial</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">+</span> <span class="p">(</span><span class="n">spikes_</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">spikes_</span><span class="p">)</span> <span class="o">-</span> <span class="n">spikes_</span>
+    <span class="p">)</span>  <span class="c1"># manually correcting for when X=0</span>
+
+    <span class="c1"># Sum over neurons (which are unmasked)</span>
+    <span class="n">logPXmu</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">mask</span> <span class="o">*</span> <span class="n">spikes</span><span class="p">)</span> <span class="o">@</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">mean_rate</span> <span class="o">+</span> <span class="mf">1e-3</span><span class="p">)</span>
+        <span class="o">-</span> <span class="n">mask</span> <span class="o">@</span> <span class="n">mean_rate</span>
+        <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">log_spikecount_factorial</span> <span class="o">*</span> <span class="n">mask</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Renormalise so max likelihood is 1</span>
+    <span class="k">if</span> <span class="n">renormalise</span><span class="p">:</span>
+        <span class="n">logPXmu</span> <span class="o">=</span> <span class="n">logPXmu</span> <span class="o">-</span> <span class="n">jnp</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">logPXmu</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">logPXmu</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="simpl.kde.poisson_log_likelihood_trajectory" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">poisson_log_likelihood_trajectory</span><span class="p">(</span><span class="n">spikes</span><span class="p">,</span> <span class="n">mean_rate_along_trajectory</span><span class="p">,</span> <span class="n">mask</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Takes an array of spike counts and an <em>equally shaped</em> array of mean
+rates and returns the log-likelihood of the spikes given the mean rate of
+the neuron (its receptive field). Unlike <code>poisson_log_likelihood</code>, which
+evaluates the likelihood over a grid of positions, this function takes a
+trajectory of mean rates and returns the Poisson log-likelihood at each
+time step along that trajectory. See <code>poisson_log_likelihood</code> for the
+full formula.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>spikes</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>How many spikes the neuron actually fired at each bin (int, can be &gt; 1)</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mean_rate_along_trajectory</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The mean rate of the neurons as calculated at each time step along
+the trajectory. This is how many spikes you would <em>expect</em> in at
+this position in a time dt.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>mask</code>
+            </td>
+            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>, <span title="N_neurons">N_neurons</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>log_likelihood</code></td>            <td>
+                  <code>(<span title="jax.Array">Array</span>, <span title="shape">shape</span>(<span title="T">T</span>))</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/simpl/kde.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">poisson_log_likelihood_trajectory</span><span class="p">(</span>
+    <span class="n">spikes</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mean_rate_along_trajectory</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">,</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">jax</span><span class="o">.</span><span class="n">Array</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Takes an array of spike counts and an _equally shaped_ array of mean</span>
+<span class="sd">    rates and returns the log-likelihood of the spikes given the mean rate of</span>
+<span class="sd">    the neuron (its receptive field). Unlike `poisson_log_likelihood`, which</span>
+<span class="sd">    evaluates the likelihood over a grid of positions, this function takes a</span>
+<span class="sd">    trajectory of mean rates and returns the Poisson log-likelihood at each</span>
+<span class="sd">    time step along that trajectory. See `poisson_log_likelihood` for the</span>
+<span class="sd">    full formula.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    spikes : jax.Array, shape (T, N_neurons,)</span>
+<span class="sd">        How many spikes the neuron actually fired at each bin (int, can be &gt; 1)</span>
+<span class="sd">    mean_rate_along_trajectory : jax.Array, shape (T, N_neurons,)</span>
+<span class="sd">        The mean rate of the neurons as calculated at each time step along</span>
+<span class="sd">        the trajectory. This is how many spikes you would _expect_ in at</span>
+<span class="sd">        this position in a time dt.</span>
+<span class="sd">    mask : jax.Array, shape (T, N_neurons,), optional</span>
+<span class="sd">        A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    log_likelihood : jax.Array, shape (T,)</span>
+<span class="sd">        The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># If not passed make a no-mask mask (all True)</span>
+    <span class="k">if</span> <span class="n">mask</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">spikes</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+
+    <span class="c1"># Calculate log factorial of spike counts NOTE this could be removed, its just a constant factor</span>
+    <span class="n">spikes_</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">spikes</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">spikes</span><span class="p">)</span>  <span class="c1"># replace 0 spikes with 1s because 0! = 1</span>
+    <span class="n">log_spikecount_factorial</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span> <span class="o">+</span> <span class="p">(</span><span class="n">spikes_</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">spikes_</span><span class="p">)</span> <span class="o">-</span> <span class="n">spikes_</span>
+    <span class="p">)</span>  <span class="c1"># manually correcting for when X=0</span>
+
+    <span class="c1"># Calculate log-likelihood and sum over (unmasked) neurons</span>
+    <span class="n">logPXmu</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">spikes</span> <span class="o">*</span> <span class="n">jnp</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">mean_rate_along_trajectory</span> <span class="o">+</span> <span class="mf">1e-3</span><span class="p">))</span>
+        <span class="o">-</span> <span class="p">(</span><span class="n">mean_rate_along_trajectory</span><span class="p">)</span>
+        <span class="o">-</span> <span class="p">(</span><span class="n">log_spikecount_factorial</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">logPXmu</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">mask</span> <span class="o">*</span> <span class="n">logPXmu</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">logPXmu</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.instant", "toc.integrate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
