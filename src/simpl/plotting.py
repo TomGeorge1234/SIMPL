@@ -150,14 +150,14 @@ def plot_fitting_summary(
     show_neurons: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Two-panel summary: bits per spike (left) and spatial information (right).
+    """Two-panel summary: bits per spike (left) and mutual information (right).
 
     Parameters
     ----------
     results : xr.Dataset
         The ``results_`` Dataset from a fitted SIMPL model.
     show_neurons : bool
-        Show individual neuron dots for per-neuron metrics (spatial information).
+        Show individual neuron dots for per-neuron metrics (mutual information).
     **plot_kwargs
         Forwarded to the main scatter calls.
 
@@ -169,9 +169,9 @@ def plot_fitting_summary(
     last_iteration = int(iterations[-1])
 
     fig, axes = plt.subplots(1, 2, figsize=(0.7 * FIG_WIDTH, 0.7 * FIG_WIDTH * 0.35), layout="constrained")
-    ax_bps, ax_si = axes
+    ax_bps, ax_mi = axes
 
-    bps_train, bps_val, si_means = [], [], []
+    bps_train, bps_val, mi_means = [], [], []
     for e in iterations:
         c = _iteration_color(e, last_iteration)
         bps_train.append(float(results.bits_per_spike.sel(iteration=e)))
@@ -179,26 +179,26 @@ def plot_fitting_summary(
         ax_bps.scatter(e, bps_train[-1], color=c, zorder=5, **plot_kwargs)
         ax_bps.scatter(e, bps_val[-1], color=c, marker="o", facecolors="none", linewidth=1.5, zorder=5, **plot_kwargs)
 
-        si = results.spatial_information.sel(iteration=e).values
+        mi = results.mutual_information.sel(iteration=e).values
         if show_neurons:
-            jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(si))
-            ax_si.scatter(e + jitter, si, color=c, alpha=0.15, s=5, linewidths=0)
-        si_means.append(float(np.mean(si)))
-        ax_si.scatter(e, si_means[-1], color=c, s=60, zorder=5, linewidths=0)
+            jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(mi))
+            ax_mi.scatter(e + jitter, mi, color=c, alpha=0.15, s=5, linewidths=0)
+        mi_means.append(float(np.mean(mi)))
+        ax_mi.scatter(e, mi_means[-1], color=c, s=60, zorder=5, linewidths=0)
 
     # connecting lines
     for i in range(len(iterations) - 1):
         c = _iteration_color(iterations[i + 1], last_iteration)
         ax_bps.plot(iterations[i : i + 2], bps_train[i : i + 2], color=c, lw=0.8, zorder=3)
         ax_bps.plot(iterations[i : i + 2], bps_val[i : i + 2], color=c, lw=0.8, ls="--", zorder=3)
-        ax_si.plot(iterations[i : i + 2], si_means[i : i + 2], color=c, lw=0.8, zorder=3)
+        ax_mi.plot(iterations[i : i + 2], mi_means[i : i + 2], color=c, lw=0.8, zorder=3)
 
     # baseline: only iteration -1 ("best model")
     if -1 in results.iteration.values:
         if "bits_per_spike" in results:
             ax_bps.axhline(float(results.bits_per_spike.sel(iteration=-1)), color="k", ls="--", lw=0.8)
-        if "spatial_information" in results:
-            ax_si.axhline(float(results.spatial_information.sel(iteration=-1).mean()), color="k", ls="--", lw=0.8)
+        if "mutual_information" in results:
+            ax_mi.axhline(float(results.mutual_information.sel(iteration=-1).mean()), color="k", ls="--", lw=0.8)
 
     # legend on first panel
     ax_bps.plot([], [], color="gray", lw=0.8, label="train")
@@ -206,11 +206,67 @@ def plot_fitting_summary(
     ax_bps.legend(fontsize="small", frameon=False)
 
     ax_bps.set(xlabel="Iteration", ylabel="Bits per spike")
-    ax_si.set(xlabel="Iteration", ylabel="Spatial information (bits/s)")
+    ax_mi.set(xlabel="Iteration", ylabel="Mutual information (bits/s)")
     for ax in axes:
         outset_axes(ax)
         ax.spines["bottom"].set_bounds(0, int(iterations[-1]))
     return axes
+
+
+def _break_angular_wraps(t: np.ndarray, x: np.ndarray, threshold: float = np.pi) -> tuple[np.ndarray, np.ndarray]:
+    """Handle angular wraps so the line goes through the boundary rather than jumping across.
+
+    At each wrap (jump > ``threshold``), the line is extended to the boundary
+    (pi or -pi), a NaN breaks the line, and the continuation starts from the
+    opposite boundary. This gives the visual effect of the trajectory leaving
+    at +/-pi and re-entering at -/+pi.
+    """
+    jumps = np.where(np.abs(np.diff(x)) > threshold)[0]
+    if len(jumps) == 0:
+        return t, x
+
+    t_list = []
+    x_list = []
+    prev = 0
+    for j in jumps:
+        # Include points up to and including index j
+        t_list.append(t[prev : j + 1])
+        x_list.append(x[prev : j + 1])
+
+        # Interpolate the time at which the wrap crosses the boundary
+        x_before, x_after = x[j], x[j + 1]
+        t_before, t_after = t[j], t[j + 1]
+        if x_before > 0:
+            # Wrapping from near +pi down to near -pi
+            boundary_exit = np.pi
+            boundary_enter = -np.pi
+        else:
+            # Wrapping from near -pi up to near +pi
+            boundary_exit = -np.pi
+            boundary_enter = np.pi
+
+        # Linear interpolation to find crossing time
+        # x_before -> boundary_exit across the wrap
+        dist_exit = boundary_exit - x_before
+        dist_enter = x_after - boundary_enter
+        total_dist = abs(dist_exit) + abs(dist_enter)
+        if total_dist > 0:
+            frac = abs(dist_exit) / total_dist
+        else:
+            frac = 0.5
+        t_cross = t_before + frac * (t_after - t_before)
+
+        # Extend line to boundary, NaN break, then continue from opposite boundary
+        t_list.append(np.array([t_cross, np.nan, t_cross]))
+        x_list.append(np.array([boundary_exit, np.nan, boundary_enter]))
+
+        prev = j + 1
+
+    # Append remaining data
+    t_list.append(t[prev:])
+    x_list.append(x[prev:])
+
+    return np.concatenate(t_list), np.concatenate(x_list)
 
 
 def _plot_trajectory_panel(
@@ -220,6 +276,7 @@ def _plot_trajectory_panel(
     dim_names: list[str],
     title: str | None = None,
     trial_boundary_times: np.ndarray | None = None,
+    is_1D_angular: bool = False,
     **plot_kwargs,
 ) -> np.ndarray:
     """Shared implementation for trajectory plots (one subplot per spatial dim).
@@ -239,6 +296,9 @@ def _plot_trajectory_panel(
     trial_boundary_times : array or None
         Time values at trial boundaries (excluding the first trial).
         A shaded band is drawn at each boundary to indicate the gap.
+    is_1D_angular : bool
+        If True, insert NaN at angular wraps (jumps > 3pi/2) so that
+        matplotlib does not draw a line across the plot.
     **plot_kwargs
         Forwarded to ``ax.plot``.
     """
@@ -254,9 +314,17 @@ def _plot_trajectory_panel(
             for tb in trial_boundary_times:
                 ax.axvspan(tb[0], tb[1], color="0.85", zorder=3)
         for X, style in traces:
-            ax.plot(t, X[:, i], **style, **plot_kwargs)
+            if is_1D_angular:
+                t_plot, x_plot = _break_angular_wraps(t, X[:, i])
+            else:
+                t_plot, x_plot = t, X[:, i]
+            ax.plot(t_plot, x_plot, **style, **plot_kwargs)
         if Xt is not None:
-            ax.plot(t, Xt[:, i], "k--", lw=1, label="Ground truth")
+            if is_1D_angular:
+                t_plot, xt_plot = _break_angular_wraps(t, Xt[:, i])
+            else:
+                t_plot, xt_plot = t, Xt[:, i]
+            ax.plot(t_plot, xt_plot, "k--", lw=1, label="Ground truth")
         ax.set_ylabel(f"{d}-position (m)")
         outset_axes(ax)
         if i == 0:
@@ -333,7 +401,10 @@ def plot_latent_trajectory(
         if pairs:
             trial_boundary_times = np.array(pairs)
 
-    return _plot_trajectory_panel(t, traces, Xt, dim_names, trial_boundary_times=trial_boundary_times, **plot_kwargs)
+    is_angular = bool(results.attrs.get("is_1D_angular", 0))
+    return _plot_trajectory_panel(
+        t, traces, Xt, dim_names, trial_boundary_times=trial_boundary_times, is_1D_angular=is_angular, **plot_kwargs
+    )
 
 
 def plot_prediction(
@@ -406,6 +477,7 @@ def plot_prediction(
         if pairs:
             trial_boundary_times = np.array(pairs)
 
+    is_angular = bool(prediction_results.attrs.get("is_1D_angular", 0))
     return _plot_trajectory_panel(
         t,
         traces,
@@ -413,6 +485,7 @@ def plot_prediction(
         dim_names,
         title="Prediction on held-out data",
         trial_boundary_times=trial_boundary_times,
+        is_1D_angular=is_angular,
         **plot_kwargs,
     )
 
@@ -658,8 +731,11 @@ def _plot_receptive_fields_polar(
         ax.set_ylim(0, rmax)
         ax.set_xticks([0, np.pi / 2, np.pi, 3 * np.pi / 2])
         ax.set_xticklabels(["0", "π/2", "π", "3π/2"], fontsize=6)
-        ax.set_yticks([rmax])
-        ax.set_yticklabels([f"{rmax:.1f}"], fontsize=5)
+        # Place ~4 evenly spaced radial gridlines including rmax
+        n_ticks = 4
+        rticks = np.linspace(0, rmax, n_ticks + 1)[1:]  # exclude 0
+        ax.set_yticks(rticks)
+        ax.set_yticklabels([""] * (len(rticks) - 1) + [f"{rmax:.2f}"], fontsize=5)
         ax.tick_params(pad=1)
 
     for idx, n in enumerate(neurons):

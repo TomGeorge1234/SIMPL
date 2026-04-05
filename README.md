@@ -212,11 +212,12 @@ Y_accum = accumulate_spikes(Y, window=3)
 
 ## 📓 Examples
 
-The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow in two parts:
+The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
 
 1. **Synthetic grid cells** — fits SIMPL on artificial grid cell data with known ground truth, demonstrating decoded trajectories, receptive field recovery, log-likelihood improvements, and prediction on held-out data.
 2. **Real place cells** — fits SIMPL on real hippocampal place cell recordings from [Tanni et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/), where no ground truth is available.
 3. **Real head direction cells** — fits SIMPL in 1D angular mode on head direction cell recordings from [Vollan et al. (2025)](https://www.nature.com/articles/s41586-024-08527-1), demonstrating circular latent variable decoding and polar receptive field plots.
+4. **Motor cortex hand reaching** — fits SIMPL on somatosensory cortex recordings from [Chowdhury et al. (2020)](https://pubmed.ncbi.nlm.nih.gov/31971510/), demonstrating higher-dimensional latent variables (2D and 4D) and model comparison across different behavioural initialisations (position vs velocity vs combined).
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
 
@@ -233,16 +234,6 @@ src/simpl/
 ├── kde.py             # KDE, Poisson log-likelihood, gaussian_kernel
 └── data/              # Bundled demo data
 ```
-
-## 📂 Data attribution
-
-Demo datasets are downloaded on first use via `simpl.load_demo_data()` and cached locally in `~/.simpl/data/`.
-
-| Dataset | Description | Source |
-|---------|-------------|--------|
-| `gridcells_synthetic.npz` | Synthetic grid cell data | Generated |
-| `placecells_tanni2022.npz` | Hippocampal place cell recordings | [Tanni, Chancey & Bhatt et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/) |
-| `headdirectioncells_vollan2025.npz` | Head direction cell recordings | [Vollan et al. (2025)](https://www.nature.com/articles/s41586-024-08527-1) |
 
 ## 🧪 Development
 
