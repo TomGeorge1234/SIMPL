@@ -463,13 +463,14 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
         },
         "spatial_information": {
-            "axis title": "Spatial Information (bits/spike)",
+            "axis title": "Spatial Information (bits/s)",
             "name": "Spatial information",
             "description": (
-                "Following 'An Information-Theoretic "
-                "Approach to Deciphering the Hippocampal "
-                "Code', the formula to compute the spatial "
-                "information is as follows: "
+                "Skaggs spatial information per neuron (bits/s). "
+                "Equivalent to the mutual information between spike count "
+                "and position in the limit of infinitesimal time bins "
+                "(dt -> 0). See ``mutual_information`` for the exact "
+                "finite-dt version. "
                 r"$I=\int_x \lambda(x) \log _2 "
                 r"\frac{\lambda(x)}{\lambda} p(x) d x$ "
                 r"where $\lambda(x)$ is the place field of "
@@ -483,23 +484,29 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["neuron"],
             "formula": r"$I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$",
         },
-        "spatial_information_rate": {
-            "axis title": "Spatial Information Rate (bits/s)",
-            "name": "Spatial information rate",
+        "mutual_information": {
+            "axis title": "Mutual Information (bits/s)",
+            "name": "Mutual information",
             "description": (
-                "How many bits of information per second the "
-                "spikes give us (on average) about the agent's "
-                "position. Computed as the sum of per-neuron "
-                "Skaggs spatial information rates."
+                "Exact mutual information between spike count and "
+                "position per neuron, in bits/s. Computed from the "
+                "Poisson likelihood and position occupancy. "
+                "Equivalent to ``spatial_information`` (Skaggs) in the "
+                "limit dt -> 0; for finite dt, MI <= SI because larger "
+                "bins have more spike count overlap between positions."
             ),
-            "dims": [],
-            "formula": r"$\dot{\mathcal{I}} = \sum_n I_n$",
+            "dims": ["neuron"],
+            "formula": (
+                r"$I(X;Y) = \frac{1}{\Delta t}\sum_x \sum_k P(x)"
+                r"\, \mathrm{Pois}(k;\lambda(x))"
+                r"\, \log_2 \frac{\mathrm{Pois}(k;\lambda(x))}{P(k)}$"
+            ),
         },
         "negative_entropy": {
-            "name": "Negative entropy",
+            "name": "Tuning curve neg-entropy",
             "description": "The negative entropy of each of the receptive fields, -sum(F * log(F)).",
             "dims": ["neuron"],
-            "axis title": "Negative entropy",
+            "axis title": "Tuning curve neg-entropy",
             "formula": r"$- \sum F \log F$",
         },
         "sparsity": {

@@ -40,6 +40,7 @@ from simpl.kde import (
 from simpl.utils import (
     _wrap_minuspi_pi,
     analyse_place_fields,
+    calculate_mutual_information,
     calculate_spatial_information,
     cca,
     cca_angular,
@@ -1258,17 +1259,17 @@ class SIMPL:
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
 
         if verbose:
-            info_rate = float(np.array(self.results_.spatial_information.sel(iteration=0)).sum())
-            print(f" · spatial info={info_rate:.1f} bits/s")
+            mi_rate = float(np.array(self.results_.mutual_information.sel(iteration=0)).sum())
+            print(f" · mutual info={mi_rate:.1f} bits/s")
 
             # Warnings
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
                 print("  ⚠ fewer than 5% of time bins have 2+ active neurons. Try coarsen_dt() or add more neurons.")
-            if info_rate < 1.0:
+            if mi_rate < 1.0:
                 print(
-                    f"  ⚠ spatial information rate is very low ({info_rate:.1f} bits/s). "
+                    f"  ⚠ mutual information rate is very low ({mi_rate:.1f} bits/s). "
                     "Try coarsen_dt() or add more neurons."
                 )
 
@@ -1605,10 +1606,10 @@ class SIMPL:
         try:
             bps_0 = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
             bps_n = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=self.iteration_).values)
-            si_0 = float(self.results_.spatial_information.sel(iteration=0).sum().values)
-            si_n = float(self.results_.spatial_information.sel(iteration=self.iteration_).sum().values)
+            mi_0 = float(self.results_.mutual_information.sel(iteration=0).sum().values)
+            mi_n = float(self.results_.mutual_information.sel(iteration=self.iteration_).sum().values)
             bps_pct = (bps_n - bps_0) / abs(bps_0) * 100 if bps_0 != 0 else 0.0
-            si_pct = (si_n - si_0) / abs(si_0) * 100 if si_0 != 0 else 0.0
+            mi_pct = (mi_n - mi_0) / abs(mi_0) * 100 if mi_0 != 0 else 0.0
             label = "  Finished. "
             pad = " " * len(label)
 
@@ -1616,13 +1617,13 @@ class SIMPL:
                 return f"{'+' if v >= 0 else ''}{v:.1f}%"
 
             bps_left = f"bits-per-spike {_pct(bps_pct)}"
-            si_left = f"spatial info   {_pct(si_pct)}"
-            w = max(len(bps_left), len(si_left))
+            mi_left = f"mutual info    {_pct(mi_pct)}"
+            w = max(len(bps_left), len(mi_left))
             bps = f"{bps_left:<{w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
-            si = f"{si_left:<{w}} ({si_0:.1f}→{si_n:.1f} bits/s)"
+            mi = f"{mi_left:<{w}} ({mi_0:.1f}→{mi_n:.1f} bits/s)"
             print()
             print(f"{label}{bps}")
-            print(f"{pad}{si}")
+            print(f"{pad}{mi}")
         except Exception:
             print("  Finished.")
 
@@ -1805,7 +1806,7 @@ class SIMPL:
 
         if F is not None and PX is not None:
             metrics["spatial_information"] = calculate_spatial_information(F / self.dt_, PX)
-            metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
+            metrics["mutual_information"] = calculate_mutual_information(F, PX, self.dt_)
 
         return metrics
 

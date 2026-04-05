@@ -1123,3 +1123,54 @@ def calculate_spatial_information(
     ratio = r / (r_mean[:, None] + eps)
     spatial_info = jnp.sum((r * jnp.log2(ratio + eps)) * PX[None, :], axis=1)
     return spatial_info
+
+
+def calculate_mutual_information(
+    F: jax.Array,
+    PX: jax.Array,
+    dt: float,
+) -> jax.Array:
+    """Calculate the exact mutual information between spike count and position per neuron.
+
+    Computes I(X; Y) = Σ_x Σ_k P(x) · Poisson(k; λ(x)) · log₂[Poisson(k; λ(x)) / P(k)]
+
+    where λ(x) = F[n, x] is the expected spike count (spikes/bin) at position x,
+    and P(k) = Σ_x P(x) · Poisson(k; λ(x)) is the marginal spike count distribution.
+
+    Unlike the Skaggs spatial information (which assumes infinitesimal time bins),
+    this accounts for the full discrete spike count distribution.
+
+    Parameters
+    ----------
+    F : jax.Array, shape (N_neurons, N_bins)
+        Firing rate maps in spikes per bin (not Hz).
+    PX : jax.Array, shape (N_bins,)
+        Occupancy probability over spatial bins (sums to 1).
+    dt : float
+        Time bin size in seconds, used to convert from bits/bin to bits/s.
+
+    Returns
+    -------
+    mi : jax.Array, shape (N_neurons,)
+        Mutual information per neuron in bits/s.
+    """
+    # Determine K_max: largest expected count + margin
+    max_rate = jnp.max(F)
+    K_max = jnp.clip(max_rate + 10 * jnp.sqrt(max_rate + 1), a_min=10, a_max=50).astype(int)
+    k = jnp.arange(K_max, dtype=float)  # (K,)
+
+    # Poisson log-probabilities: log P(Y=k | x) for each neuron and bin
+    # F: (N, B), k: (K,) -> log_p_yx: (N, B, K)
+    lam = F[:, :, None]  # (N, B, 1)
+    log_p_yx = k[None, None, :] * jnp.log(lam + 1e-30) - lam - jax.lax.lgamma(k[None, None, :] + 1)
+
+    # Marginal: P(Y=k) = Σ_x P(x) · P(Y=k|x), per neuron
+    # p_yx: (N, B, K), PX: (B,) -> p_y: (N, K)
+    p_yx = jnp.exp(log_p_yx)
+    p_y = jnp.sum(p_yx * PX[None, :, None], axis=1)  # (N, K)
+
+    # MI = Σ_x Σ_k P(x) · P(Y=k|x) · log2[P(Y=k|x) / P(Y=k)]
+    log_ratio = log_p_yx - jnp.log(p_y[:, None, :] + 1e-30)  # (N, B, K)
+    mi = jnp.sum(PX[None, :, None] * p_yx * log_ratio, axis=(1, 2)) / jnp.log(2)
+
+    return mi / dt
