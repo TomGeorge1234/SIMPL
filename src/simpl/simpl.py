@@ -17,7 +17,7 @@ Each EM iteration proceeds as:
 
 # Jax, for the majority of the calculations
 import os
-import threading
+import shutil
 import warnings
 
 import jax
@@ -40,6 +40,7 @@ from simpl.kde import (
 from simpl.utils import (
     _wrap_minuspi_pi,
     analyse_place_fields,
+    calculate_mutual_information,
     calculate_spatial_information,
     cca,
     cca_angular,
@@ -49,7 +50,6 @@ from simpl.utils import (
     last_training_iteration,
     load_results,
     loglikelihoods_from_results,
-    print_data_summary,
     restore_E_step_state,
     restore_M_step_state,
     save_results_to_netcdf,
@@ -228,24 +228,13 @@ class SIMPL:
             raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
-            device = self._jax_device()
-            print(f"SIMPL: Using GPU ({device})")
+            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
         else:
-            print("SIMPL: Using CPU")
+            self._device_str = "CPU"
 
-    @staticmethod
-    def _jax_gpu_device():
-        """Return the first available GPU/Metal device."""
-        backend = jax.default_backend()
-        if backend == "METAL":
-            return jax.devices("METAL")[0]
-        return jax.devices("gpu")[0]
-
-    def _jax_device(self):
-        """Return the JAX device to place arrays on."""
-        if self.use_gpu_:
-            return self._jax_gpu_device()
-        return jax.devices("cpu")[0]
+    # ──────────────────────────────────────────────────────────────────────────
+    # Public API
+    # ──────────────────────────────────────────────────────────────────────────
 
     def fit(
         self,
@@ -368,7 +357,7 @@ class SIMPL:
             self.F_ = self.M_["F"]
             return self
 
-        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior, verbose)
+        self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior)
 
         # ── Run iteration 0 (M-step on behavioral trajectory) ──
         self._run_iteration_zero(verbose)
@@ -628,78 +617,6 @@ class SIMPL:
         """Deprecated: use ``add_baselines`` instead."""
         warnings.warn("add_baselines_to_results is deprecated, use add_baselines instead.", DeprecationWarning)
         self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
-
-    def _apply_baselines_to_results(self) -> None:
-        """Process stored ground truth and compute baseline iterations."""
-        Xt = self._Xt_raw
-        if Xt.shape[0] != self.T_:
-            raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
-
-        Xt_jax = jnp.array(Xt)
-        self.Xt_ = Xt_jax
-
-        # Store Xt in results
-        self.results_ = xr.merge(
-            [self.results_, _dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
-            compat="override",
-        )
-
-        # Interpolate Ft onto environment grid if provided
-        Ft = self._Ft_raw
-        Ft_coords_dict = self._Ft_coords_dict_raw
-        if Ft is not None and Ft_coords_dict is not None:
-            Ft_da = xr.DataArray(
-                Ft,
-                dims=["neuron", *Ft_coords_dict.keys()],
-                coords={"neuron": self.neuron_, **Ft_coords_dict},
-            )
-            Ft_interp = (
-                Ft_da.interp(
-                    **self.environment_.coords_dict,
-                    method="linear",
-                    kwargs={"fill_value": "extrapolate"},
-                )
-                * self.dt_
-            )
-            Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
-            self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
-            self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
-            self.results_ = xr.merge(
-                [self.results_, _dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
-                compat="override",
-            )
-
-        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
-        M_best = self._M_step(self.Y_, self.Xt_)
-        E_best = self._E_step(self.Y_, M_best["F"])
-        self._append_baseline_iteration(M_best, E_best, iteration_id=-1)
-
-        if self.Ft_ is not None:
-            # EXACT MODEL: Ft (use the exact receptive fields)
-            M_exact = {
-                "F": self.Ft_,
-                "FX": self._interpolate_firing_rates(self.Xt_, self.Ft_),
-                "PX": M_best["PX"],
-            }
-            E_exact = self._E_step(self.Y_, self.Ft_)
-            self._append_baseline_iteration(M_exact, E_exact, iteration_id=-2)
-            self.results_ = self.results_.sortby("iteration")
-        else:
-            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
-
-        # Backfill F_err for training iterations now that Ft_ is available
-        if self.Ft_ is not None and "F_err" in self.results_:
-            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
-            for i, ep in enumerate(self.results_.iteration.values):
-                if ep >= 0:
-                    F_ep = jnp.array(self.results_.F.sel(iteration=ep).values.reshape(self.N_neurons_, self.N_bins_))
-                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
-            self.results_["F_err"] = xr.DataArray(
-                f_err_vals,
-                dims=("iteration",),
-                coords={"iteration": self.results_.iteration},
-                attrs=self.results_["F_err"].attrs,
-            )
 
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
@@ -1036,6 +953,7 @@ class SIMPL:
         )
 
         # Manifold alignment (fit-time only)
+        self._substatus("E···  aligning")
         align_dict = {}
         if self.align_mode_ == "fields":
             current_peaks = get_field_peaks(F, self.xF_)
@@ -1087,6 +1005,7 @@ class SIMPL:
                 return_position_density=True,
             )
 
+        self._substatus("E✓·M  tuning curves")
         stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
         all_F, all_PX = vmap(kde_func)(stacked_masks)
         F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
@@ -1138,6 +1057,7 @@ class SIMPL:
         store_log_maps = getattr(self, "save_full_history_", False)
 
         # Likelihood maps and Gaussian observation fits (batched internally)
+        self._substatus("E···  likelihood")
         obs = decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
         if store_log_maps:
             mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
@@ -1155,6 +1075,7 @@ class SIMPL:
         mu0_all, sigma0_all = self._per_trial_initial_states(mode_l, trial_slices)
 
         # Single-pass filter and smooth
+        self._substatus("E···  kalman filter")
         mu_f, sigma_f = self.kalman_filter_.filter(
             mu0=mu0_all[0],
             sigma0=sigma0_all[0],
@@ -1165,6 +1086,7 @@ class SIMPL:
             mu0_all=mu0_all,
             sigma0_all=sigma0_all,
         )
+        self._substatus("E···  kalman smooth")
         mu_s, sigma_s = self.kalman_filter_.smooth(
             mus_f=mu_f,
             sigmas_f=sigma_f,
@@ -1208,20 +1130,24 @@ class SIMPL:
         RuntimeError
             If the model has not been initialised via ``fit()`` yet.
         """
+        self._fit_iteration_E_step()
+        self._fit_iteration_M_step()
+
+    def _fit_iteration_E_step(self) -> None:
+        """Increment iteration counter and run the E-step."""
         if not hasattr(self, "Y_"):
             raise RuntimeError("Model has not been fitted yet. Call fit() first.")
 
-        # ── Increment iteration ──
         self.iteration_ += 1
 
-        # ── E-step ──
         if self.iteration_ == 0:
             self.E_ = {"X": self.Xb_}
         else:
             assert self.lastF_ is not None
             self.E_ = self._E_step(Y=self.Y_, F=self.lastF_)
 
-        # ── M-step ──
+    def _fit_iteration_M_step(self) -> None:
+        """Run the M-step, evaluate, and store results."""
         X = self.E_["X"]
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
@@ -1281,12 +1207,21 @@ class SIMPL:
         patience = 3
         best_val_ll = -np.inf
         iterations_without_improvement = 0
-        self._print_iteration_summary()
+        early_stopped = False
+
+        if verbose:
+            print()
+            print(self._TABLE_HEADER)
+            self._print_row()
         for _ in range(N):
             try:
-                self._fit_iteration()
+                next_iter = self.iteration_ + 1
+                self._verbose_iter = next_iter if verbose else None
+                self._fit_iteration_E_step()
+                self._fit_iteration_M_step()
+                self._verbose_iter = None
                 if verbose:
-                    self._print_iteration_summary()
+                    self._print_row()
                 if early_stopping:
                     val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=self.iteration_).values)
                     if val_ll > best_val_ll:
@@ -1295,97 +1230,54 @@ class SIMPL:
                     else:
                         iterations_without_improvement += 1
                         if iterations_without_improvement >= patience:
-                            if verbose:
-                                print(
-                                    f"  Early stopping: validation log-likelihood has not "
-                                    f"improved for {patience} iterations."
-                                )
+                            early_stopped = True
                             break
             except KeyboardInterrupt:
-                print(f"Training interrupted after {self.iteration_} iterations.")
+                self.iteration_ -= 1
+                last_msg = getattr(self, "_last_substatus", "")
+                self._verbose_iter = None
+                if verbose:
+                    step = last_msg.split("  ")[0] if last_msg else ""
+                    status = f"{step} · interrupted" if step else "interrupted"
+                    self._print_status(next_iter, status)
+                    print(flush=True)
                 break
+        if verbose:
+            if early_stopped:
+                self._print_row(" · early stop")
+            self._print_summary()
+            print(f"{'━' * self._TABLE_WIDTH}")
 
     def _run_iteration_zero(self, verbose: bool) -> None:
         """Run iteration 0 (M-step on behavioral trajectory) and print diagnostics."""
-        _iter0_done = threading.Event()
+        if verbose:
+            self._print_header()
 
-        def _delayed_message():
-            if not _iter0_done.wait(3):
-                print("  ...[estimating spatial receptive fields from Xb (iteration 0)]")
-
-        _timer = threading.Thread(target=_delayed_message, daemon=True)
-        _timer.start()
         self._fit_iteration()
         self.FX_first_iteration_ = self.M_["FX"]
         if self.align_mode_ == "fields":
             self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
-        _iter0_done.set()
 
         if verbose:
-            si = np.array(self.results_.spatial_information.sel(iteration=0))
-            info_rate = float(si.sum())
-            si_min = float(si.min())
-            si_q25 = float(np.percentile(si, 25))
-            si_med = float(np.median(si))
-            si_q75 = float(np.percentile(si, 75))
-            si_max = float(si.max())
-            si_mean = float(si.mean())
-            print(
-                f"  Spatial information (bits/s per neuron): mean {si_mean:.2f}, "
-                f"min {si_min:.2f}, Q1 {si_q25:.2f}, "
-                f"median {si_med:.2f}, Q3 {si_q75:.2f}, max {si_max:.2f}"
-            )
-            print(f"  Total spatial information rate: {info_rate:.1f} bits/s")
-            print()
-            print("FITTING:")
+            print()  # newline after header
 
+            # Warnings
+            mi_rate = float(np.array(self.results_.mutual_information.sel(iteration=0)).sum())
             active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
             frac_2plus = float(np.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
+                print("  ⚠ fewer than 5% of time bins have 2+ active neurons. Try coarsen_dt() or add more neurons.")
+            if mi_rate < 1.0:
                 print(
-                    "  WARNING: fewer than 5% of time bins have 2+ active "
-                    "neurons. The Poisson likelihood will be weak in most "
-                    "bins. Try coarsen_dt() or accumulate_spikes() to "
-                    "increase spike density, or add more neurons."
+                    f"  ⚠ mutual info MI(Y;λ(X)) is very low ({mi_rate:.1f} bits/s). "
+                    "Try coarsen_dt() or add more neurons."
                 )
-            if info_rate < 1.0:
-                print(
-                    "  WARNING: spatial information rate is very low "
-                    f"({info_rate:.1f} bits/s). The neurons may not carry "
-                    "enough spatial information for reliable decoding. "
-                    "Try coarsen_dt() or accumulate_spikes() to increase "
-                    "spike density, or add more neurons."
-                )
-
-    def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
-        """Evaluate a baseline model and append it as a single iteration to results."""
-        evals = self._get_metrics(
-            X=E["X"],
-            F=M["F"],
-            Y=self.Y_,
-            FX=M["FX"],
-            F_odd_mins=M.get("F_odd_minutes"),
-            F_even_mins=M.get("F_even_minutes"),
-            X_prev=None,
-            F_prev=None,
-            Xt=self.Xt_,
-            Ft=self.Ft_,
-            PX=M["PX"],
-        )
-        data = {**M, **E, **evals}
-        if not self.save_full_history_:
-            data.pop("FX", None)
-        data.pop("logPYXF_maps", None)
-        results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
-            {"iteration": [iteration_id]}
-        )
-        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     # ──────────────────────────────────────────────────────────────────────────
     # Initialisation
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, verbose) -> None:
+    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
         time = np.asarray(time, dtype=float)
@@ -1521,8 +1413,7 @@ class SIMPL:
             self.Xt_ = jnp.array(self._Xt_raw)
             self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
 
-        if verbose:
-            self._print_data_summary()
+        # Data summary is printed after iteration 0 (when spatial info is available)
 
     def _init_infrastructure(
         self,
@@ -1638,54 +1529,122 @@ class SIMPL:
     # Display
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _print_data_summary(self) -> None:
-        """Print a summary of the input data and environment."""
-        # Build a minimal xr.Dataset for print_data_summary
-        data = xr.Dataset(
-            {
-                "Y": xr.DataArray(
-                    self.Y_, dims=["time", "neuron"], coords={"time": self.time_, "neuron": self.neuron_}
-                ),
-                "Xb": xr.DataArray(self.Xb_, dims=["time", "dim"], coords={"time": self.time_}),
-            }
-        )
-        Xb_np = np.asarray(self.Xb_)
-        env = self.environment_
-        Xb_extent_str = " x ".join(f"[{Xb_np[:, i].min():.2f}, {Xb_np[:, i].max():.2f}]" for i in range(self.D_))
-        extent_str = " x ".join(f"[{env.extent[2 * i]:.2f}, {env.extent[2 * i + 1]:.2f}]" for i in range(env.D))
-        print("ENVIRONMENT:")
-        print(f"  Extent:     {extent_str} (Xb: {Xb_extent_str})")
-        print(f"  Bin size:   {env.bin_size}")
-        print(f"  Grid shape: {env.discrete_env_shape} ({self.N_bins_} bins)")
-        print(f"  Padding:    {env.pad}")
-        print()
-        print_data_summary(data)
+    _TABLE_HEADER = f"  {'iteration':>9}  {'status':<19}{'bits-per-spike (train / val)':>29}"
+    _TABLE_WIDTH = len(_TABLE_HEADER)
 
-    def _print_iteration_summary(self) -> None:
-        """Print a one-line summary of the current iteration's metrics."""
+    @staticmethod
+    def _term_width() -> int:
+        """Return the terminal width, defaulting to a large value if unavailable."""
+        return shutil.get_terminal_size((200, 24)).columns
+
+    def _print_status(self, iteration: int, status: str) -> None:
+        """Overwrite the current line with an in-place progress indicator."""
+        line = f"\r  {iteration:>9}  {status:<{self._TABLE_WIDTH - 13}}"[: self._TABLE_WIDTH]
+        print(line[: self._term_width()], end="", flush=True)
+
+    def _substatus(self, msg: str) -> None:
+        """Update the in-place status line if verbose printing is active."""
+        if getattr(self, "_verbose_iter", None) is not None:
+            self._last_substatus = msg
+            self._print_status(self._verbose_iter, msg)
+
+    def _print_row(self, suffix: str = "") -> None:
+        """Print a one-line table row for the current iteration's metrics."""
         e = self.iteration_
-        try:
-            train_ll = float(self.loglikelihoods_.logPYXF.sel(iteration=e).values)
+        bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
+        bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
+
+        arrow = "  "
+        status = "   M✓" if e == 0 else "E✓·M✓"
+        if e > 0:
+            prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
+            arrow = " ↑" if bps_val > prev_bps_val else " ↓"
             val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
-            bps_train = float(self.loglikelihoods_.bits_per_spike.sel(iteration=e).values)
-            bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
-            si = float(self.results_.spatial_information.sel(iteration=e).mean().values)
-            parts = [
-                f"Iteration {e:<3d}:    log-likelihood(train={train_ll:.4f}, val={val_ll:.4f})",
-                f"bits/spike(train={bps_train:.4f}, val={bps_val:.4f})",
-                f"spatial_info={si:.4f} bits/s/neuron",
-            ]
-            print("     ".join(parts))
-            if e > 0:
-                iter0_val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values)
-                if val_ll < iter0_val_ll:
-                    print("    WARNING: validation LL below iteration 0. Model may be overfitting.")
+            if val_ll < float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values):
+                status = "E✓·M✓ !bps<iter 0"
+
+        bps_str = f"{bps_train:.3f} / {bps_val:.3f}{arrow}"
+        row = f"  {e:>9}  {status + suffix:<20}  {bps_str:>29}"
+        line = f"\r{row:<{self._TABLE_WIDTH}}"
+        print(line[: self._term_width() + 1], flush=True)  # +1 for \r
+
+    def _print_header(self) -> None:
+        """Print the banner with data summary (before iteration 0)."""
+        env = self.environment_
+        duration = float(self.time_[-1] - self.time_[0]) + self.dt_
+        grid_str = "x".join(str(s) for s in env.discrete_env_shape)
+        total_spikes = int(np.array(self.Y_).sum())
+        spike_str = (
+            f"{total_spikes / 1_000_000:.1f}M"
+            if total_spikes >= 1_000_000
+            else f"{total_spikes / 1_000:.1f}K"
+            if total_spikes >= 1_000
+            else str(total_spikes)
+        )
+        mean_fr = total_spikes / duration / self.N_neurons_
+        empty_frac = float(np.mean(np.array(self.Y_).sum(axis=1) == 0)) * 100
+        n_trials = len(self.trial_boundaries_)
+        line1 = [
+            f"{self.N_neurons_} neurons",
+            f"{spike_str} spikes",
+            f"mean rate={mean_fr:.1f}Hz",
+            f"empty time-bins={empty_frac:.0f}%",
+        ]
+        line2 = [
+            f"{self.D_}D",
+            f"env-grid ({grid_str})",
+            f"{duration:.1f}s (dt={self.dt_:.2g}s)",
+            f"n_trials={n_trials}",
+        ]
+        title = f"━━ SIMPL ━━━━━ {self._device_str} "
+        print(f"{title}{'━' * (self._TABLE_WIDTH - len(title))}")
+        print(" · ".join(line1))
+        print(" · ".join(line2), end="", flush=True)
+
+    def _print_summary(self) -> None:
+        """Print the end-of-fitting summary with percentage changes."""
+        try:
+            bps_0 = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
+            bps_n = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=self.iteration_).values)
+            mi_0 = float(self.results_.mutual_information.sel(iteration=0).sum().values)
+            mi_n = float(self.results_.mutual_information.sel(iteration=self.iteration_).sum().values)
+            bps_pct = (bps_n - bps_0) / abs(bps_0) * 100 if bps_0 != 0 else 0.0
+            mi_pct = (mi_n - mi_0) / abs(mi_0) * 100 if mi_0 != 0 else 0.0
+            label = "  Finished. "
+            pad = " " * len(label)
+
+            def _pct(v):
+                return f"{'+' if v >= 0 else ''}{v:.1f}%"
+
+            name_w = len("mutual info MI(Y;λ(X)) ")
+            bps_name = f"{'bits-per-spike':<{name_w}}"
+            mi_name = f"{'mutual info MI(Y;λ(X))':<{name_w}}"
+            pct_w = max(len(_pct(bps_pct)), len(_pct(mi_pct)))
+            bps = f"{bps_name}{_pct(bps_pct):>{pct_w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
+            mi = f"{mi_name}{_pct(mi_pct):>{pct_w}} ({mi_0:.1f}→{mi_n:.1f} bits/s)"
+            print()
+            print(f"{label}{bps}")
+            print(f"{pad}{mi}")
         except Exception:
-            print(f"Iteration {e}")
+            print("  Finished.")
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Utilities and static methods
+    # Internal utilities
     # ──────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _jax_gpu_device():
+        """Return the first available GPU/Metal device."""
+        backend = jax.default_backend()
+        if backend == "METAL":
+            return jax.devices("METAL")[0]
+        return jax.devices("gpu")[0]
+
+    def _jax_device(self):
+        """Return the JAX device to place arrays on."""
+        if self.use_gpu_:
+            return self._jax_gpu_device()
+        return jax.devices("cpu")[0]
 
     def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """Predict firing rates at arbitrary positions by interpolating the discretised fields.
@@ -1848,9 +1807,105 @@ class SIMPL:
 
         if F is not None and PX is not None:
             metrics["spatial_information"] = calculate_spatial_information(F / self.dt_, PX)
-            metrics["spatial_information_rate"] = float(jnp.sum(metrics["spatial_information"]))
+            metrics["mutual_information"] = calculate_mutual_information(F, PX, self.dt_)
 
         return metrics
+
+    def _apply_baselines_to_results(self) -> None:
+        """Process stored ground truth and compute baseline iterations."""
+        Xt = self._Xt_raw
+        if Xt.shape[0] != self.T_:
+            raise ValueError(f"Xt has {Xt.shape[0]} time bins but model was fitted with {self.T_}")
+
+        Xt_jax = jnp.array(Xt)
+        self.Xt_ = Xt_jax
+
+        # Store Xt in results
+        self.results_ = xr.merge(
+            [self.results_, _dict_to_dataset({"Xt": Xt_jax}, self.variable_info_dict_, self.coordinates_dict_)],
+            compat="override",
+        )
+
+        # Interpolate Ft onto environment grid if provided
+        Ft = self._Ft_raw
+        Ft_coords_dict = self._Ft_coords_dict_raw
+        if Ft is not None and Ft_coords_dict is not None:
+            Ft_da = xr.DataArray(
+                Ft,
+                dims=["neuron", *Ft_coords_dict.keys()],
+                coords={"neuron": self.neuron_, **Ft_coords_dict},
+            )
+            Ft_interp = (
+                Ft_da.interp(
+                    **self.environment_.coords_dict,
+                    method="linear",
+                    kwargs={"fill_value": "extrapolate"},
+                )
+                * self.dt_
+            )
+            Ft_interp = Ft_interp.transpose("neuron", *self.environment_.dim)
+            self.Ft_ = jnp.array(Ft_interp.values).reshape(self.N_neurons_, self.N_bins_)
+            self.Ft_ = jnp.where(self.Ft_ < 0, 0, self.Ft_)
+            self.results_ = xr.merge(
+                [self.results_, _dict_to_dataset({"Ft": self.Ft_}, self.variable_info_dict_, self.coordinates_dict_)],
+                compat="override",
+            )
+
+        # BEST MODEL: Ft_hat (fit place fields using the true latent positions)
+        M_best = self._M_step(self.Y_, self.Xt_)
+        E_best = self._E_step(self.Y_, M_best["F"])
+        self._append_baseline_iteration(M_best, E_best, iteration_id=-1)
+
+        if self.Ft_ is not None:
+            # EXACT MODEL: Ft (use the exact receptive fields)
+            M_exact = {
+                "F": self.Ft_,
+                "FX": self._interpolate_firing_rates(self.Xt_, self.Ft_),
+                "PX": M_best["PX"],
+            }
+            E_exact = self._E_step(self.Y_, self.Ft_)
+            self._append_baseline_iteration(M_exact, E_exact, iteration_id=-2)
+            self.results_ = self.results_.sortby("iteration")
+        else:
+            warnings.warn("Exact place fields not provided so baselines against the exact model cannot be calculated.")
+
+        # Backfill F_err for training iterations now that Ft_ is available
+        if self.Ft_ is not None and "F_err" in self.results_:
+            f_err_vals = np.array(self.results_["F_err"].values, dtype=np.float32)
+            for i, ep in enumerate(self.results_.iteration.values):
+                if ep >= 0:
+                    F_ep = jnp.array(self.results_.F.sel(iteration=ep).values.reshape(self.N_neurons_, self.N_bins_))
+                    f_err_vals[i] = float(jnp.mean(jnp.linalg.norm(F_ep - self.Ft_, axis=1)))
+            self.results_["F_err"] = xr.DataArray(
+                f_err_vals,
+                dims=("iteration",),
+                coords={"iteration": self.results_.iteration},
+                attrs=self.results_["F_err"].attrs,
+            )
+
+    def _append_baseline_iteration(self, M: dict, E: dict, iteration_id: int) -> None:
+        """Evaluate a baseline model and append it as a single iteration to results."""
+        evals = self._get_metrics(
+            X=E["X"],
+            F=M["F"],
+            Y=self.Y_,
+            FX=M["FX"],
+            F_odd_mins=M.get("F_odd_minutes"),
+            F_even_mins=M.get("F_even_minutes"),
+            X_prev=None,
+            F_prev=None,
+            Xt=self.Xt_,
+            Ft=self.Ft_,
+            PX=M["PX"],
+        )
+        data = {**M, **E, **evals}
+        if not self.save_full_history_:
+            data.pop("FX", None)
+        data.pop("logPYXF_maps", None)
+        results = _dict_to_dataset(data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
+            {"iteration": [iteration_id]}
+        )
+        self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     @staticmethod
     def _validate_trial_boundaries(trial_boundaries, T):

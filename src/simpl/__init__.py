@@ -15,6 +15,6 @@ To load a fitted model from saved results, use ``SIMPL.load(path)``.
 """
 
 from .simpl import SIMPL
-from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results
+from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, train_test_split
 
-__all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results"]
+__all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results", "train_test_split"]

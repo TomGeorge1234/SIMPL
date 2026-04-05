@@ -563,6 +563,57 @@ def coarsen_dt(
     return Y_coarse, Xb_coarse, time_coarse
 
 
+def train_test_split(
+    *arrays: np.ndarray,
+    test_seconds: float = 60.0,
+    dt: float | None = None,
+) -> tuple:
+    """Split arrays into train and test sets by holding out the last N seconds.
+
+    If ``dt`` is not provided, it is inferred from the last 1D array in
+    ``arrays`` (assumed to be a time-stamps array).
+
+    Parameters
+    ----------
+    *arrays : np.ndarray
+        Arrays to split, all with the same first dimension (T).
+    test_seconds : float
+        Duration of test set in seconds. Default 60.
+    dt : float or None
+        Time bin size in seconds. If None, inferred from the last 1D array.
+
+    Returns
+    -------
+    splits : tuple
+        ``(train_1, test_1, train_2, test_2, ...)`` — alternating train/test
+        for each input array.
+
+    Examples
+    --------
+    >>> Y, Y_test, Xb, Xb_test, time, time_test = train_test_split(
+    ...     Y_all, Xb_all, time_all, test_seconds=60
+    ... )
+    """
+    if dt is None:
+        # Infer dt from the last 1D array (assumed to be timestamps)
+        for arr in reversed(arrays):
+            if arr.ndim == 1:
+                dt = float(arr[1] - arr[0])
+                break
+    if dt is None:
+        raise ValueError("Could not infer dt. Pass dt= explicitly or include a 1D time array.")
+
+    T = arrays[0].shape[0]
+    N_test = int(test_seconds / dt)
+    N_train = T - N_test
+
+    result = []
+    for arr in arrays:
+        result.append(arr[:N_train])
+        result.append(arr[N_train:])
+    return tuple(result)
+
+
 def create_speckled_mask(
     size: tuple[int, int],
     sparsity: float = 0.1,
@@ -1123,3 +1174,54 @@ def calculate_spatial_information(
     ratio = r / (r_mean[:, None] + eps)
     spatial_info = jnp.sum((r * jnp.log2(ratio + eps)) * PX[None, :], axis=1)
     return spatial_info
+
+
+def calculate_mutual_information(
+    F: jax.Array,
+    PX: jax.Array,
+    dt: float,
+) -> jax.Array:
+    """Calculate the exact mutual information between spike count and position per neuron.
+
+    Computes I(X; Y) = Σ_x Σ_k P(x) · Poisson(k; λ(x)) · log₂[Poisson(k; λ(x)) / P(k)]
+
+    where λ(x) = F[n, x] is the expected spike count (spikes/bin) at position x,
+    and P(k) = Σ_x P(x) · Poisson(k; λ(x)) is the marginal spike count distribution.
+
+    Unlike the Skaggs spatial information (which assumes infinitesimal time bins),
+    this accounts for the full discrete spike count distribution.
+
+    Parameters
+    ----------
+    F : jax.Array, shape (N_neurons, N_bins)
+        Firing rate maps in spikes per bin (not Hz).
+    PX : jax.Array, shape (N_bins,)
+        Occupancy probability over spatial bins (sums to 1).
+    dt : float
+        Time bin size in seconds, used to convert from bits/bin to bits/s.
+
+    Returns
+    -------
+    mi : jax.Array, shape (N_neurons,)
+        Mutual information per neuron in bits/s.
+    """
+    # Determine K_max: largest expected count + margin
+    max_rate = jnp.max(F)
+    K_max = jnp.clip(max_rate + 10 * jnp.sqrt(max_rate + 1), a_min=10, a_max=50).astype(int)
+    k = jnp.arange(K_max, dtype=float)  # (K,)
+
+    # Poisson log-probabilities: log P(Y=k | x) for each neuron and bin
+    # F: (N, B), k: (K,) -> log_p_yx: (N, B, K)
+    lam = F[:, :, None]  # (N, B, 1)
+    log_p_yx = k[None, None, :] * jnp.log(lam + 1e-30) - lam - jax.lax.lgamma(k[None, None, :] + 1)
+
+    # Marginal: P(Y=k) = Σ_x P(x) · P(Y=k|x), per neuron
+    # p_yx: (N, B, K), PX: (B,) -> p_y: (N, K)
+    p_yx = jnp.exp(log_p_yx)
+    p_y = jnp.sum(p_yx * PX[None, :, None], axis=1)  # (N, K)
+
+    # MI = Σ_x Σ_k P(x) · P(Y=k|x) · log2[P(Y=k|x) / P(Y=k)]
+    log_ratio = log_p_yx - jnp.log(p_y[:, None, :] + 1e-30)  # (N, B, K)
+    mi = jnp.sum(PX[None, :, None] * p_yx * log_ratio, axis=(1, 2)) / jnp.log(2)
+
+    return mi / dt
