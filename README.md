@@ -1,9 +1,3 @@
-> **⚠️ Git history rewrite (2026-03-30):** Large data files were removed from the git history to reduce repo size. If you cloned or forked this repo before this date, your local copy will be out of sync. Please **re-clone** the repository, or run:
-> ```bash
-> git fetch --all
-> git reset --hard origin/main
-> ```
-
 # SIMPL
 
 [![Tests](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml/badge.svg)](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml)
@@ -12,10 +6,22 @@
 [![Paper](https://img.shields.io/badge/paper-ICLR%202025-blue)](https://openreview.net/pdf?id=9kFaNwX6rv)
 <!-- [![PyPI Downloads](https://img.shields.io/pepy/dt/simpl-neuro)](https://pepy.tech/projects/simpl-neuro) -->
 
+**SIMPL** is a Python package for decoding latent neural representations from spike data using an EM algorithm that alternates between Kalman filtering and kernel density estimation. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
+
+[**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
+
 <img src="assets/simpl.gif" width=850>
 
+## ✨ Key Features
+
+- ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
+- 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Get started in <10 lines of code.
+- 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions.
+- 📊 **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
+- 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
+
 <!-- docs-intro-start -->
-## Installation
+## 🚀 Installation
 This repository contains code for the ICLR 2025 paper "_SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour_" ([ICLR](https://openreview.net/forum?id=9kFaNwX6rv)). Specifically:
 
 * Source code in `src/simpl/` for the SIMPL algorithm.
@@ -31,7 +37,7 @@ To run the example you will need to install `simpl` by
 <!-- docs-intro-end -->
 
 <!-- docs-usage-start -->
-## API
+## 🔧 API
 
 SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
 
@@ -141,6 +147,17 @@ model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 
 > **Note:** The wrapped Kalman filter assumes a tight posterior (σ ≪ 2π). If posterior uncertainty is large relative to the circular domain, decoding accuracy may degrade.
 
+### Trial boundaries
+
+When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
+
+```python
+# Three trials starting at time-bins 0, 5000, and 12000
+model.fit(Y, Xb, time, n_iterations=5, trial_boundaries=[0, 5000, 12000])
+```
+
+If your timestamps have gaps (e.g. concatenated sessions), SIMPL will warn you and suggest using `trial_boundaries` to avoid smoothing across the jumps.
+
 ### GPU acceleration
 
 SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloaded to the GPU, giving speedups on very large or high-dimensional datasets.
@@ -182,7 +199,7 @@ Y_accum = accumulate_spikes(Y, window=3)
 
 <!-- docs-usage-end -->
 
-## Examples
+## 📓 Examples
 
 The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow in two parts:
 
@@ -192,7 +209,7 @@ The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks thro
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
 
-## Package Structure
+## 📦 Package Structure
 
 ```
 src/simpl/
@@ -206,7 +223,7 @@ src/simpl/
 └── data/              # Bundled demo data
 ```
 
-## Data attribution
+## 📂 Data attribution
 
 Demo datasets are downloaded on first use via `simpl.load_demo_data()` and cached locally in `~/.simpl/data/`.
 
@@ -216,7 +233,7 @@ Demo datasets are downloaded on first use via `simpl.load_demo_data()` and cache
 | `placecells_tanni2022.npz` | Hippocampal place cell recordings | [Tanni, Chancey & Bhatt et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/) |
 | `headdirectioncells_vollan2025.npz` | Head direction cell recordings | [Vollan et al. (2025)](https://www.nature.com/articles/s41586-024-08527-1) |
 
-## Development
+## 🧪 Development
 
 ```bash
 # Install for development
@@ -230,7 +247,7 @@ ruff format --check src/
 pytest
 ```
 
-## Cite
+## 📝 Cite
 If you use SIMPL in your work, please cite it as:
 
 > Tom George, Pierre Glaser, Kim Stachenfeld, Caswell Barry, & Claudia Clopath (2025). SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour. In The Thirteenth International Conference on Learning Representations.
