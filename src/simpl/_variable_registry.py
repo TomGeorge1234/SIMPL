@@ -462,15 +462,22 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
                 r" - \mathcal{L}_{\mathrm{val}}(\bar\lambda)}{N_{\mathrm{spk,val}} \ln 2}$"
             ),
         },
+        # NOTE: Skaggs spatial information (bits/spike form) is provably
+        # identical to bits-per-spike (BPS). The rate form stored here is
+        # SI_rate_n = BPS_n * mean_firing_rate_n. The proof follows from
+        # rewriting the Poisson log-likelihood as a sum over spatial bins
+        # and normalising by total spike count.
         "spatial_information": {
             "axis title": "Spatial Information (bits/s)",
             "name": "Spatial information",
             "description": (
                 "Skaggs spatial information per neuron (bits/s). "
-                "Equivalent to the mutual information between spike count "
-                "and position in the limit of infinitesimal time bins "
-                "(dt -> 0). See ``mutual_information`` for the exact "
-                "finite-dt version. "
+                "Note: the bits/spike form of SI is provably identical "
+                "to the bits-per-spike (BPS) metric; this rate form is "
+                "SI_rate = BPS * mean_firing_rate. See "
+                "``mutual_information`` for the exact finite-dt "
+                "mutual information (which differs from SI for "
+                "finite time bins). "
                 r"$I=\int_x \lambda(x) \log _2 "
                 r"\frac{\lambda(x)}{\lambda} p(x) d x$ "
                 r"where $\lambda(x)$ is the place field of "
