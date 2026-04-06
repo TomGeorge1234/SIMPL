@@ -418,16 +418,9 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         "logPYXF": {
             "name": "Mean spike log-likelihood given trajectory",
             "description": (
-                "This is the poisson log-likelihood of the "
-                "spikes along the trajectory. It is different "
-                "to the logPYF metric in that it doesnt "
-                "account for the posterior uncertainty in X "
-                "and is a direct reading of the spike "
-                "likelihood rather than the likelihood of the "
-                "observations of those spikes (likelihood map "
-                "modes). It is normalised by the number of "
+                "This is the poisson log-likelihood of the model, essentially: how well are the spike counts predicted by the firing rates of the neurons along the trajectory under a Poisson log-likelihood model? It is normalised by the number of "
                 "spike-time bins to make it comparable across "
-                "validation and train datasets."
+                "validation and train splits."
             ),
             "dims": [],
             "axis title": "Spike log-likelihood",
@@ -443,70 +436,81 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         "bits_per_spike": {
             "name": "Bits per spike (train)",
             "description": (
-                "Bits per spike on the training set. A renormalisation of the Poisson log-likelihood (logPYXF) "
-                "that subtracts a mean-rate baseline and divides by total spike count, converting to bits: "
-                "bps = (ll_model - ll_mean_rate) / (n_spikes * log2). Monotonically related to logPYXF but "
-                "more interpretable and comparable across datasets with different spike counts."
+                "Bits per spike on the training set. Interpret "
+                "this as how many bits of information, on "
+                "average, each spike carries about position. "
+                "Computed by subtracting a mean-rate baseline "
+                "from the Poisson log-likelihood and dividing "
+                "by total spike count: bps = (ll_model - "
+                "ll_mean_rate) / (n_spikes * log2). Comparable "
+                "across datasets with different spike counts "
+                "and dt."
             ),
             "dims": [],
             "axis_title": "Bits per spike (train)",
-            "formula": r"$\frac{\mathcal{L}(\hat\lambda) - \mathcal{L}(\bar\lambda)}{N_{\mathrm{spk}} \ln 2}$",
+            "formula": (
+                r"$\frac{\mathcal{L}(\hat\lambda)"
+                r" - \mathcal{L}(\bar\lambda)}"
+                r"{N_{\mathrm{spk}} \ln 2}$"
+            ),
         },
         "bits_per_spike_val": {
             "name": "Bits per spike (validation)",
-            "description": "See bits_per_spike, but applied to the validation spikes.",
+            "description": (
+                "See bits_per_spike, but applied to the "
+                "validation spikes."
+            ),
             "dims": [],
             "axis_title": "Bits per spike (validation)",
             "formula": (
                 r"$\frac{\mathcal{L}_{\mathrm{val}}(\hat\lambda)"
-                r" - \mathcal{L}_{\mathrm{val}}(\bar\lambda)}{N_{\mathrm{spk,val}} \ln 2}$"
+                r" - \mathcal{L}_{\mathrm{val}}(\bar\lambda)}"
+                r"{N_{\mathrm{spk,val}} \ln 2}$"
             ),
-        },
-        # NOTE: Skaggs spatial information (bits/spike form) is provably
-        # identical to bits-per-spike (BPS). The rate form stored here is
-        # SI_rate_n = BPS_n * mean_firing_rate_n. The proof follows from
-        # rewriting the Poisson log-likelihood as a sum over spatial bins
-        # and normalising by total spike count.
-        "spatial_information": {
-            "axis title": "Spatial Information (bits/s)",
-            "name": "Spatial information",
-            "description": (
-                "Skaggs spatial information per neuron (bits/s). "
-                "Note: the bits/spike form of SI is provably identical "
-                "to the bits-per-spike (BPS) metric; this rate form is "
-                "SI_rate = BPS * mean_firing_rate. See "
-                "``mutual_information`` for the exact finite-dt "
-                "mutual information (which differs from SI for "
-                "finite time bins). "
-                r"$I=\int_x \lambda(x) \log _2 "
-                r"\frac{\lambda(x)}{\lambda} p(x) d x$ "
-                r"where $\lambda(x)$ is the place field of "
-                r"the cell, $\lambda$ is the mean firing "
-                "rate of the cell, and $p(x)$ is the "
-                "spatial occupancy. "
-                "https://proceedings.neurips.cc/paper/1992/"
-                "file/5dd9db5e033da9c6fb5ba83c7a7ebea9-"
-                "Paper.pdf"
-            ),
-            "dims": ["neuron"],
-            "formula": r"$I=\int_x \lambda(x) \log _2 \frac{\lambda(x)}{\lambda} p(x) d x$",
         },
         "mutual_information": {
             "axis title": "Mutual Information (bits/s)",
             "name": "Mutual information",
             "description": (
-                "Exact mutual information between spike count and "
-                "position per neuron, in bits/s. Computed from the "
-                "Poisson likelihood and position occupancy. "
-                "Equivalent to ``spatial_information`` (Skaggs) in the "
-                "limit dt -> 0; for finite dt, MI <= SI because larger "
-                "bins have more spike count overlap between positions."
+                "Exact mutual information between spike count "
+                "and position, per neuron, in bits/s. Interpret "
+                "this as on average how many bits of information "
+                "per second do spikes from this neuron tell me "
+                "about position. Computed from the Poisson "
+                "likelihood and position occupancy. In the small "
+                "time-bin limit, mutual information converges to "
+                "the Skaggs spatial information (bits/s), but "
+                "for finite time bins mutual information is a "
+                "more accurate measure of the true information "
+                "between spikes and position."
             ),
             "dims": ["neuron"],
             "formula": (
-                r"$I(X;Y) = \frac{1}{\Delta t}\sum_x \sum_k P(x)"
-                r"\, \mathrm{Pois}(k;\lambda(x))"
-                r"\, \log_2 \frac{\mathrm{Pois}(k;\lambda(x))}{P(k)}$"
+                r"$I(X;Y) = \frac{1}{\Delta t}\sum_x \sum_k"
+                r" P(x)\, \mathrm{Pois}(k;\lambda(x))"
+                r"\, \log_2 \frac{\mathrm{Pois}(k;\lambda(x))}"
+                r"{P(k)}$"
+            ),
+        },
+        "spatial_information": {
+            "axis title": "Spatial Information (bits/s)",
+            "name": "Spatial information",
+            "description": (
+                "Skaggs spatial information per neuron (bits/s). "
+                "Interpret this as how much information, in "
+                "bits-per-second, does the firing rate of this "
+                "neuron tell me about position. Note: the "
+                "bits/spike form of SI is provably identical to "
+                "the bits-per-spike (BPS) metric; this rate form "
+                "is SI_rate = BPS * mean_firing_rate. See "
+                "``mutual_information`` for the exact finite-dt "
+                "version (which differs from SI for finite time "
+                "bins)."
+            ),
+            "dims": ["neuron"],
+            "formula": (
+                r"$I=\int_x \lambda(x) \log_2"
+                r" \frac{\lambda(x)}{\lambda} p(x)\, dx$"
             ),
         },
         "negative_entropy": {
