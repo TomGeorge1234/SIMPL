@@ -418,9 +418,11 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         "logPYXF": {
             "name": "Mean spike log-likelihood given trajectory",
             "description": (
-                "This is the poisson log-likelihood of the model, essentially: how well are the spike counts predicted by the firing rates of the neurons along the trajectory under a Poisson log-likelihood model? It is normalised by the number of "
-                "spike-time bins to make it comparable across "
-                "validation and train splits."
+                "The Poisson log-likelihood of the model: how "
+                "well are the spike counts predicted by the "
+                "firing rates along the trajectory? Normalised "
+                "by the number of spike-time bins to make it "
+                "comparable across validation and train splits."
             ),
             "dims": [],
             "axis title": "Spike log-likelihood",
@@ -456,10 +458,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
         },
         "bits_per_spike_val": {
             "name": "Bits per spike (validation)",
-            "description": (
-                "See bits_per_spike, but applied to the "
-                "validation spikes."
-            ),
+            "description": ("See bits_per_spike, but applied to the validation spikes."),
             "dims": [],
             "axis_title": "Bits per spike (validation)",
             "formula": (

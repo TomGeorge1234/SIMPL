@@ -217,8 +217,15 @@ def main():
     output_path = Path(args.output)
     with open(output_path, "w", newline="") as f:
         fieldnames = [
-            "minutes", "timepoints", "device", "fit_time_s", "bps_before",
-            "bps_after", "total_spikes", "duration_s", "spike_array_mb",
+            "minutes",
+            "timepoints",
+            "device",
+            "fit_time_s",
+            "bps_before",
+            "bps_after",
+            "total_spikes",
+            "duration_s",
+            "spike_array_mb",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -227,10 +234,7 @@ def main():
     print()
     print(f"Results saved to {output_path}")
     print()
-    header = (
-        f"{'min':>7s}  {'T':>10s}  {'device':>6s}  {'fit_s':>7s}"
-        f"  {'bps_0':>7s}  {'bps_n':>7s}  {'spikes':>10s}"
-    )
+    header = f"{'min':>7s}  {'T':>10s}  {'device':>6s}  {'fit_s':>7s}  {'bps_0':>7s}  {'bps_n':>7s}  {'spikes':>10s}"
     print(header)
     print("-" * len(header))
     for row in results:
