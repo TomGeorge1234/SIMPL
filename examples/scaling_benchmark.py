@@ -11,7 +11,8 @@ Usage
     python examples/scaling_benchmark.py --output results.csv
     python examples/scaling_benchmark.py --plot              # skip benchmark, just plot from CSV
 
-The output CSV has columns: minutes, timepoints, device, fit_time_s, total_spikes, duration_s, spike_array_mb
+The output CSV has columns: minutes, timepoints, device, fit_time_s, bps_before,
+bps_after, total_spikes, duration_s, spike_array_mb
 """
 
 from __future__ import annotations
@@ -82,11 +83,15 @@ def time_fit(Y, Xb, time_arr, use_gpu, n_iterations, bin_size):
         use_gpu=use_gpu,
     )
     t0 = time.perf_counter()
-    model.fit(Y, Xb, time_arr, n_iterations=n_iterations, verbose=False)
+    model.fit(Y, Xb, time_arr, n_iterations=n_iterations, early_stopping=False, verbose=False)
     jax.block_until_ready(model.X_)
     jax.block_until_ready(model.F_)
     elapsed = time.perf_counter() - t0
-    return elapsed
+
+    bps_0 = float(model.loglikelihoods_.bits_per_spike_val.sel(iteration=0).values)
+    bps_n = float(model.loglikelihoods_.bits_per_spike_val.sel(iteration=model.iteration_).values)
+
+    return elapsed, bps_0, bps_n
 
 
 _DEVICE_STYLE = {
@@ -177,14 +182,16 @@ def main():
             use_gpu = device == "gpu"
             print(f"{minutes:>5.1f}min (T={T:>7d}), device={device:>3s} ... ", end="", flush=True)
             try:
-                elapsed = time_fit(Y, Xb, time_arr, use_gpu, args.n_iterations, args.bin_size)
-                print(f"{elapsed:.2f}s")
+                elapsed, bps_0, bps_n = time_fit(Y, Xb, time_arr, use_gpu, args.n_iterations, args.bin_size)
+                print(f"{elapsed:.2f}s  bps: {bps_0:.3f} → {bps_n:.3f}")
                 results.append(
                     {
                         "minutes": minutes,
                         "timepoints": T,
                         "device": device,
                         "fit_time_s": elapsed,
+                        "bps_before": bps_0,
+                        "bps_after": bps_n,
                         "total_spikes": total_spikes,
                         "duration_s": duration_s,
                         "spike_array_mb": spike_array_mb,
@@ -198,6 +205,8 @@ def main():
                         "timepoints": T,
                         "device": device,
                         "fit_time_s": float("nan"),
+                        "bps_before": float("nan"),
+                        "bps_after": float("nan"),
                         "total_spikes": total_spikes,
                         "duration_s": duration_s,
                         "spike_array_mb": spike_array_mb,
@@ -207,7 +216,10 @@ def main():
     # Write CSV
     output_path = Path(args.output)
     with open(output_path, "w", newline="") as f:
-        fieldnames = ["minutes", "timepoints", "device", "fit_time_s", "total_spikes", "duration_s", "spike_array_mb"]
+        fieldnames = [
+            "minutes", "timepoints", "device", "fit_time_s", "bps_before",
+            "bps_after", "total_spikes", "duration_s", "spike_array_mb",
+        ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
@@ -215,12 +227,18 @@ def main():
     print()
     print(f"Results saved to {output_path}")
     print()
-    print(f"{'minutes':>7s}  {'timepoints':>10s}  {'device':>6s}  {'fit_s':>8s}  {'spikes':>10s}  {'spike_mb':>8s}")
-    print("-" * 58)
+    header = (
+        f"{'min':>7s}  {'T':>10s}  {'device':>6s}  {'fit_s':>7s}"
+        f"  {'bps_0':>7s}  {'bps_n':>7s}  {'spikes':>10s}"
+    )
+    print(header)
+    print("-" * len(header))
     for row in results:
         print(
-            f"{row['minutes']:>7.1f}  {row['timepoints']:>10d}  {row['device']:>6s}"
-            f"  {row['fit_time_s']:>8.2f}  {row['total_spikes']:>10d}  {row['spike_array_mb']:>8.1f}"
+            f"{row['minutes']:>7.1f}  {row['timepoints']:>10d}"
+            f"  {row['device']:>6s}  {row['fit_time_s']:>7.2f}"
+            f"  {row['bps_before']:>7.3f}  {row['bps_after']:>7.3f}"
+            f"  {row['total_spikes']:>10d}"
         )
 
 
