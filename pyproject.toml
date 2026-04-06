@@ -43,6 +43,7 @@ dev = [
     "ruff",
     "build",
     "twine",
+    "nbstripout",
 ]
 
 [tool.hatch.version]
