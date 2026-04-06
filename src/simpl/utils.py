@@ -19,7 +19,7 @@ Data I/O
 
 Place-Field Analysis
     ``get_field_peaks``, ``analyse_place_fields``,
-    ``calculate_spatial_information``
+    ``calculate_spatial_information``, ``calculate_mutual_information``
 """
 
 import jax

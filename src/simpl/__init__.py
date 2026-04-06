@@ -14,7 +14,18 @@ Convenience utilities re-exported at the package level:
 To load a fitted model from saved results, use ``SIMPL.load(path)``.
 """
 
+import os as _os
+
+# Suppress verbose XLA compiler logs (xtile_compiler fusion messages, etc.)
+_os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+_os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "2")
+
 from .simpl import SIMPL
 from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, train_test_split
+
+#: Maximum number of float32 elements in the largest intermediate array per batch.
+#: Used by KDE, likelihood, and Kalman filter to auto-size batches.
+#: Default 128_000_000 ≈ 512 MB peak memory (128M × 4 bytes).
+MAX_BATCH_ELEMENTS = 128_000_000
 
 __all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results", "train_test_split"]

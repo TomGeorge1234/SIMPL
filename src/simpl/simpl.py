@@ -1529,7 +1529,7 @@ class SIMPL:
     # Display
     # ──────────────────────────────────────────────────────────────────────────
 
-    _TABLE_HEADER = f"  {'iteration':>9}  {'status':<19}{'bits-per-spike (train / val)':>29}"
+    _TABLE_HEADER = f"  {'iteration':>9}  {'status':<20}  {'bits-per-spike (train / val)':>36}"
     _TABLE_WIDTH = len(_TABLE_HEADER)
 
     @staticmethod
@@ -1616,9 +1616,9 @@ class SIMPL:
             def _pct(v):
                 return f"{'+' if v >= 0 else ''}{v:.1f}%"
 
-            name_w = len("mutual info MI(Y;λ(X)) ")
+            name_w = len("mutual information MI(Y;X) ")
             bps_name = f"{'bits-per-spike':<{name_w}}"
-            mi_name = f"{'mutual info MI(Y;λ(X))':<{name_w}}"
+            mi_name = f"{'mutual information MI(Y;X)':<{name_w}}"
             pct_w = max(len(_pct(bps_pct)), len(_pct(mi_pct)))
             bps = f"{bps_name}{_pct(bps_pct):>{pct_w}} ({bps_0:.3f}→{bps_n:.3f} bits/spike)"
             mi = f"{mi_name}{_pct(mi_pct):>{pct_w}} ({mi_0:.1f}→{mi_n:.1f} bits/s)"

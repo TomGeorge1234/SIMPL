@@ -37,14 +37,14 @@ if device == "cpu":
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 # ──────────────────────────────────────────────────────────────────────────────
 
-import jax  # noqa: E402
-import jax.numpy as jnp  # noqa: E402
-import numpy as np  # noqa: E402
-
-from simpl import SIMPL  # noqa: E402
+from simpl import SIMPL  # noqa: E402  (must precede `import jax` to suppress XLA logs)
 from simpl.kalman import KalmanFilter  # noqa: E402
 from simpl.kde import gaussian_kernel, kde, poisson_log_likelihood  # noqa: E402
 from simpl.utils import fit_gaussian  # noqa: E402
+
+import jax  # noqa: E402
+import jax.numpy as jnp  # noqa: E402
+import numpy as np  # noqa: E402
 
 
 def generate_synthetic_data(T: int, N: int, D: int = 2, dt: float = 0.1, seed: int = 42):

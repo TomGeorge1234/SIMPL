@@ -160,41 +160,21 @@ If your timestamps have gaps (e.g. concatenated sessions), SIMPL will warn you a
 
 ### GPU acceleration
 
-SIMPL is built on JAX. When a GPU is available, compute-heavy steps are offloaded to the GPU, giving speedups on very large or high-dimensional datasets.
+SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Typical neural recordings (< 2 hrs) fit in under 60 s on CPU alone, so a GPU is rarely needed.
 
 <img src="assets/scaling_benchmark.png" width=500>
 
-*100 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins), 5 iterations*
+*200 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins), 5 iterations, includes JIT overheads*
 
-> **Note: SIMPL rarely _needs_ a GPU** and is already very fast on CPU. "Typical" neural recording lengths (< 2hrs, 1,000,000 spikes) take under 60 seconds to fit on modern CPUs though SIMPL can handle much larger. 
+```bash
+pip install -U "jax[cuda12]"   # NVIDIA GPU (CUDA)
+pip install .[metal]           # Apple Silicon GPU (experimental and not recommended, pins JAX to 0.4.35)
+```
 
 ```python
-# Force CPU usage even if GPU is available
-model = SIMPL(use_gpu=False)
+model = SIMPL(use_gpu=False)   # force CPU
 ```
 
-#### NVIDIA GPU (CUDA)
-
-SIMPL installs JAX in CPU-only mode by default. To enable CUDA GPU support, install the appropriate JAX CUDA build **after** installing SIMPL:
-
-```bash
-pip install -e .                      # install SIMPL (CPU-only JAX)
-pip install -U "jax[cuda12]"          # upgrade JAX with CUDA 12 support
-```
-
-Replace `cuda12` with `cuda11` if you are on an older CUDA toolkit. See the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html) for details. No code changes are needed — SIMPL auto-detects the GPU at runtime.
-
-#### Apple Silicon GPU (experimental)
-
-SIMPL supports Apple Metal GPU acceleration via [`jax-metal`](https://developer.apple.com/metal/jax/). This is experimental (use with caution, ) but has been observed to give a decent (~2x) speed-up for large datasets:
-
-```bash
-pip install .[metal]
-```
-
-> **Note:** This pins JAX to 0.4.35, which is older than the latest release. If other packages in your environment require a newer JAX, consider using a separate venv or sticking to CPU/CUDA-GPUs.
-
-No code changes are needed — SIMPL auto-detects Metal and uses it for KDE and log-likelihood computation. The Kalman filter runs on CPU automatically. Angular mode (`is_1D_angular=True`) falls back to CPU as Metal lacks FFT support. We intend to make metal support default when `jax-metal` is ready. 
 
 ### Data preprocessing utilities
 

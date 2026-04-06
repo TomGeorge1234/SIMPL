@@ -174,10 +174,12 @@ class KalmanFilter:
         self.dim_Y = dim_Y
         self.dim_U = dim_U
         if batch_size is None:
-            # Target ~256 MB peak; dominant arrays are (batch, dim_Z, dim_Z) float32
+            from simpl import MAX_BATCH_ELEMENTS
+
+            # Dominant arrays are (batch, dim_Z, dim_Z) float32
             # Per-timestep: ~3 covariance matrices + 3 mean vectors ≈ 3*dim_Z^2 + 3*dim_Z floats
             elems_per_step = max(1, 3 * dim_Z * dim_Z + 3 * dim_Z)
-            batch_size = max(256, 64_000_000 // elems_per_step)
+            batch_size = max(256, MAX_BATCH_ELEMENTS // elems_per_step)
         self.batch_size = batch_size
         self.force_cpu = force_cpu
 
