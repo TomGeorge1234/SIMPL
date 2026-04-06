@@ -130,8 +130,9 @@ def kde(
     T = trajectory.shape[0]
 
     if batch_size is None:
-        # Target ~256 MB peak for the (N_bins, batch_size) float32 kernel matrix
-        batch_size = max(256, 64_000_000 // N_bins)
+        from simpl import MAX_BATCH_ELEMENTS
+
+        batch_size = max(256, MAX_BATCH_ELEMENTS // N_bins)
     batch_size = min(batch_size, T)
 
     # If not passed make a trivial mask (all True)
@@ -302,8 +303,9 @@ def decode_observations(
     T = spikes.shape[0]
     N_bins = xF.shape[0]
     if batch_size is None:
-        # Target ~256 MB peak for the (batch_size, N_bins) float32 likelihood tensor
-        batch_size = max(256, 64_000_000 // N_bins)
+        from simpl import MAX_BATCH_ELEMENTS
+
+        batch_size = max(256, MAX_BATCH_ELEMENTS // N_bins)
     batch_size = min(batch_size, T)
 
     @partial(jax.jit, static_argnames=("_return_log_maps",))

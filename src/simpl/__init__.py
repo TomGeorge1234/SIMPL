@@ -17,4 +17,9 @@ To load a fitted model from saved results, use ``SIMPL.load(path)``.
 from .simpl import SIMPL
 from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, train_test_split
 
+#: Maximum number of float32 elements in the largest intermediate array per batch.
+#: Used by KDE, likelihood, and Kalman filter to auto-size batches.
+#: Default 512_000_000 ≈ 2 GB peak memory (512M × 4 bytes).
+MAX_BATCH_ELEMENTS = 512_000_000
+
 __all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results", "train_test_split"]
