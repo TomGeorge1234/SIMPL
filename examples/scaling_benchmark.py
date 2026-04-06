@@ -109,6 +109,8 @@ def plot_results(csv_path: str | Path):
     df = pd.read_csv(csv_path)
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for device, group in df.groupby("device"):
+        # if device == "gpu_metal":
+        #     continue
         group = group.sort_values("minutes")
         style = _DEVICE_STYLE.get(device, {"label": device.upper(), "linestyle": "-", "color": None})
         ax.plot(
