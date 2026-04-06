@@ -46,10 +46,10 @@ parser.add_argument(
 parser.add_argument("--plot", action="store_true", help="Skip benchmark, just plot from existing CSV")
 args = parser.parse_args()
 
+from simpl import SIMPL  # noqa: E402
+
 import jax  # noqa: E402
 import numpy as np  # noqa: E402
-
-from simpl import SIMPL  # noqa: E402
 
 DT = 0.02  # 20 ms time bins (50 Hz)
 

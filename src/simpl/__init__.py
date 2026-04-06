@@ -14,6 +14,12 @@ Convenience utilities re-exported at the package level:
 To load a fitted model from saved results, use ``SIMPL.load(path)``.
 """
 
+import os as _os
+
+# Suppress verbose XLA compiler logs (xtile_compiler fusion messages, etc.)
+_os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+_os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "2")
+
 from .simpl import SIMPL
 from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, train_test_split
 
