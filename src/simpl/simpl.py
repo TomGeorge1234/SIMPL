@@ -608,16 +608,6 @@ class SIMPL:
 
         return self
 
-    def add_baselines_to_results(
-        self,
-        Xt: np.ndarray,
-        Ft: np.ndarray | None = None,
-        Ft_coords_dict: dict | None = None,
-    ) -> None:
-        """Deprecated: use ``add_baselines`` instead."""
-        warnings.warn("add_baselines_to_results is deprecated, use add_baselines instead.", DeprecationWarning)
-        self.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict=Ft_coords_dict)
-
     def save_results(self, path: str) -> None:
         """Save the results Dataset to a netCDF file.
 
