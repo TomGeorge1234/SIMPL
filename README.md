@@ -62,7 +62,7 @@ model.fit(
 
 # 3. Access results
 model.X_           # final decoded latent positions, shape (T, D)
-model.F_           # final receptive fields, shape (N_neurons, N_bins)
+model.F_           # final receptive fields, shape (N_neurons, *env_dims)
 model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
 # Resume training if not yet converged
