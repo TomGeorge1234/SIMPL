@@ -264,7 +264,7 @@ class SIMPL:
         After fitting, results are available via:
 
         - ``self.X_`` — the final decoded latent positions, shape (T, D).
-        - ``self.F_`` — the final receptive fields, shape (N_neurons, N_bins).
+        - ``self.F_`` — the final receptive fields, shape (N_neurons, *env_dims).
         - ``self.results_`` — full ``xarray.Dataset`` with all iterations, metrics, and
           intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
           stability, etc.).
@@ -354,7 +354,7 @@ class SIMPL:
                 {"FX_last_iteration": self.M_["FX"]}, self.variable_info_dict_, self.coordinates_dict_
             )["FX_last_iteration"]
             self.X_ = self.E_["X"]
-            self.F_ = self.M_["F"]
+            self.F_ = self.M_["F"].reshape(self.N_neurons_, *self.xF_shape_)
             return self
 
         self._init_from_data(Y, Xb, time, trial_boundaries, align_to_behavior)
@@ -381,7 +381,7 @@ class SIMPL:
 
         # ── Set convenience attributes ──
         self.X_ = self.E_["X"]
-        self.F_ = self.M_["F"]
+        self.F_ = self.M_["F"].reshape(self.N_neurons_, *self.xF_shape_)
         self.is_fitted_ = True
 
         # ── Compute baseline iterations if ground truth was registered before fit ──
@@ -456,7 +456,7 @@ class SIMPL:
         # Decode using fitted receptive fields, no behavior input (mask=None → all spikes)
         E = self._decode(
             Y=Y_jax,
-            F=self.F_,
+            F=self.F_.reshape(self.N_neurons_, -1),
             trial_boundaries=trial_boundaries_validated,
         )
 
@@ -680,11 +680,10 @@ class SIMPL:
 
         # Restore final F and X
         iteration = self.iteration_
-        self.F_ = jax.device_put(
-            jnp.array(results["F"].sel(iteration=iteration).values.reshape(self.N_neurons_, -1)), device
-        )
+        F_reshaped = jnp.array(results["F"].sel(iteration=iteration).values)
+        self.F_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, *self.xF_shape_), device)
         self.X_ = jax.device_put(jnp.array(results["X"].sel(iteration=iteration).values), device)
-        self.lastF_ = self.F_
+        self.lastF_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, -1), device)
         self.lastX_ = self.X_
 
         # Restore E/M state for resume
@@ -1023,7 +1022,7 @@ class SIMPL:
         Y : jnp.ndarray, shape (T, N_neurons)
             Spike counts.
         F : jnp.ndarray, shape (N_neurons, N_bins)
-            Place fields.
+            Place fields (flattened spatial dims).
         trial_boundaries : np.ndarray
             Array of indices where new trials start, e.g. ``[0, 1000, 2000]``.
         U : jnp.ndarray or None, shape (T, D)
@@ -1159,7 +1158,7 @@ class SIMPL:
 
         # ── Update convenience attributes ──
         self.X_ = self.E_["X"]
-        self.F_ = self.M_["F"]
+        self.F_ = self.M_["F"].reshape(self.N_neurons_, *self.xF_shape_)
 
     def _evaluate_iteration(self) -> None:
         """Evaluate the current iteration's metrics and append to the results Dataset.

@@ -768,7 +768,7 @@ class TestSIMPLSaveFullHistory:
             n_iterations=0,
         )
         Y = jnp.array(model.Y_)
-        F = model.F_
+        F = model.F_.reshape(model.N_neurons_, -1)
         mask = jnp.ones(Y.shape, dtype=bool)
 
         full = decode_observations(model.xF_, Y, F, mask, batch_size=N)
@@ -794,4 +794,4 @@ class TestSIMPLConvenienceAttrs:
         F_from_results = model.results_.F.sel(iteration=last_iteration).values
 
         assert np.allclose(model.X_, X_from_results)
-        assert np.allclose(model.F_, F_from_results.reshape(model.N_neurons_, -1))
+        assert np.allclose(model.F_, F_from_results)
