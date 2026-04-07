@@ -67,7 +67,7 @@ class SIMPL:
         # Environment parameters
         is_1D_angular: bool = False,
         bin_size: float = 0.02,
-        env_pad: float = 0.1,
+        env_pad: float = 0.0,
         env_lims: tuple | None = None,
         environment: Environment | None = None,
         # Mask and analysis parameters
@@ -147,7 +147,7 @@ class SIMPL:
             ensures that receptive fields near the boundary of the explored space are not
             clipped. In the same units as the latent space. Ignored when
             ``is_1D_angular=True`` because the circular domain is fixed to ``[-pi, pi)``.
-            By default 0.1.
+            By default 0.0.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
