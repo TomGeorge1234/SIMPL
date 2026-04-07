@@ -4,7 +4,7 @@ Gaussian Helpers
     ``gaussian_pdf``, ``log_gaussian_pdf``, ``gaussian_norm_const``
 
 Gaussian Fitting
-    ``fit_gaussian``, ``fit_gaussian_legacy``, ``fit_gaussian_vmap``, ``gaussian_sample``
+    ``fit_gaussian``, ``gaussian_sample``
 
 Statistical and Analysis Helpers
     ``coefficient_of_determination``, ``cca``, ``cca_angular``,
@@ -138,42 +138,6 @@ def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def fit_gaussian_legacy(x: jax.Array, likelihood: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """Fits a multivariate-Gaussian to the likelihood function P(spikes | x) in x-space.
-
-    Computes the weighted mean and covariance:
-
-    $$\\mu = \\frac{\\sum_i x_i \\, p_i}{\\sum_i p_i}, \\qquad
-    \\Sigma = \\frac{\\sum_i (x_i - \\mu)(x_i - \\mu)^\\top p_i}{\\sum_i p_i}$$
-
-    where \\(p_i\\) is the likelihood weight at bin \\(i\\).
-
-    Parameters
-    ----------
-    x : jnp.ndarray, shape (N_bins,D)
-        The position bins in which the likelihood is calculated
-    likelihood : jnp.ndarray, shape (N_bins,)
-        The combined likelihood (not log-likelihood) of the neurons firing at each position bin
-
-    Returns
-    -------
-    mu : jnp.ndarray, shape (D,)
-        The mean of the Gaussian
-    mode : jnp.ndarray, shape (D,)
-        The mode of the Gaussian
-    cov : jnp.ndarray, shape (D, D)
-        The covariance of the Gaussian
-    """
-    assert x.ndim == 2
-    assert likelihood.ndim == 1
-    assert x.shape[0] == likelihood.shape[0]
-
-    mu = (x.T @ likelihood) / likelihood.sum()
-    mode = x[jnp.argmax(likelihood)]
-    cov = ((x - mu) * likelihood[:, None]).T @ (x - mu) / likelihood.sum()
-    return mu, mode, cov
-
-
 @jax.jit
 def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits a multivariate-Gaussian to each of T likelihood distributions over spatial bins.
@@ -222,34 +186,6 @@ def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.A
     cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
 
     return mu, mode, cov
-
-
-def fit_gaussian_vmap(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """Fits a multivariate-Gaussian to each row of a batch of likelihood arrays.
-
-    This is the vmapped version of ``fit_gaussian``: it accepts likelihoods of
-    shape ``(T, N_bins)`` and returns batched means, modes, and covariances.
-
-    .. deprecated::
-        Use :func:`fit_gaussian` instead for better performance.
-
-    Parameters
-    ----------
-    x : jnp.ndarray, shape (N_bins, D)
-        The position bins (shared across all time steps).
-    likelihoods : jnp.ndarray, shape (T, N_bins)
-        Likelihood values at each bin for each time step.
-
-    Returns
-    -------
-    means : jnp.ndarray, shape (T, D)
-        The mean of each fitted Gaussian.
-    modes : jnp.ndarray, shape (T, D)
-        The mode of each fitted Gaussian.
-    covariances : jnp.ndarray, shape (T, D, D)
-        The covariance of each fitted Gaussian.
-    """
-    return jax.vmap(fit_gaussian_legacy, in_axes=(None, 0))(x, likelihoods)
 
 
 def gaussian_sample(key: jax.Array, mu: jax.Array, sigma: jax.Array) -> jax.Array:
@@ -1121,7 +1057,8 @@ def analyse_place_fields(
             perimeter = (perimeter + perimeter_dilated) / 2
             roundness = 4 * np.pi * size / perimeter**2
             combined_pf_mask += pf_mask
-            mu, mode, cov = fit_gaussian_legacy(xF, pf.flatten())
+            mu, mode, cov = fit_gaussian(xF, pf.flatten()[None, :])
+            mu, mode, cov = mu[0], mode[0], cov[0]
             pf_size[n, n_pfs] = size
             pf_position[n, n_pfs] = mu
             pf_covariance[n, n_pfs] = cov
@@ -1207,7 +1144,7 @@ def calculate_mutual_information(
     """
     # Determine K_max: largest expected count + margin
     max_rate = jnp.max(F)
-    K_max = jnp.clip(max_rate + 10 * jnp.sqrt(max_rate + 1), a_min=10, a_max=50).astype(int)
+    K_max = jnp.clip(max_rate + 10 * jnp.sqrt(max_rate + 1), min=10, max=50).astype(int)
     k = jnp.arange(K_max, dtype=float)  # (K,)
 
     # Poisson log-probabilities: log P(Y=k | x) for each neuron and bin

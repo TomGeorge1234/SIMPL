@@ -12,8 +12,6 @@
 
 ::: simpl.utils.fit_gaussian
 
-::: simpl.utils.fit_gaussian_vmap
-
 ::: simpl.utils.gaussian_sample
 
 ## Statistical and Analysis Helpers
