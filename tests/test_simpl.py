@@ -78,7 +78,7 @@ class TestSIMPLFit:
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
         env = Environment(demo_data["Xb"][:N], bin_size=0.04)
-        model = SIMPL(environment=env)
+        model = SIMPL(env=env)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],

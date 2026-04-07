@@ -26,34 +26,8 @@ import numpy as np
 import xarray as xr
 from jax import vmap
 
-# Internal libraries
+from simpl import environment, kalman, kde, utils
 from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
-from simpl.environment import Environment
-from simpl.kalman import KalmanFilter
-from simpl.kde import (
-    decode_observations,
-    gaussian_kernel,
-    kde,
-    kde_angular,
-    poisson_log_likelihood_trajectory,
-)
-from simpl.utils import (
-    _wrap_minuspi_pi,
-    analyse_place_fields,
-    calculate_mutual_information,
-    calculate_spatial_information,
-    cca,
-    cca_angular,
-    coefficient_of_determination,
-    create_speckled_mask,
-    get_field_peaks,
-    last_training_iteration,
-    load_results,
-    loglikelihoods_from_results,
-    restore_E_step_state,
-    restore_M_step_state,
-    save_results_to_netcdf,
-)
 
 
 class SIMPL:
@@ -69,7 +43,7 @@ class SIMPL:
         bin_size: float = 0.02,
         env_pad: float = 0.0,
         env_lims: tuple | None = None,
-        environment: Environment | None = None,
+        env: environment.Environment | None = None,
         # Mask and analysis parameters
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
@@ -153,7 +127,7 @@ class SIMPL:
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
             By default None (auto-inferred from ``Xb``). When ``is_1D_angular=True``, the
             domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
-        environment : Environment or None, optional
+        env : Environment or None, optional
             A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
             ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
             environment must also represent the full ``[-pi, pi)`` domain. By default None.
@@ -191,7 +165,7 @@ class SIMPL:
         self.bin_size = bin_size
         self.env_pad = env_pad
         self.env_lims = env_lims
-        self._environment_override = environment  # power-user pre-built Environment
+        self._environment_override = env  # power-user pre-built Environment
 
         # Mask and analysis parameters
         self.val_frac = val_frac
@@ -520,7 +494,7 @@ class SIMPL:
         for iteration in iterations:
             F = self.results_["F"].sel(iteration=iteration).values
             F_jax = jnp.array(F)
-            pf_data = analyse_place_fields(
+            pf_data = utils.analyse_place_fields(
                 F_jax,
                 N_neurons=self.N_neurons_,
                 N_PFmax=self.N_PFmax_,
@@ -619,7 +593,7 @@ class SIMPL:
         path : str
             File path to save to (typically ending in ``.nc``).
         """
-        save_results_to_netcdf(self.results_, path)
+        utils.save_results_to_netcdf(self.results_, path)
 
     def load(self, path: str | os.PathLike[str]) -> "SIMPL":
         """Load saved results from disk, restoring the model to a previously fitted state.
@@ -661,7 +635,7 @@ class SIMPL:
         >>> model.load("results.nc")
         >>> model.fit(Y, Xb, time, n_iterations=5, resume=True)
         """
-        results = load_results(os.fspath(path))
+        results = utils.load_results(os.fspath(path))
 
         # Run full setup from saved data (environment, Kalman filter, masks, etc.)
         self.fit(
@@ -675,8 +649,8 @@ class SIMPL:
 
         # Overwrite with saved results
         self.results_ = results
-        self.iteration_ = last_training_iteration(results)
-        self.loglikelihoods_ = loglikelihoods_from_results(results)
+        self.iteration_ = utils.last_training_iteration(results)
+        self.loglikelihoods_ = utils.loglikelihoods_from_results(results)
 
         # Restore final F and X
         iteration = self.iteration_
@@ -687,8 +661,8 @@ class SIMPL:
         self.lastX_ = self.X_
 
         # Restore E/M state for resume
-        self.E_ = restore_E_step_state(results, iteration, device, self.T_, self.D_)
-        self.M_ = restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
+        self.E_ = utils.restore_E_step_state(results, iteration, device, self.T_, self.D_)
+        self.M_ = utils.restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
 
         if "FX_first_iteration" in results:
             self.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
@@ -945,7 +919,7 @@ class SIMPL:
         self._substatus("E···  aligning")
         align_dict = {}
         if self.align_mode_ == "fields":
-            current_peaks = get_field_peaks(F, self.xF_)
+            current_peaks = utils.get_field_peaks(F, self.xF_)
             source, target = current_peaks, self.Falign_peaks_
         elif self.align_mode_ == "trajectory":
             source, target = E["mu_s"], self.Xalign_
@@ -954,11 +928,11 @@ class SIMPL:
 
         if source is not None:
             if self.is_1D_angular:
-                angle, _ = cca_angular(source, target)
-                E["X"] = _wrap_minuspi_pi(E["mu_s"] + angle)
+                angle, _ = utils.cca_angular(source, target)
+                E["X"] = utils._wrap_minuspi_pi(E["mu_s"] + angle)
                 align_dict = {"intercept": jnp.atleast_1d(angle)}
             else:
-                coef, intercept = cca(source, target)
+                coef, intercept = utils.cca(source, target)
                 E["X"] = E["mu_s"] @ coef.T + intercept
                 align_dict = {"coef": coef, "intercept": intercept}
         else:
@@ -988,7 +962,7 @@ class SIMPL:
                 bins=self.xF_,
                 trajectory=X,
                 spikes=Y,
-                kernel=gaussian_kernel,
+                kernel=kde.gaussian_kernel,
                 kernel_bandwidth=self.kernel_bandwidth,
                 mask=mask,
                 return_position_density=True,
@@ -1047,7 +1021,7 @@ class SIMPL:
 
         # Likelihood maps and Gaussian observation fits (batched internally)
         self._substatus("E···  likelihood")
-        obs = decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
+        obs = kde.decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
         if store_log_maps:
             mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
         else:
@@ -1083,7 +1057,7 @@ class SIMPL:
         )
 
         if self.is_1D_angular:
-            mu_s = _wrap_minuspi_pi(mu_s)
+            mu_s = utils._wrap_minuspi_pi(mu_s)
 
         E = {
             "mu_l": mu_l,
@@ -1245,7 +1219,7 @@ class SIMPL:
         self._fit_iteration()
         self.FX_first_iteration_ = self.M_["FX"]
         if self.align_mode_ == "fields":
-            self.Falign_peaks_ = get_field_peaks(self.M_["F"], self.xF_)
+            self.Falign_peaks_ = utils.get_field_peaks(self.M_["F"], self.xF_)
 
         if verbose:
             print()  # newline after header
@@ -1326,7 +1300,7 @@ class SIMPL:
                         raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
                 if self.env_pad != 0:
                     warnings.warn("env_pad is ignored when is_1D_angular=True; using the full [-pi, pi) domain.")
-                self.environment_ = Environment(
+                self.environment_ = environment.Environment(
                     Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
                 )
 
@@ -1337,7 +1311,7 @@ class SIMPL:
             if self._environment_override is not None:
                 self.environment_ = self._environment_override
             else:
-                self.environment_ = Environment(
+                self.environment_ = environment.Environment(
                     Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
                 )
 
@@ -1438,7 +1412,7 @@ class SIMPL:
                     "speckle_block_size_seconds must be shorter than the recording duration so both train and "
                     f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
                 )
-            self.spike_mask_ = create_speckled_mask(
+            self.spike_mask_ = utils.create_speckled_mask(
                 size=(self.T_, self.N_neurons_),
                 sparsity=self.val_frac,
                 block_size=self.block_size_,
@@ -1462,7 +1436,7 @@ class SIMPL:
             )
         self.align_mode_ = align_to_behavior if align_to_behavior else None
         self.Xalign_ = self.Xb_ if self.align_mode_ else None
-        self._kde = kde_angular if self.is_1D_angular else kde
+        self._kde = kde.kde_angular if self.is_1D_angular else kde.kde
 
         self.lastF_, self.lastX_ = None, None
         self.iteration_ = -1
@@ -1501,7 +1475,7 @@ class SIMPL:
         Q = sigma_eff_square * jnp.eye(self.D_)
         H = jnp.eye(self.D_)
 
-        self.kalman_filter_ = KalmanFilter(
+        self.kalman_filter_ = kalman.KalmanFilter(
             dim_Z=self.D_,
             dim_Y=self.D_,
             dim_U=self.D_,
@@ -1682,8 +1656,8 @@ class SIMPL:
         train_mask = self.spike_mask_
         val_mask = ~self.spike_mask_
 
-        ll_model_train = poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum()
-        ll_model_val = poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum()
+        ll_model_train = kde.poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum()
+        ll_model_val = kde.poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum()
         logPYXF = ll_model_train / train_mask.sum()
         logPYXF_val = ll_model_val / val_mask.sum()
         LLs["logPYXF"] = logPYXF
@@ -1697,7 +1671,7 @@ class SIMPL:
 
         for mask, suffix in [(train_mask, ""), (val_mask, "_val")]:
             ll_model = ll_model_by_suffix[suffix]
-            ll_baseline = poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
+            ll_baseline = kde.poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
             n_spikes = (Y * mask).sum()
             bps = jnp.where(n_spikes > 0, (ll_model - ll_baseline) / (n_spikes * jnp.log(2.0)), 0.0)
             LLs[f"bits_per_spike{suffix}"] = bps
@@ -1760,7 +1734,7 @@ class SIMPL:
             metrics.update(LLs)
 
         if X is not None and Xt is not None:
-            metrics["X_R2"] = coefficient_of_determination(X, Xt)
+            metrics["X_R2"] = utils.coefficient_of_determination(X, Xt)
 
         if X is not None and Xt is not None:
             metrics["X_err"] = jnp.mean(jnp.linalg.norm(X - Xt, axis=1))
@@ -1795,8 +1769,8 @@ class SIMPL:
             metrics["trajectory_change"] = delta_X
 
         if F is not None and PX is not None:
-            metrics["spatial_information"] = calculate_spatial_information(F / self.dt_, PX)
-            metrics["mutual_information"] = calculate_mutual_information(F, PX, self.dt_)
+            metrics["spatial_information"] = utils.calculate_spatial_information(F / self.dt_, PX)
+            metrics["mutual_information"] = utils.calculate_mutual_information(F, PX, self.dt_)
 
         return metrics
 
