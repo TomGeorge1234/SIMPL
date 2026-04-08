@@ -373,8 +373,10 @@ class TestSIMPLInterpolateFiringRates:
 
 class TestSIMPLGetLoglikelihoods:
     def test_expected_keys(self, small_simpl_model):
+        from simpl import kde
+
         model = small_simpl_model
-        lls = model._get_loglikelihoods(model.Y_, model.M_["FX"])
+        lls = kde.get_ll_and_bps_splits(model.Y_, model.M_["FX"], model.spike_mask_)
         assert "logPYXF" in lls
         assert "logPYXF_val" in lls
 

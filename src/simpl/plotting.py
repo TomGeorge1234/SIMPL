@@ -196,9 +196,49 @@ def plot_fitting_summary(
     # baseline: only iteration -1 ("best model")
     if -1 in results.iteration.values:
         if "bits_per_spike" in results:
-            ax_bps.axhline(float(results.bits_per_spike.sel(iteration=-1)), color="k", ls="--", lw=0.8)
+            y_gt = float(results.bits_per_spike.sel(iteration=-1))
+            ax_bps.axhline(y_gt, color="k", ls="--", lw=0.8)
+            ax_bps.text(
+                0.0,
+                y_gt,
+                " ground truth",
+                va="bottom",
+                ha="left",
+                fontsize="x-small",
+                color="k",
+                transform=ax_bps.get_yaxis_transform(),
+            )
         if "mutual_information" in results:
-            ax_mi.axhline(float(results.mutual_information.sel(iteration=-1).mean()), color="k", ls="--", lw=0.8)
+            y_gt_mi = float(results.mutual_information.sel(iteration=-1).mean())
+            ax_mi.axhline(y_gt_mi, color="k", ls="--", lw=0.8)
+            ax_mi.text(
+                0.0,
+                y_gt_mi,
+                " ground truth",
+                va="bottom",
+                ha="left",
+                fontsize="x-small",
+                color="k",
+                transform=ax_mi.get_yaxis_transform(),
+            )
+
+    # ML baseline
+    if "mode_l" in results and 1 in results.iteration.values:
+        from simpl.utils import get_ML_loglikelihoods
+
+        ml = get_ML_loglikelihoods(results)
+        y_ml = ml["bits_per_spike_val"]
+        ax_bps.axhline(y_ml, color="k", ls=":", lw=0.8)
+        ax_bps.text(
+            0.0,
+            y_ml,
+            " naive ML",
+            va="bottom",
+            ha="left",
+            fontsize="x-small",
+            color="k",
+            transform=ax_bps.get_yaxis_transform(),
+        )
 
     # legend on first panel
     ax_bps.plot([], [], color="gray", lw=0.8, label="train")
@@ -991,7 +1031,37 @@ def plot_all_metrics(
                     ax.plot(var_iterations[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
             # baseline: only iteration -1 ("best model")
             if -1 in baselines:
-                ax.axhline(float(da.sel(iteration=-1)), color="k", ls="--", lw=0.8)
+                y_gt = float(da.sel(iteration=-1))
+                ax.axhline(y_gt, color="k", ls="--", lw=0.8)
+                ax.text(
+                    0.0,
+                    y_gt,
+                    " ground truth",
+                    va="bottom",
+                    ha="left",
+                    fontsize="x-small",
+                    color="k",
+                    transform=ax.get_yaxis_transform(),
+                )
+            # ML baseline for LL / bps panels
+            if var_name in ("bits_per_spike", "logPYXF") and "mode_l" in results and 1 in results.iteration.values:
+                from simpl.utils import get_ML_loglikelihoods
+
+                ml = get_ML_loglikelihoods(results)
+                ml_key = f"{var_name}_val"
+                if ml_key in ml:
+                    y_ml = ml[ml_key]
+                    ax.axhline(y_ml, color="k", ls=":", lw=0.8)
+                    ax.text(
+                        0.0,
+                        y_ml,
+                        " naive ML",
+                        va="bottom",
+                        ha="left",
+                        fontsize="x-small",
+                        color="k",
+                        transform=ax.get_yaxis_transform(),
+                    )
         else:
             # per-neuron (possibly mean over place_field first)
             means = []

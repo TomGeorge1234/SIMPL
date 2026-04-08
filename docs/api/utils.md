@@ -36,8 +36,6 @@
 
 ::: simpl.utils.load_demo_data
 
-::: simpl.utils.print_data_summary
-
 ::: simpl.utils.save_results_to_netcdf
 
 ::: simpl.utils.load_results

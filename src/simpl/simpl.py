@@ -1088,7 +1088,7 @@ class SIMPL:
 
         # ── Evaluate and save results ──
         self._evaluate_iteration()
-        ll_data = self._get_loglikelihoods(Y=self.Y_, FX=self.M_["FX"])
+        ll_data = kde.get_ll_and_bps_splits(self.Y_, self.M_["FX"], self.spike_mask_)
         loglikelihoods = _dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [self.iteration_]}
         )
@@ -1595,202 +1595,25 @@ class SIMPL:
             raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
-            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
+            self._device_str = f"GPU ({self._jax_device().device_kind})"
         else:
             self._device_str = "CPU"
-
-    @staticmethod
-    def _jax_gpu_device():
-        """Return the first available GPU/Metal device."""
-        backend = jax.default_backend()
-        if backend == "METAL":
-            return jax.devices("METAL")[0]
-        return jax.devices("gpu")[0]
 
     def _jax_device(self):
         """Return the JAX device to place arrays on."""
         if self.use_gpu_:
-            return self._jax_gpu_device()
+            backend = jax.default_backend()
+            return jax.devices("METAL" if backend == "METAL" else "gpu")[0]
         return jax.devices("cpu")[0]
 
     def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
-        """Predict firing rates at arbitrary positions by interpolating the discretised fields.
+        """Nearest-bin lookup of firing rates F at positions X. See ``utils.lookup_firing_rates``."""
+        data = _dict_to_dataset({"F": np.array(F), "X": np.array(X)}, self.variable_info_dict_, self.coordinates_dict_)
+        return utils.lookup_firing_rates(data.F, data.X)
 
-        Given a set of latent positions ``X`` and receptive fields ``F`` (discretised on
-        the environment grid), this method computes the expected firing rate of each neuron
-        at each position using nearest-bin lookup. This is much faster than a full KDE
-        recalculation and is used internally during the M-step to compute ``FX``.
-
-        Parameters
-        ----------
-        X : jnp.ndarray, shape (T, D)
-            Latent positions to interpolate onto.
-        F : jnp.ndarray, shape (N_neurons, N_bins)
-            Receptive fields (place fields) of each neuron, flattened over spatial bins.
-
-        Returns
-        -------
-        FX : jnp.ndarray, shape (T, N_neurons)
-            Estimated firing rate (expected spike count per time bin) of each neuron at
-            each position in ``X``.
-        """
-        F = np.array(F)
-        X = np.array(X)
-        data = _dict_to_dataset({"F": F, "X": X}, self.variable_info_dict_, self.coordinates_dict_)
-        coord_args = {dim: data.X.sel(dim=dim) for dim in self.dim_}
-        FX = data.F.sel(**coord_args, method="nearest").T
-        return FX.data
-
-    def _get_loglikelihoods(self, Y: jax.Array, FX: jax.Array) -> dict:
-        """Calculate log-likelihoods of spikes given firing rates.
-
-        Parameters
-        ----------
-        Y : jnp.ndarray, shape (T, N_neurons)
-            Spike counts.
-        FX : jnp.ndarray, shape (T, N_neurons)
-            Estimated firing rates.
-
-        Returns
-        -------
-        dict
-            Dictionary with 'logPYXF' and 'logPYXF_val' keys.
-        """
-        LLs = {}
-        train_mask = self.spike_mask_
-        val_mask = ~self.spike_mask_
-
-        ll_model_train = kde.poisson_log_likelihood_trajectory(Y, FX, mask=train_mask).sum()
-        ll_model_val = kde.poisson_log_likelihood_trajectory(Y, FX, mask=val_mask).sum()
-        logPYXF = ll_model_train / train_mask.sum()
-        logPYXF_val = ll_model_val / val_mask.sum()
-        LLs["logPYXF"] = logPYXF
-        LLs["logPYXF_val"] = logPYXF_val
-
-        # Bits per spike: (ll_model - ll_mean_rate) / (n_spikes * log2)
-        mean_FX = (Y * train_mask).sum(axis=0, keepdims=True) / train_mask.sum(axis=0, keepdims=True)
-        mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
-
-        ll_model_by_suffix = {"": ll_model_train, "_val": ll_model_val}
-
-        for mask, suffix in [(train_mask, ""), (val_mask, "_val")]:
-            ll_model = ll_model_by_suffix[suffix]
-            ll_baseline = kde.poisson_log_likelihood_trajectory(Y, mean_FX, mask=mask).sum()
-            n_spikes = (Y * mask).sum()
-            bps = jnp.where(n_spikes > 0, (ll_model - ll_baseline) / (n_spikes * jnp.log(2.0)), 0.0)
-            LLs[f"bits_per_spike{suffix}"] = bps
-
-        return LLs
-
-    def _get_ML_loglikelihoods(self) -> dict:
-        """Log-likelihoods for the maximum-likelihood baseline.
-
-        Scores the iteration-1 likelihood mode trajectory (``mode_l``, the
-        per-timebin ML position estimate before any Kalman smoothing) against
-        the iteration-0 receptive fields (built from behavioural positions).
-        Comparing this to iteration-0 metrics isolates the gain from ML
-        decoding alone, before SIMPL's EM refinement of the fields.
-        """
-        FX_ML = self._interpolate_firing_rates(
-            X=self.results_.mode_l.sel(iteration=1).values, F=self.results_.F.sel(iteration=0).values
-        )
-        return self._get_loglikelihoods(self.Y_, FX_ML)
-
-    def _get_metrics(
-        self,
-        X: jax.Array | None = None,
-        F: jax.Array | None = None,
-        Y: jax.Array | None = None,
-        FX: jax.Array | None = None,
-        F_odd_mins: jax.Array | None = None,
-        F_even_mins: jax.Array | None = None,
-        X_prev: jax.Array | None = None,
-        F_prev: jax.Array | None = None,
-        Xt: jax.Array | None = None,
-        Ft: jax.Array | None = None,
-        PX: jax.Array | None = None,
-    ) -> dict:
-        """Calculate metrics on the current iteration's results.
-
-        This is a relaxed function: pass in whatever data you have and it will return
-        whatever metrics it can calculate.
-
-        Parameters
-        ----------
-        X : jnp.ndarray, shape (T, D), optional
-            Estimated latent positions.
-        F : jnp.ndarray, shape (N_neurons, N_bins), optional
-            Estimated place fields.
-        Y : jnp.ndarray, shape (T, N_neurons), optional
-            Spike counts.
-        FX : jnp.ndarray, shape (T, N_neurons), optional
-            Estimated firing rates.
-        F_odd_mins : jnp.ndarray, optional
-            Place fields from odd minutes.
-        F_even_mins : jnp.ndarray, optional
-            Place fields from even minutes.
-        X_prev : jnp.ndarray, optional
-            Latent positions from previous iteration.
-        F_prev : jnp.ndarray, optional
-            Place fields from previous iteration.
-        Xt : jnp.ndarray, optional
-            True latent positions.
-        Ft : jnp.ndarray, optional
-            True place fields.
-        PX : jnp.ndarray, optional
-            Position occupancy.
-
-        Returns
-        -------
-        dict
-            Dictionary of calculated metrics.
-        """
-        metrics = {}
-
-        if Y is not None and FX is not None:
-            LLs = self._get_loglikelihoods(Y, FX)
-            metrics.update(LLs)
-
-        if X is not None and Xt is not None:
-            metrics["X_R2"] = utils.coefficient_of_determination(X, Xt)
-
-        if X is not None and Xt is not None:
-            metrics["X_err"] = jnp.mean(jnp.linalg.norm(X - Xt, axis=1))
-
-        if F is not None and Ft is not None:
-            metrics["F_err"] = jnp.mean(jnp.linalg.norm(F - Ft, axis=1))
-
-        if F is not None:
-            F_pdf = (F + 1e-6) / jnp.sum(F, axis=1)[:, None]
-            I_F = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1)
-            metrics["negative_entropy"] = I_F
-
-        if F is not None:
-            rho_F = jnp.mean(F < 1.0 * self.dt_, axis=1)
-            metrics["sparsity"] = rho_F
-
-        if F_odd_mins is not None and F_even_mins is not None:
-            # Per-neuron Pearson correlation (avoids building a full (2N x 2N) matrix)
-            odd_c = F_odd_mins - jnp.mean(F_odd_mins, axis=1, keepdims=True)
-            even_c = F_even_mins - jnp.mean(F_even_mins, axis=1, keepdims=True)
-            num = jnp.sum(odd_c * even_c, axis=1)
-            denom = jnp.sqrt(jnp.sum(odd_c**2, axis=1) * jnp.sum(even_c**2, axis=1))
-            stability = num / (denom + 1e-12)
-            metrics["stability"] = stability
-
-        if F_prev is not None and F is not None:
-            delta_F = jnp.linalg.norm(F - F_prev, axis=1)
-            metrics["field_change"] = delta_F
-
-        if X_prev is not None and X is not None:
-            delta_X = jnp.linalg.norm(X - X_prev, axis=1)
-            metrics["trajectory_change"] = delta_X
-
-        if F is not None and PX is not None:
-            metrics["spatial_information"] = utils.calculate_spatial_information(F / self.dt_, PX)
-            metrics["mutual_information"] = utils.calculate_mutual_information(F, PX, self.dt_)
-
-        return metrics
+    def _get_metrics(self, **kwargs) -> dict:
+        """Calculate metrics on the current iteration's results. See ``utils.get_iteration_metrics``."""
+        return utils.get_iteration_metrics(spike_mask=self.spike_mask_, dt=self.dt_, **kwargs)
 
     def _apply_baselines_to_results(self) -> None:
         """Process stored ground truth and compute baseline iterations."""

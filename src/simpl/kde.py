@@ -9,8 +9,8 @@ For 1-D angular environments (``is_1D_angular=True``), the specialised
 ``kde_angular`` function convolves with a wrapped Gaussian kernel via FFT so
 that the estimate is seamless across the \\([-\\pi, \\pi)\\) boundary.
 
-The Poisson log-likelihood functions (``poisson_log_likelihood`` and
-``poisson_log_likelihood_trajectory``) evaluate how well the estimated
+The Poisson log-likelihood functions (``poisson_log_likelihood_maps`` and
+``poisson_log_likelihood``) evaluate how well the estimated
 receptive fields explain the observed spike counts and are used during the
 E-step to construct likelihood maps over position space."""
 
@@ -28,9 +28,16 @@ __all__ = [
     "gaussian_kernel",
     "kde",
     "kde_angular",
+    "poisson_log_likelihood_maps",
     "poisson_log_likelihood",
-    "poisson_log_likelihood_trajectory",
+    "get_ll_and_bps_splits",
 ]
+
+
+def _log_factorial_stirling(spikes: jax.Array) -> jax.Array:
+    """Stirling's approximation of log(spikes!), with manual correction for 0! = 1."""
+    spikes_ = jnp.where(spikes == 0, 1, spikes)
+    return jnp.log(jnp.sqrt(2 * jnp.pi)) + (spikes_ + 0.5) * jnp.log(spikes_) - spikes_
 
 
 def gaussian_kernel(
@@ -187,76 +194,124 @@ def kde(
 
 def poisson_log_likelihood(
     spikes: jax.Array,
-    mean_rate: jax.Array,
-    mask: jax.Array | None = None,
-    renormalise: bool = True,
+    rates: jax.Array,
 ) -> jax.Array:
-    """Takes an array of spike counts and an array of mean rates and returns
-    the log-likelihood of the spikes given the mean rate of the neuron
-    (its receptive field).
+    """Per-element Poisson log-likelihood of spike counts given predicted rates.
 
     The Poisson probability of observing \\(X\\) spikes given mean rate \\(\\mu\\) is:
 
     $$P(X \\mid \\mu) = \\frac{\\mu^X \\, e^{-\\mu}}{X!}$$
 
-    The log-likelihood summed over neurons is:
+    so the log-likelihood is:
 
-    $$\\log P(X \\mid \\mu) = \\sum_{\\text{neurons}} \\left[ X \\log \\mu - \\mu - \\log(X!) \\right]$$
+    $$\\log P(X \\mid \\mu) = X \\log \\mu - \\mu - \\log(X!)$$
 
     where \\(\\log(X!)\\) is computed via Stirling's approximation (manually
     correcting for when \\(X = 0\\)):
 
     $$\\log(X!) \\approx \\log\\sqrt{2\\pi} + (X + 0.5)\\log X - X$$
 
-    This Stirling's approximation IS necessary as it avoids computing
-    \\(n!\\) directly, which can be enormous and produce NaNs for large spike
-    counts.
-
-    Optionally, a boolean mask same shape as spikes can be passed to ignore
-    certain spikes. This restricts the likelihood calculation to only the
-    spikes where mask is True.
+    Accepts arrays of any shape; ``spikes`` and ``rates`` must share the same
+    shape. Returns an array of that same shape.
 
     Parameters
     ----------
-    spikes : jax.Array, shape (T, N_neurons,)
-        How many spikes the neuron actually fired at each bin (int, can be > 1)
-    mean_rate : jax.Array, shape (N_neurons, N_bins,)
-        The mean rate of the neuron (it's receptive field) at each bin.
-        This is how many spikes you would _expect_ in at this position
-        in a time dt.
-    mask : jax.Array, shape (T, N_neurons,), optional
-        A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
-    renormalise : bool, optional
-        If True this renormalises so the maximum log-likelihood is always 0
-        (max likelihood is 1). Recommended to avoid nan errors when
-        likelihoods are small. Default is True.
+    spikes : jax.Array
+        Observed spike counts.
+    rates : jax.Array
+        Predicted firing rates (expected spikes per time bin). Same shape as ``spikes``.
 
     Returns
     -------
-    log_likelihood : jax.Array, shape (T, N_bins,)
-        The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron
+    log_likelihood : jax.Array
+        Per-element Poisson log-likelihood. Same shape as inputs.
     """
-    # If not passed make a no-mask mask (all True)
+    assert spikes.shape == rates.shape, f"spikes {spikes.shape} and rates {rates.shape} must have the same shape"
+
+    log_spikecount_factorial = _log_factorial_stirling(spikes)
+
+    return (spikes * jnp.log(rates + 1e-3)) - rates - log_spikecount_factorial
+
+
+def poisson_log_likelihood_maps(
+    spikes: jax.Array,
+    mean_rate: jax.Array,
+    mask: jax.Array | None = None,
+) -> jax.Array:
+    """Version of ``poisson_log_likelihood`` optimised to broadcast over the
+    spatial binning dimension and sum over neurons.
+
+    Used in the E-step to build likelihood maps: for each time step, evaluates
+    the Poisson log-likelihood at every spatial bin simultaneously via a matrix
+    multiply ``(T, N) @ (N, B) → (T, B)``.
+
+    Parameters
+    ----------
+    spikes : jax.Array, shape (T, N_neurons)
+        Observed spike counts.
+    mean_rate : jax.Array, shape (N_neurons, N_bins)
+        Receptive fields: expected spike count per time bin at each spatial bin.
+    mask : jax.Array, shape (T, N_neurons), optional
+        Boolean spike mask. If None, all neurons are used.
+
+    Returns
+    -------
+    log_likelihood : jax.Array, shape (T, N_bins)
+        Log-likelihood summed over neurons at each spatial bin.
+    """
     if mask is None:
         mask = jnp.ones_like(spikes, dtype=bool)
 
-    # Calculate log factorial of spike counts NOTE this could be removed if you dont care about absolute likelihoods
-    spikes_ = jnp.where(spikes == 0, 1, spikes)  # replace 0 spikes with 1s because 0! = 1
-    log_spikecount_factorial = (
-        jnp.log(jnp.sqrt(2 * jnp.pi)) + (spikes_ + 0.5) * jnp.log(spikes_) - spikes_
-    )  # manually correcting for when X=0
+    log_spikecount_factorial = _log_factorial_stirling(spikes)
 
-    # Sum over neurons (which are unmasked)
-    logPXmu = (
+    return (
         (mask * spikes) @ jnp.log(mean_rate + 1e-3)
         - mask @ mean_rate
         - jnp.sum(log_spikecount_factorial * mask, axis=1)[:, None]
     )
 
-    # Renormalise so max likelihood is 1
-    if renormalise:
-        logPXmu = logPXmu - jnp.max(logPXmu, axis=1)[:, None]
-    return logPXmu
+
+def get_ll_and_bps_splits(
+    Y: jax.Array,
+    FX: jax.Array,
+    mask: jax.Array,
+) -> dict:
+    """Compute train/val log-likelihoods and bits-per-spike from spikes and predicted rates.
+
+    Parameters
+    ----------
+    Y : jax.Array, shape (T, N_neurons)
+        Observed spike counts.
+    FX : jax.Array, shape (T, N_neurons)
+        Predicted firing rates (expected spikes per time bin).
+    mask : jax.Array, shape (T, N_neurons)
+        Boolean training mask. True = train, False = validation.
+
+    Returns
+    -------
+    dict
+        Keys: ``logPYXF``, ``logPYXF_val``, ``bits_per_spike``, ``bits_per_spike_val``.
+    """
+    val_mask = ~mask
+    ll = poisson_log_likelihood(Y, FX)
+
+    ll_train = (ll * mask).sum()
+    ll_val = (ll * val_mask).sum()
+
+    mean_FX = (Y * mask).sum(axis=0, keepdims=True) / mask.sum(axis=0, keepdims=True)
+    mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
+    ll_baseline = poisson_log_likelihood(Y, mean_FX)
+
+    LLs = {
+        "logPYXF": ll_train / mask.sum(),
+        "logPYXF_val": ll_val / val_mask.sum(),
+    }
+    for m, suffix, ll_model in [(mask, "", ll_train), (val_mask, "_val", ll_val)]:
+        ll_base = (ll_baseline * m).sum()
+        n_spikes = (Y * m).sum()
+        LLs[f"bits_per_spike{suffix}"] = jnp.where(n_spikes > 0, (ll_model - ll_base) / (n_spikes * jnp.log(2.0)), 0.0)
+
+    return {k: float(v) for k, v in LLs.items()}
 
 
 def decode_observations(
@@ -269,7 +324,7 @@ def decode_observations(
 ) -> tuple:
     """Compute Poisson likelihood maps, fit Gaussian observations, and flag silent bins.
 
-    This combines ``poisson_log_likelihood`` and ``fit_gaussian`` in a single
+    This combines ``poisson_log_likelihood_maps`` and ``fit_gaussian`` in a single
     batched pipeline so that the full ``(T, N_bins)`` likelihood tensor is never
     materialised at once, keeping peak memory low for long sessions.
 
@@ -310,7 +365,8 @@ def decode_observations(
 
     @partial(jax.jit, static_argnames=("_return_log_maps",))
     def _process_batch(xF, spikes_batch, mean_rate, mask_batch, _return_log_maps=False):
-        log_maps = poisson_log_likelihood(spikes_batch, mean_rate, mask=mask_batch)
+        log_maps = poisson_log_likelihood_maps(spikes_batch, mean_rate, mask=mask_batch)
+        log_maps = log_maps - jnp.max(log_maps, axis=1)[:, None]  # shift max to 0 to avoid NaNs in exp
         mu, mode, sigma = fit_gaussian(xF, jnp.exp(log_maps))
         no_spk = jnp.sum(spikes_batch * mask_batch, axis=1) == 0
         if _return_log_maps:
@@ -347,57 +403,6 @@ def decode_observations(
     if return_log_maps:
         return mu_l, mode_l, sigma_l, no_spikes, jnp.concatenate(log_map_batches, axis=0)
     return mu_l, mode_l, sigma_l, no_spikes
-
-
-def poisson_log_likelihood_trajectory(
-    spikes: jax.Array,
-    mean_rate_along_trajectory: jax.Array,
-    mask: jax.Array | None = None,
-) -> jax.Array:
-    """Takes an array of spike counts and an _equally shaped_ array of mean
-    rates and returns the log-likelihood of the spikes given the mean rate of
-    the neuron (its receptive field). Unlike `poisson_log_likelihood`, which
-    evaluates the likelihood over a grid of positions, this function takes a
-    trajectory of mean rates and returns the Poisson log-likelihood at each
-    time step along that trajectory. See `poisson_log_likelihood` for the
-    full formula.
-
-    Parameters
-    ----------
-    spikes : jax.Array, shape (T, N_neurons,)
-        How many spikes the neuron actually fired at each bin (int, can be > 1)
-    mean_rate_along_trajectory : jax.Array, shape (T, N_neurons,)
-        The mean rate of the neurons as calculated at each time step along
-        the trajectory. This is how many spikes you would _expect_ in at
-        this position in a time dt.
-    mask : jax.Array, shape (T, N_neurons,), optional
-        A boolean mask to apply to the spikes. If None, no mask is applied. Default is None.
-
-    Returns
-    -------
-    log_likelihood : jax.Array, shape (T,)
-        The log-likelihood (summed over neurons) of the spikes given the mean rate of the neuron
-    """
-
-    # If not passed make a no-mask mask (all True)
-    if mask is None:
-        mask = jnp.ones_like(spikes, dtype=bool)
-
-    # Calculate log factorial of spike counts NOTE this could be removed, its just a constant factor
-    spikes_ = jnp.where(spikes == 0, 1, spikes)  # replace 0 spikes with 1s because 0! = 1
-    log_spikecount_factorial = (
-        jnp.log(jnp.sqrt(2 * jnp.pi)) + (spikes_ + 0.5) * jnp.log(spikes_) - spikes_
-    )  # manually correcting for when X=0
-
-    # Calculate log-likelihood and sum over (unmasked) neurons
-    logPXmu = (
-        (spikes * jnp.log(mean_rate_along_trajectory + 1e-3))
-        - (mean_rate_along_trajectory)
-        - (log_spikecount_factorial)
-    )
-    logPXmu = jnp.sum(mask * logPXmu, axis=1)
-
-    return logPXmu
 
 
 @partial(jax.jit, static_argnames=("kernel", "return_position_density"))
