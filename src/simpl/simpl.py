@@ -1678,6 +1678,20 @@ class SIMPL:
 
         return LLs
 
+    def _get_ML_loglikelihoods(self) -> dict:
+        """Log-likelihoods for the maximum-likelihood baseline.
+
+        Scores the iteration-1 likelihood mode trajectory (``mode_l``, the
+        per-timebin ML position estimate before any Kalman smoothing) against
+        the iteration-0 receptive fields (built from behavioural positions).
+        Comparing this to iteration-0 metrics isolates the gain from ML
+        decoding alone, before SIMPL's EM refinement of the fields.
+        """
+        FX_ML = self._interpolate_firing_rates(
+            X=self.results_.mode_l.sel(iteration=1).values, F=self.results_.F.sel(iteration=0).values
+        )
+        return self._get_loglikelihoods(self.Y_, FX_ML)
+    
     def _get_metrics(
         self,
         X: jax.Array | None = None,
@@ -1773,6 +1787,7 @@ class SIMPL:
             metrics["mutual_information"] = utils.calculate_mutual_information(F, PX, self.dt_)
 
         return metrics
+
 
     def _apply_baselines_to_results(self) -> None:
         """Process stored ground truth and compute baseline iterations."""
