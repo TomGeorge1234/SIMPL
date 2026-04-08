@@ -9,7 +9,7 @@ from simpl.kde import (
     kde,
     kde_angular,
     poisson_log_likelihood,
-    poisson_log_likelihood_trajectory,
+    poisson_log_likelihood_maps,
 )
 
 
@@ -108,12 +108,12 @@ class TestKDEAngular:
         assert jnp.all(jnp.isfinite(result))
 
 
-class TestPoissonLogLikelihood:
+class TestPoissonLogLikelihoodMaps:
     def test_correct_shape(self):
         T, N_neurons, N_bins = 50, 5, 20
         spikes = jnp.ones((T, N_neurons), dtype=jnp.int32)
         mean_rate = jnp.ones((N_neurons, N_bins)) * 0.1
-        result = poisson_log_likelihood(spikes, mean_rate)
+        result = poisson_log_likelihood_maps(spikes, mean_rate)
         assert result.shape == (T, N_bins)
 
     @pytest.mark.cpu_only
@@ -125,28 +125,31 @@ class TestPoissonLogLikelihood:
         mean_rate = jnp.array(np.random.uniform(0.01, 0.5, (N_neurons, N_bins)))
         mask = jnp.ones((T, N_neurons), dtype=bool)
         mask_half = mask.at[:, :2].set(False)
-        result_full = poisson_log_likelihood(spikes, mean_rate, mask=mask)
-        result_masked = poisson_log_likelihood(spikes, mean_rate, mask=mask_half)
+        result_full = poisson_log_likelihood_maps(spikes, mean_rate, mask=mask)
+        result_masked = poisson_log_likelihood_maps(spikes, mean_rate, mask=mask_half)
         # Results should differ when mask changes
         assert not jnp.allclose(result_full, result_masked)
 
 
-class TestPoissonLogLikelihoodTrajectory:
+class TestPoissonLogLikelihood:
     def test_correct_shape(self):
         T, N_neurons = 50, 5
         spikes = jnp.ones((T, N_neurons), dtype=jnp.int32)
-        mean_rate = jnp.ones((T, N_neurons)) * 0.1
-        result = poisson_log_likelihood_trajectory(spikes, mean_rate)
-        assert result.shape == (T,)
+        rates = jnp.ones((T, N_neurons)) * 0.1
+        result = poisson_log_likelihood(spikes, rates)
+        assert result.shape == (T, N_neurons)
 
-    @pytest.mark.cpu_only
-    def test_masking(self):
+    def test_arbitrary_shape(self):
+        spikes = jnp.ones((3, 4, 5), dtype=jnp.int32)
+        rates = jnp.ones((3, 4, 5)) * 0.1
+        result = poisson_log_likelihood(spikes, rates)
+        assert result.shape == (3, 4, 5)
+
+    def test_masking_downstream(self):
         np.random.seed(42)
         T, N_neurons = 50, 5
         spikes = jnp.array(np.random.randint(0, 3, (T, N_neurons)))
-        mean_rate = jnp.array(np.random.uniform(0.01, 0.5, (T, N_neurons)))
-        mask = jnp.ones((T, N_neurons), dtype=bool)
-        mask_half = mask.at[:, :2].set(False)
-        result_full = poisson_log_likelihood_trajectory(spikes, mean_rate, mask=mask)
-        result_masked = poisson_log_likelihood_trajectory(spikes, mean_rate, mask=mask_half)
-        assert not jnp.allclose(result_full, result_masked)
+        rates = jnp.array(np.random.uniform(0.01, 0.5, (T, N_neurons)))
+        ll = poisson_log_likelihood(spikes, rates)
+        mask = jnp.ones((T, N_neurons), dtype=bool).at[:, :2].set(False)
+        assert not jnp.allclose(ll.sum(), (ll * mask).sum())
