@@ -12,6 +12,8 @@
 
 <img src="assets/simpl.gif" width=850>
 
+*Quick demo: the basic API and a clip of SIMPL training in real time.*
+
 ## ✨ Key Features
 
 - ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
@@ -19,6 +21,12 @@
 - 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions.
 - 📊 **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
 - 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
+
+<p align="center">
+  <img src="assets/simpl_demo.gif" width=350>
+  <br>
+  <em>Neural data analysis in <5 seconds (your mileage may vary)</em>
+</p>
 
 <!-- docs-intro-start -->
 ## 🚀 Installation
