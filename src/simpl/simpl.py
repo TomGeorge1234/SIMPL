@@ -175,36 +175,8 @@ class SIMPL:
         # Fitted flag
         self.is_fitted_ = False
 
-        # Device setup
-        gpu_available = jax.default_backend() in ("gpu", "METAL")
-        metal_backend = jax.default_backend() == "METAL"
-        if metal_backend and is_1D_angular and use_gpu is True:
-            warnings.warn(
-                "Angular mode (is_1D_angular=True) requires FFT which is not supported "
-                "on Apple Metal GPU. Falling back to CPU.",
-                stacklevel=2,
-            )
-            self.use_gpu_ = False
-        elif metal_backend and is_1D_angular:
-            self.use_gpu_ = False
-        elif use_gpu is True:
-            if not gpu_available:
-                raise RuntimeError(
-                    "use_gpu=True but no GPU is available. "
-                    "Install a GPU-enabled JAX build or use use_gpu='if_available'."
-                )
-            self.use_gpu_ = True
-        elif use_gpu is False:
-            self.use_gpu_ = False
-        elif use_gpu == "if_available":
-            self.use_gpu_ = gpu_available
-        else:
-            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
-
-        if self.use_gpu_:
-            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
-        else:
-            self._device_str = "CPU"
+        # Device
+        self._setup_device(use_gpu)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
@@ -1595,6 +1567,38 @@ class SIMPL:
     # Internal utilities
     # ──────────────────────────────────────────────────────────────────────────
 
+    def _setup_device(self, use_gpu):
+        """Resolve the ``use_gpu`` parameter and set ``self.use_gpu_`` / ``self._device_str``."""
+        gpu_available = jax.default_backend() in ("gpu", "METAL")
+        metal_backend = jax.default_backend() == "METAL"
+        if metal_backend and self.is_1D_angular and use_gpu is True:
+            warnings.warn(
+                "Angular mode (self.is_1D_angular=True) requires FFT which is not supported "
+                "on Apple Metal GPU. Falling back to CPU.",
+                stacklevel=2,
+            )
+            self.use_gpu_ = False
+        elif metal_backend and self.is_1D_angular:
+            self.use_gpu_ = False
+        elif use_gpu is True:
+            if not gpu_available:
+                raise RuntimeError(
+                    "use_gpu=True but no GPU is available. "
+                    "Install a GPU-enabled JAX build or use use_gpu='if_available'."
+                )
+            self.use_gpu_ = True
+        elif use_gpu is False:
+            self.use_gpu_ = False
+        elif use_gpu == "if_available":
+            self.use_gpu_ = gpu_available
+        else:
+            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
+
+        if self.use_gpu_:
+            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
+        else:
+            self._device_str = "CPU"
+
     @staticmethod
     def _jax_gpu_device():
         """Return the first available GPU/Metal device."""
@@ -1691,7 +1695,7 @@ class SIMPL:
             X=self.results_.mode_l.sel(iteration=1).values, F=self.results_.F.sel(iteration=0).values
         )
         return self._get_loglikelihoods(self.Y_, FX_ML)
-    
+
     def _get_metrics(
         self,
         X: jax.Array | None = None,
@@ -1787,7 +1791,6 @@ class SIMPL:
             metrics["mutual_information"] = utils.calculate_mutual_information(F, PX, self.dt_)
 
         return metrics
-
 
     def _apply_baselines_to_results(self) -> None:
         """Process stored ground truth and compute baseline iterations."""
