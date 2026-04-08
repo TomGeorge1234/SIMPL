@@ -14,7 +14,7 @@ Data Preparation
     ``accumulate_spikes``, ``coarsen_dt``, ``create_speckled_mask``
 
 Data I/O
-    ``load_demo_data``, ``print_data_summary``, ``save_results_to_netcdf``,
+    ``load_demo_data``, ``save_results_to_netcdf``,
     ``load_results``, ``rehydrate_model``
 
 Place-Field Analysis
@@ -755,78 +755,6 @@ def load_demo_data(
     return np.load(cached_path)
 
 
-def print_data_summary(data: xr.Dataset) -> None:
-    """Print a concise summary of an ``xr.Dataset`` loaded via ``load_demo_data``.
-
-    Prints the number of neurons, time bins, dimensionality, recording
-    duration, time-bin width, firing-rate statistics (min / Q25 / median /
-    Q75 / max / mean), median speed, mean step size, and the fraction of
-    time bins with 0, 1, or 2+ simultaneously active neurons.
-
-    Parameters
-    ----------
-    data : xr.Dataset
-        Dataset containing at least ``Y`` (spike counts), ``Xb``
-        (behavioural positions), and a ``time`` coordinate."""
-    Y = data.Y.values
-    Xb = data.Xb.values
-    time = data.time.values
-    dt = float(time[1] - time[0])
-    T = len(time)
-    N_neurons = Y.shape[1]
-    D = Xb.shape[1]
-    duration = float(time[-1] - time[0]) + dt
-
-    # Per-neuron firing rates
-    fr_per_neuron = Y.sum(axis=0) / (T * dt)  # (N_neurons,) Hz
-    fr_min = float(np.min(fr_per_neuron))
-    fr_q25 = float(np.percentile(fr_per_neuron, 25))
-    fr_median = float(np.median(fr_per_neuron))
-    fr_q75 = float(np.percentile(fr_per_neuron, 75))
-    fr_max = float(np.max(fr_per_neuron))
-    fr_mean = float(np.mean(fr_per_neuron))
-
-    # Speed and step size
-    step_size = np.linalg.norm(np.diff(Xb, axis=0), axis=1)
-    speed = step_size / dt
-    mean_speed = float(np.median(speed))
-    mean_step = float(np.mean(step_size))
-
-    # Active neurons per bin
-    active = (Y > 0).sum(axis=1)
-    frac_0 = float(np.mean(active == 0))
-    frac_1 = float(np.mean(active == 1))
-    frac_2 = float(np.mean(active == 2))
-    frac_3plus = float(np.mean(active >= 3))
-    max_bar = 30  # max bar width in characters
-    max_frac = max(frac_0, frac_1, frac_2, frac_3plus, 1e-10)
-
-    def bar(frac):
-        return "=" * max(1, int(frac / max_frac * max_bar))
-
-    # Number of trials
-    n_trials = len(data.attrs.get("trial_boundaries", [0]))
-
-    print("DATA SUMMARY:")
-    print(f"  Neurons:    {N_neurons}")
-    print(f"  Dimensions: {D}")
-    print(f"  dt:         {dt:.4f} s")
-    print(f"  Duration:   {duration:.1f} s ({T} bins)")
-    print(f"  Trials:     {n_trials}")
-    print(
-        f"  Neuron firing rate (Hz): mean {fr_mean:.2f}, "
-        f"min {fr_min:.2f}, Q1 {fr_q25:.2f}, "
-        f"median {fr_median:.2f}, Q3 {fr_q75:.2f}, max {fr_max:.2f}"
-    )
-    print(f"  Median speed:     {mean_speed:.3f} m/s")
-    print(f"  Mean distance travelled per dt: {mean_step:.4f} m (may guide your choice of dx)")
-    print("  Simultaneously active neurons per bin:")
-    print(f"    0  {bar(frac_0)} {frac_0:.0%}")
-    print(f"    1  {bar(frac_1)} {frac_1:.0%}")
-    print(f"    2  {bar(frac_2)} {frac_2:.0%}")
-    print(f"    3+ {bar(frac_3plus)} {frac_3plus:.0%}")
-
-
 def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     """Save a SIMPL results ``xr.Dataset`` to a netCDF file.
 
@@ -1081,6 +1009,138 @@ def analyse_place_fields(
     }
 
     return place_field_results
+
+
+def get_iteration_metrics(
+    spike_mask: jax.Array,
+    dt: float,
+    X: jax.Array | None = None,
+    F: jax.Array | None = None,
+    Y: jax.Array | None = None,
+    FX: jax.Array | None = None,
+    F_odd_mins: jax.Array | None = None,
+    F_even_mins: jax.Array | None = None,
+    X_prev: jax.Array | None = None,
+    F_prev: jax.Array | None = None,
+    Xt: jax.Array | None = None,
+    Ft: jax.Array | None = None,
+    PX: jax.Array | None = None,
+) -> dict:
+    """Calculate metrics on an iteration's results.
+
+    A relaxed function: pass in whatever data you have and it will return
+    whatever metrics it can calculate.
+
+    Parameters
+    ----------
+    spike_mask : jax.Array, shape (T, N_neurons)
+        Boolean training mask. True = train, False = validation.
+    dt : float
+        Time bin size in seconds.
+    X, F, Y, FX, F_odd_mins, F_even_mins, X_prev, F_prev, Xt, Ft, PX
+        Optional arrays — see ``SIMPL._get_metrics`` for shapes.
+
+    Returns
+    -------
+    dict
+        Dictionary of calculated metrics.
+    """
+    from simpl import kde
+
+    metrics = {}
+
+    if Y is not None and FX is not None:
+        metrics.update(kde.get_ll_and_bps_splits(Y, FX, spike_mask))
+
+    if X is not None and Xt is not None:
+        metrics["X_R2"] = coefficient_of_determination(X, Xt)
+        metrics["X_err"] = jnp.mean(jnp.linalg.norm(X - Xt, axis=1))
+
+    if F is not None and Ft is not None:
+        metrics["F_err"] = jnp.mean(jnp.linalg.norm(F - Ft, axis=1))
+
+    if F is not None:
+        F_pdf = (F + 1e-6) / jnp.sum(F, axis=1)[:, None]
+        metrics["negative_entropy"] = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1)
+        metrics["sparsity"] = jnp.mean(F < 1.0 * dt, axis=1)
+
+    if F_odd_mins is not None and F_even_mins is not None:
+        odd_c = F_odd_mins - jnp.mean(F_odd_mins, axis=1, keepdims=True)
+        even_c = F_even_mins - jnp.mean(F_even_mins, axis=1, keepdims=True)
+        num = jnp.sum(odd_c * even_c, axis=1)
+        denom = jnp.sqrt(jnp.sum(odd_c**2, axis=1) * jnp.sum(even_c**2, axis=1))
+        metrics["stability"] = num / (denom + 1e-12)
+
+    if F_prev is not None and F is not None:
+        metrics["field_change"] = jnp.linalg.norm(F - F_prev, axis=1)
+
+    if X_prev is not None and X is not None:
+        metrics["trajectory_change"] = jnp.linalg.norm(X - X_prev, axis=1)
+
+    if F is not None and PX is not None:
+        metrics["spatial_information"] = calculate_spatial_information(F / dt, PX)
+        metrics["mutual_information"] = calculate_mutual_information(F, PX, dt)
+
+    return metrics
+
+
+def lookup_firing_rates(F: xr.DataArray, X: xr.DataArray) -> np.ndarray:
+    """Nearest-bin lookup of receptive fields F at trajectory positions X.
+
+    Parameters
+    ----------
+    F : xr.DataArray, dims (neuron, *spatial_dims)
+        Receptive fields with spatial coordinates.
+    X : xr.DataArray, dims (time, dim)
+        Trajectory positions. The ``dim`` coordinate must match the spatial
+        dimension names in ``F``.
+
+    Returns
+    -------
+    FX : np.ndarray, shape (T, N_neurons)
+        Firing rate of each neuron at each position.
+    """
+    F_np = xr.DataArray(np.asarray(F.values), dims=F.dims, coords=F.coords)
+    coord_args = {d: xr.DataArray(np.asarray(X.sel(dim=d).values), dims="time") for d in X.dim.values}
+    return np.asarray(F_np.sel(**coord_args, method="nearest").T.values)
+
+
+def get_ML_loglikelihoods(results: xr.Dataset, ignore_silent_bins: bool = False) -> dict[str, float]:
+    """Log-likelihoods for the maximum-likelihood baseline from saved results.
+
+    Scores the iteration-1 likelihood mode trajectory (``mode_l``, the per-timebin
+    ML position estimate before Kalman smoothing) against the iteration-0 receptive
+    fields (built from behavioural positions). This isolates the gain from ML
+    decoding alone, before SIMPL's EM refinement.
+
+    Parameters
+    ----------
+    results : xr.Dataset
+        A SIMPL results dataset containing ``F``, ``mode_l``, ``Y``, and
+        ``spike_mask`` with an ``iteration`` coordinate.
+    ignore_silent_bins : bool
+        If True, exclude time bins where no neuron fired (total spike count = 0).
+        The ML position estimate is uninformative in these bins.
+
+    Returns
+    -------
+    dict
+        Keys: ``logPYXF``, ``logPYXF_val``, ``bits_per_spike``, ``bits_per_spike_val``.
+    """
+    from simpl import kde
+
+    F = results["F"].sel(iteration=0)
+    X = results["mode_l"].sel(iteration=1)
+    FX = jnp.array(lookup_firing_rates(F, X))
+
+    Y = jnp.array(results["Y"].values)
+    spike_mask = jnp.array(results["spike_mask"].values, dtype=bool)
+
+    if ignore_silent_bins:
+        has_spikes = Y.sum(axis=1) > 0  # (T,)
+        spike_mask = spike_mask & has_spikes[:, None]
+
+    return kde.get_ll_and_bps_splits(Y, FX, spike_mask)
 
 
 def calculate_spatial_information(

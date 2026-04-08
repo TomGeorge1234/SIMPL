@@ -27,7 +27,6 @@ from simpl.utils import (
     load_demo_data,
     load_results,
     log_gaussian_pdf,
-    print_data_summary,
     save_results_to_netcdf,
 )
 
@@ -443,29 +442,6 @@ class TestAccumulateSpikes:
         Y = self._make_Y()
         result = accumulate_spikes(Y, window=3)
         assert result.dtype == Y.dtype
-
-
-class TestPrintDataSummary:
-    def test_prints_output(self, demo_data, capsys):
-        """print_data_summary should produce output with key headings."""
-        Y = demo_data["Y"][:500]
-        Xb = demo_data["Xb"][:500]
-        time = demo_data["time"][:500]
-        data = xr.Dataset(
-            {
-                "Y": xr.DataArray(Y, dims=["time", "neuron"], coords={"time": time}),
-                "Xb": xr.DataArray(Xb, dims=["time", "dim"], coords={"time": time}),
-            }
-        )
-        data.attrs["trial_boundaries"] = np.array([0])
-        print_data_summary(data)
-        captured = capsys.readouterr().out
-        assert "DATA SUMMARY" in captured
-        assert "Neurons" in captured
-        assert "Dimensions" in captured
-        assert "dt" in captured
-        assert "Neuron firing rate" in captured
-        assert "Simultaneously active neurons per bin" in captured
 
 
 @pytest.mark.cpu_only
