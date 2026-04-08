@@ -18,7 +18,7 @@
 
 - ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
 - 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Minimal intuitive hyperparameters. Get started in <10 lines of code.
-- 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions.
+- 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Examples and demo provided.
 - 📊 **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
 - 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
 
@@ -30,17 +30,13 @@
 
 <!-- docs-intro-start -->
 ## 🚀 Installation
-This repository contains code for the ICLR 2025 paper "_SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour_" ([ICLR](https://openreview.net/forum?id=9kFaNwX6rv)). Specifically:
 
-* Source code in `src/simpl/` for the SIMPL algorithm.
-* A working example in `examples/simpl_demo.ipynb`.
-
-To run the example you will need to install `simpl` by
+To install `simpl`:
 
 1. **Clone**: `git clone https://github.com/TomGeorge1234/SIMPL.git` and navigate to the root: `cd SIMPL`
 2. _(Recommended)_ Create a virtual environment (e.g. `python -m venv simpl_env` and `source simpl_env/bin/activate`).
 3. **Install**: `pip install .[demos]`. This will install the `simpl` package and its dependencies.
-4. **Run the demo**: `jupyter notebook examples/simpl_demo.ipynb` !
+4. **Run the demo**: `jupyter notebook examples/simpl_demo.ipynb`
 
 <!-- docs-intro-end -->
 
@@ -73,9 +69,13 @@ model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, *env_dims)
 model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
-# Resume training if not yet converged
+# 4. Plot results 
+model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mutual information. 
+
+# (optional) Resume training if not yet converged
 model.fit(Y, Xb, time, n_iterations=5, resume=True)
 ```
+
 
 ### Prediction
 
@@ -112,6 +112,23 @@ model.plot_all_metrics(show_neurons=False)
 model.predict(Y_test)
 model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 ```
+
+<p align="center">
+  <img src="assets/tuning_curves.png" width=600>
+  <br>
+  <em> Synthetic grid cell tuning curves optimised from a noisy behavioural initialisation </em>
+</p>
+<p align="center">
+  <img src="assets/trajectory.png" width=600>
+  <br>
+  <em> True latent trajectory recovered by SIMPL </em>
+</p>
+<p align="center">
+  <img src="assets/simpl_ll.png" width=600>
+  <br>
+  <em> Bits-per-spike and mutual-information metrics improve across epochs and exceed naive ML </em>
+</p>
+
 
 ### Saving and loading
 
