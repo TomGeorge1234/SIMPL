@@ -115,10 +115,15 @@ from simpl import load_results
 results = load_results("results.nc")
 
 # Or rehydrate a full model for plotting, prediction, or resumed training
-# (constructor arguments must exactly match the original training run)
-model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
-model.load("results.nc")
+model = SIMPL.from_results("results.nc")
 model.fit(Y, Xb, time, n_iterations=5, resume=True)  # pick up where you left off
+
+# Instance loading also now overwrites the constructor config from the file
+model = SIMPL()
+model.load("results.nc")
+
+# If the saved file does not include spikes, provide them explicitly
+model = SIMPL.from_results("results_without_y.nc", Y=Y)
 ```
 
 ### Ground truth baselines

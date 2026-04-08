@@ -343,6 +343,7 @@ class TestSIMPLLoad:
         assert loaded.iteration_ == model.iteration_
         np.testing.assert_allclose(np.array(loaded.X_), np.array(model.X_))
         np.testing.assert_allclose(np.array(loaded.F_), np.array(model.F_))
+        np.testing.assert_array_equal(np.array(loaded.spike_mask_), np.array(model.spike_mask_))
 
     def test_load_then_resume(self, tmp_path, demo_data):
         N = 500
@@ -360,6 +361,94 @@ class TestSIMPLLoad:
         loaded.fit(Y=Y, Xb=Xb, time=time, n_iterations=2, resume=True)
 
         assert loaded.iteration_ == 3  # 1 original + 2 resumed
+
+    def test_load_uses_passed_Y_when_results_omit_Y(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        Y, Xb, time = demo_data["Y"][:N, :N_neurons], demo_data["Xb"][:N], demo_data["time"][:N]
+
+        model = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
+        model.fit(Y=Y, Xb=Xb, time=time, n_iterations=2)
+
+        path = str(tmp_path / "results.nc")
+        model.save_results(path)
+
+        results_without_y = load_results(path).drop_vars("Y")
+        path_without_y = str(tmp_path / "results_without_y.nc")
+        results_without_y.to_netcdf(path_without_y)
+
+        loaded = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
+        loaded.load(path_without_y, Y=Y)
+
+        assert loaded.iteration_ == model.iteration_
+        np.testing.assert_allclose(np.array(loaded.Y_), Y)
+        np.testing.assert_allclose(np.array(loaded.X_), np.array(model.X_))
+        np.testing.assert_allclose(np.array(loaded.F_), np.array(model.F_))
+
+    def test_load_overwrites_constructor_hyperparameters_from_results(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        Y, Xb, time = demo_data["Y"][:N, :N_neurons], demo_data["Xb"][:N], demo_data["time"][:N]
+
+        model = SIMPL(
+            kernel_bandwidth=0.03,
+            speed_prior=0.2,
+            use_kalman_smoothing=False,
+            behavior_prior=0.4,
+            bin_size=0.05,
+            env_lims=((0.0, 0.0), (1.0, 1.0)),
+            val_frac=0.2,
+            speckle_block_size_seconds=2.0,
+            random_seed=7,
+            use_gpu=False,
+        )
+        model.fit(Y=Y, Xb=Xb, time=time, n_iterations=1, align_to_behavior="fields")
+        path = str(tmp_path / "results.nc")
+        model.save_results(path)
+
+        loaded = SIMPL(
+            kernel_bandwidth=999.0,
+            speed_prior=999.0,
+            use_kalman_smoothing=True,
+            behavior_prior=None,
+            bin_size=0.5,
+            env_pad=5.0,
+            val_frac=0.5,
+            speckle_block_size_seconds=0.5,
+            random_seed=999,
+            use_gpu=False,
+        )
+        loaded.load(path)
+
+        assert loaded.kernel_bandwidth == model.kernel_bandwidth
+        assert loaded.speed_prior == model.speed_prior
+        assert loaded.use_kalman_smoothing == model.use_kalman_smoothing
+        assert loaded.behavior_prior == model.behavior_prior
+        assert loaded.bin_size == model.bin_size
+        assert loaded.val_frac == model.val_frac
+        assert loaded.speckle_block_size_seconds == model.speckle_block_size_seconds
+        assert loaded.random_seed == model.random_seed
+        assert loaded.align_mode_ == model.align_mode_
+        assert loaded.env_lims == model.env_lims
+        np.testing.assert_allclose(loaded.environment_.extent, model.environment_.extent)
+
+    def test_from_results_restores_without_manual_constructor_args(self, tmp_path, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        Y, Xb, time = demo_data["Y"][:N, :N_neurons], demo_data["Xb"][:N], demo_data["time"][:N]
+
+        model = SIMPL(kernel_bandwidth=0.03, speed_prior=0.2, bin_size=0.05, env_pad=0.0, use_gpu=False)
+        model.fit(Y=Y, Xb=Xb, time=time, n_iterations=2)
+        path = str(tmp_path / "results.nc")
+        model.save_results(path)
+
+        loaded = SIMPL.from_results(path, use_gpu=False)
+
+        assert loaded.iteration_ == model.iteration_
+        assert loaded.kernel_bandwidth == model.kernel_bandwidth
+        assert loaded.speed_prior == model.speed_prior
+        np.testing.assert_allclose(np.array(loaded.X_), np.array(model.X_))
+        np.testing.assert_allclose(np.array(loaded.F_), np.array(model.F_))
 
 
 class TestSIMPLInterpolateFiringRates:

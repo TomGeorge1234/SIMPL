@@ -11,7 +11,8 @@ Convenience utilities re-exported at the package level:
 * ``load_demo_data`` — load the bundled grid-cell demo dataset
 * ``load_results`` — reload a saved ``xr.Dataset`` from disk
 
-To load a fitted model from saved results, use ``SIMPL.load(path)``.
+To load a fitted model from saved results, use ``SIMPL.from_results(path)`` or
+``SIMPL.from_results(path, Y=Y)`` when the saved file does not include spikes.
 """
 
 import os as _os

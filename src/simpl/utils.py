@@ -889,6 +889,47 @@ def load_results(path: str) -> xr.Dataset:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def env_lims_from_extent(env_extent) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
+    """Convert a flat saved extent tuple into ``Environment.force_lims`` form."""
+    if env_extent is None:
+        return None
+    extent = np.asarray(env_extent, dtype=float).ravel()
+    if extent.size == 0:
+        return None
+    if extent.size % 2 != 0:
+        raise ValueError(f"env_extent must contain min/max pairs, got shape {extent.shape}")
+    mins = tuple(float(v) for v in extent[0::2])
+    maxs = tuple(float(v) for v in extent[1::2])
+    return mins, maxs
+
+
+def optional_float_from_attr(value) -> float | None:
+    """Convert NaN-encoded optional attrs back to Python ``None``."""
+    if value is None:
+        return None
+    value = float(value)
+    return None if np.isnan(value) else value
+
+
+def init_kwargs_from_results(results: xr.Dataset, use_gpu: bool | str | None = None) -> dict:
+    """Build ``SIMPL.__init__`` kwargs from saved dataset attrs."""
+    attrs = results.attrs
+    return {
+        "kernel_bandwidth": float(attrs["kernel_bandwidth"]),
+        "speed_prior": float(attrs["speed_prior"]),
+        "use_kalman_smoothing": bool(attrs.get("use_kalman_smoothing", 1)),
+        "behavior_prior": optional_float_from_attr(attrs.get("behavior_prior", np.nan)),
+        "is_1D_angular": bool(attrs.get("is_1D_angular", 0)),
+        "bin_size": float(attrs["bin_size"]),
+        "env_pad": float(attrs.get("env_pad", 0.0)),
+        "env_lims": env_lims_from_extent(attrs.get("env_extent")),
+        "val_frac": float(attrs["val_frac"]),
+        "speckle_block_size_seconds": float(attrs["speckle_block_size_seconds"]),
+        "random_seed": int(attrs["random_seed"]),
+        "use_gpu": bool(attrs.get("use_gpu", 0)) if use_gpu is None else use_gpu,
+    }
+
+
 def last_training_iteration(results: xr.Dataset) -> int:
     """Return the last non-negative iteration label in *results*."""
     iterations = np.asarray(results.coords["iteration"].values, dtype=int)

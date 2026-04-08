@@ -176,35 +176,7 @@ class SIMPL:
         self.is_fitted_ = False
 
         # Device setup
-        gpu_available = jax.default_backend() in ("gpu", "METAL")
-        metal_backend = jax.default_backend() == "METAL"
-        if metal_backend and is_1D_angular and use_gpu is True:
-            warnings.warn(
-                "Angular mode (is_1D_angular=True) requires FFT which is not supported "
-                "on Apple Metal GPU. Falling back to CPU.",
-                stacklevel=2,
-            )
-            self.use_gpu_ = False
-        elif metal_backend and is_1D_angular:
-            self.use_gpu_ = False
-        elif use_gpu is True:
-            if not gpu_available:
-                raise RuntimeError(
-                    "use_gpu=True but no GPU is available. "
-                    "Install a GPU-enabled JAX build or use use_gpu='if_available'."
-                )
-            self.use_gpu_ = True
-        elif use_gpu is False:
-            self.use_gpu_ = False
-        elif use_gpu == "if_available":
-            self.use_gpu_ = gpu_available
-        else:
-            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
-
-        if self.use_gpu_:
-            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
-        else:
-            self._device_str = "CPU"
+        self._configure_device(use_gpu)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
@@ -595,34 +567,60 @@ class SIMPL:
         """
         utils.save_results_to_netcdf(self.results_, path)
 
-    def load(self, path: str | os.PathLike[str]) -> "SIMPL":
-        """Load saved results from disk, restoring the model to a previously fitted state.
-
-        This method reads a netCDF file written by ``save_results()`` and uses the
-        saved ``Y``, ``Xb``, and ``time`` arrays to set up the model internally
-        (equivalent to calling ``fit(..., n_iterations=0)``), then restores the
-        fitted fields, decoded trajectory, and E/M step state from the saved
-        iterations. After loading, the model can be used for plotting, prediction,
-        or resumed training via ``fit(..., resume=True)``.
-
-        .. warning::
-
-            **The constructor hyperparameters must exactly match those used in the
-            original training run.** This method does NOT read or override
-            hyperparameters from the saved file — it trusts whatever was passed to
-            ``__init__``. If any parameter differs (``speed_prior``,
-            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``val_frac``,
-            ``random_seed``, etc.), the internal state (Kalman filter, spike mask,
-            environment grid) will be inconsistent with the saved results, leading
-            to silently incorrect behaviour on resume, predict, or further fitting.
-
-            Copy the exact ``SIMPL(...)`` constructor call from your original
-            training script.
+    @classmethod
+    def from_results(
+        cls,
+        path: str | os.PathLike[str],
+        Y: np.ndarray | None = None,
+        use_gpu: bool | str | None = None,
+    ) -> "SIMPL":
+        """Construct and restore a model directly from a saved results file.
 
         Parameters
         ----------
         path : str or PathLike
             Path to a netCDF file previously written by ``save_results()``.
+        Y : ndarray or None, optional
+            Spike-count matrix to use during setup instead of ``results["Y"]``.
+            This is useful when the saved results file does not contain ``Y``.
+        use_gpu : bool, str, or None, optional
+            Optional device override for the reconstructed model. If None, the
+            saved device preference is used.
+
+        Returns
+        -------
+        SIMPL
+            A restored model instance.
+        """
+        results = utils.load_results(os.fspath(path))
+        model = cls(**utils.init_kwargs_from_results(results, use_gpu=use_gpu))
+        return model._load_results_dataset(results, path=os.fspath(path), Y=Y, sync_hyperparameters=False)
+
+    def load(
+        self,
+        path: str | os.PathLike[str],
+        Y: np.ndarray | None = None,
+        use_gpu: bool | str | None = None,
+    ) -> "SIMPL":
+        """Load saved results from disk, restoring the model to a previously fitted state.
+
+        This method reads a netCDF file written by ``save_results()``, updates the
+        model hyperparameters from the saved attrs, rebuilds internal state from
+        the saved ``Xb``/``time`` arrays plus either the saved ``Y`` array or a
+        caller-provided ``Y``, and then restores the saved fitted fields,
+        decoded trajectory, E/M step state, alignment mode, and spike mask.
+        After loading, the model can be used for plotting, prediction, or
+        resumed training via ``fit(..., resume=True)``.
+
+        Parameters
+        ----------
+        path : str or PathLike
+            Path to a netCDF file previously written by ``save_results()``.
+        Y : ndarray or None, optional
+            Spike-count matrix to use during setup instead of ``results["Y"]``.
+            This is useful when the saved results file does not contain ``Y``.
+        use_gpu : bool, str, or None, optional
+            Optional device override. If None, the saved device preference is used.
 
         Returns
         -------
@@ -630,20 +628,45 @@ class SIMPL:
 
         Examples
         --------
-        >>> # Use the exact same constructor arguments as the original training run
-        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
+        >>> model = SIMPL()
         >>> model.load("results.nc")
+        >>> model.load("results_without_y.nc", Y=Y)
+        >>> model = SIMPL.from_results("results.nc")
         >>> model.fit(Y, Xb, time, n_iterations=5, resume=True)
         """
         results = utils.load_results(os.fspath(path))
+        return self._load_results_dataset(results, path=os.fspath(path), Y=Y, use_gpu=use_gpu)
 
-        # Run full setup from saved data (environment, Kalman filter, masks, etc.)
-        self.fit(
-            Y=results["Y"].values,
+    def _load_results_dataset(
+        self,
+        results: xr.Dataset,
+        path: str,
+        Y: np.ndarray | None = None,
+        use_gpu: bool | str | None = None,
+        sync_hyperparameters: bool = True,
+    ) -> "SIMPL":
+        """Restore model state from an already-loaded results dataset."""
+        if sync_hyperparameters:
+            self._apply_saved_hyperparameters(results, use_gpu=use_gpu)
+
+        if Y is None:
+            if "Y" not in results:
+                raise ValueError("Saved results do not contain 'Y'. Pass Y explicitly to load(..., Y=...).")
+            Y = results["Y"].values
+
+        align_mode = results.attrs.get("align_mode", "none")
+        align_to_behavior = None if align_mode == "none" else align_mode
+        spike_mask = np.asarray(results["spike_mask"].values, dtype=bool) if "spike_mask" in results else None
+        self.save_full_history_ = bool(results.attrs.get("save_full_history", 0))
+
+        # Rebuild setup from saved data and configuration.
+        self._init_from_data(
+            Y=np.asarray(Y),
             Xb=results["Xb"].values,
             time=np.asarray(results.coords["time"].values, dtype=float),
-            n_iterations=0,
             trial_boundaries=np.atleast_1d(np.asarray(results.attrs.get("trial_boundaries", [0]), dtype=int)),
+            align_to_behavior=align_to_behavior,
+            spike_mask=spike_mask,
         )
         device = self._jax_device()
 
@@ -667,6 +690,7 @@ class SIMPL:
         if "FX_first_iteration" in results:
             self.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
 
+        self.is_fitted_ = True
         print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
         return self
 
@@ -1240,7 +1264,7 @@ class SIMPL:
     # Initialisation
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior) -> None:
+    def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior, spike_mask=None) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
         time = np.asarray(time, dtype=float)
@@ -1354,7 +1378,7 @@ class SIMPL:
             )
 
         # ── Set up Kalman filter, masks, alignment, coordinates ──
-        self._init_infrastructure(trial_boundaries, align_to_behavior)
+        self._init_infrastructure(trial_boundaries, align_to_behavior, spike_mask=spike_mask)
 
         # ── Initialise empty results datasets ──
         self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
@@ -1603,11 +1627,63 @@ class SIMPL:
             return jax.devices("METAL")[0]
         return jax.devices("gpu")[0]
 
+    def _configure_device(self, use_gpu: bool | str) -> None:
+        """Update device preference and cached display string."""
+        gpu_available = jax.default_backend() in ("gpu", "METAL")
+        metal_backend = jax.default_backend() == "METAL"
+        if metal_backend and self.is_1D_angular and use_gpu is True:
+            warnings.warn(
+                "Angular mode (is_1D_angular=True) requires FFT which is not supported "
+                "on Apple Metal GPU. Falling back to CPU.",
+                stacklevel=2,
+            )
+            self.use_gpu_ = False
+        elif metal_backend and self.is_1D_angular:
+            self.use_gpu_ = False
+        elif use_gpu is True:
+            if not gpu_available:
+                raise RuntimeError(
+                    "use_gpu=True but no GPU is available. "
+                    "Install a GPU-enabled JAX build or use use_gpu='if_available'."
+                )
+            self.use_gpu_ = True
+        elif use_gpu is False:
+            self.use_gpu_ = False
+        elif use_gpu == "if_available":
+            self.use_gpu_ = gpu_available
+        else:
+            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
+
+        if self.use_gpu_:
+            self._device_str = f"GPU ({self._jax_gpu_device().device_kind})"
+        else:
+            self._device_str = "CPU"
+
     def _jax_device(self):
         """Return the JAX device to place arrays on."""
         if self.use_gpu_:
             return self._jax_gpu_device()
         return jax.devices("cpu")[0]
+
+    def _apply_saved_hyperparameters(self, results: xr.Dataset, use_gpu: bool | str | None = None) -> None:
+        """Overwrite constructor-style config from saved dataset attrs."""
+        kwargs = utils.init_kwargs_from_results(results, use_gpu=use_gpu)
+        for name in (
+            "kernel_bandwidth",
+            "speed_prior",
+            "use_kalman_smoothing",
+            "behavior_prior",
+            "is_1D_angular",
+            "bin_size",
+            "env_pad",
+            "env_lims",
+            "val_frac",
+            "speckle_block_size_seconds",
+            "random_seed",
+        ):
+            setattr(self, name, kwargs[name])
+        self._environment_override = None
+        self._configure_device(kwargs["use_gpu"])
 
     def _interpolate_firing_rates(self, X: jax.Array, F: jax.Array) -> jax.Array:
         """Predict firing rates at arbitrary positions by interpolating the discretised fields.
