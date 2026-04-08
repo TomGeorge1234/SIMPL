@@ -6,7 +6,7 @@
 [![Paper](https://img.shields.io/badge/paper-ICLR%202025-blue)](https://openreview.net/pdf?id=9kFaNwX6rv)
 <!-- [![PyPI Downloads](https://img.shields.io/pepy/dt/simpl-neuro)](https://pepy.tech/projects/simpl-neuro) -->
 
-**SIMPL** is a Python package for decoding latent neural representations from spike data using an EM algorithm that alternates between Kalman filtering and kernel density estimation. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
+**SIMPL** is a JAX-based Python package for jointly decoding latent neural representations and optimising tuning curves from spike data. It uses an EM algorithm alternating between Kalman-smoothed decoding and kernel density estimation. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
 
 [**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
 
@@ -17,7 +17,7 @@
 ## ✨ Key Features
 
 - ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
-- 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Get started in <10 lines of code.
+- 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Minimal intuitive hyperparameters. Get started in <10 lines of code.
 - 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions.
 - 📊 **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
 - 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
@@ -25,7 +25,7 @@
 <p align="center">
   <img src="assets/simpl_demo.gif" width=350>
   <br>
-  <em>Neural data analysis in <5 seconds (your mileage may vary)</em>
+  <em> Neural data analysis in <5 seconds </em>
 </p>
 
 <!-- docs-intro-start -->
