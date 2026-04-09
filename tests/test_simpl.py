@@ -823,9 +823,8 @@ class TestSetupDevice:
 
         if jax.default_backend() != "cpu":
             pytest.skip("Test only meaningful on CPU-only machines")
-        model = SIMPL(use_gpu=True)
         with pytest.raises(RuntimeError, match="no GPU is available"):
-            model._setup_device(use_gpu=True)
+            SIMPL(use_gpu=True)
 
     def test_invalid_use_gpu_raises(self):
         model = SIMPL()
@@ -838,7 +837,7 @@ class TestSetupDevice:
 
         if jax.default_backend() != "METAL":
             pytest.skip("Test only meaningful on Apple Metal")
-        model = SIMPL(is_1D_angular=True, use_gpu=True)
+        model = SIMPL(is_1D_angular=True, use_gpu=False)
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             model._setup_device(use_gpu=True)

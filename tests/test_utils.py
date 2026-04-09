@@ -632,7 +632,6 @@ class TestLoadDemoDataForceDownload:
             nonlocal download_attempted
             download_attempted = True
             # Return a fake response with a valid releases JSON
-            import io
 
             class FakeResp:
                 def read(self):
