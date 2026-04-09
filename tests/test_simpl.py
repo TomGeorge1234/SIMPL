@@ -797,3 +797,49 @@ class TestSIMPLConvenienceAttrs:
 
         assert np.allclose(model.X_, X_from_results)
         assert np.allclose(model.F_, F_from_results)
+
+
+class TestSetupDevice:
+    """Tests for SIMPL._setup_device()."""
+
+    def test_use_gpu_false(self):
+        model = SIMPL(use_gpu=False)
+        model._setup_device(use_gpu=False)
+        assert model.use_gpu_ is False
+        assert model._device_str == "CPU"
+
+    def test_use_gpu_if_available_cpu(self):
+        """On a CPU-only machine, 'if_available' should resolve to False."""
+        import jax
+
+        model = SIMPL(use_gpu="if_available")
+        model._setup_device(use_gpu="if_available")
+        if jax.default_backend() == "cpu":
+            assert model.use_gpu_ is False
+        # On GPU machines this would be True — both are valid
+
+    def test_use_gpu_true_no_gpu_raises(self):
+        import jax
+
+        if jax.default_backend() != "cpu":
+            pytest.skip("Test only meaningful on CPU-only machines")
+        with pytest.raises(RuntimeError, match="no GPU is available"):
+            SIMPL(use_gpu=True)
+
+    def test_invalid_use_gpu_raises(self):
+        model = SIMPL()
+        with pytest.raises(ValueError, match="use_gpu must be"):
+            model._setup_device(use_gpu="maybe")
+
+    def test_angular_metal_falls_back_to_cpu(self):
+        """On Metal, angular mode should fall back to CPU."""
+        import jax
+
+        if jax.default_backend() != "METAL":
+            pytest.skip("Test only meaningful on Apple Metal")
+        model = SIMPL(is_1D_angular=True, use_gpu=False)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            model._setup_device(use_gpu=True)
+            assert model.use_gpu_ is False
+            assert any("Angular mode" in str(warning.message) for warning in w)

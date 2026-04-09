@@ -13,6 +13,7 @@ from simpl.utils import (
     _wrap_minuspi_pi,
     accumulate_spikes,
     analyse_place_fields,
+    calculate_mutual_information,
     calculate_spatial_information,
     cca,
     coarsen_dt,
@@ -570,3 +571,88 @@ class TestAnalysePlaceFields:
             n_bins=n_bins,
         )
         assert result["place_field_count"][0] == 0
+
+
+class TestCalculateMutualInformation:
+    def test_uniform_rate_map_zero_mi(self):
+        """A uniform firing rate should give zero mutual information."""
+        N_neurons, N_bins = 2, 50
+        dt = 0.02
+        F = jnp.ones((N_neurons, N_bins)) * 0.2  # uniform 10 Hz * dt
+        PX = jnp.ones(N_bins) / N_bins
+        mi = calculate_mutual_information(F, PX, dt)
+        assert mi.shape == (N_neurons,)
+        assert jnp.allclose(mi, 0.0, atol=1e-4)
+
+    def test_peaked_rate_map_positive_mi(self):
+        """A peaked firing rate should give positive mutual information."""
+        N_bins = 50
+        dt = 0.02
+        F = jnp.zeros((1, N_bins))
+        F = F.at[0, 25].set(2.0)  # strong peak
+        PX = jnp.ones(N_bins) / N_bins
+        mi = calculate_mutual_information(F, PX, dt)
+        assert float(mi[0]) > 0.0
+
+    def test_multiple_neurons_independent(self):
+        """Each neuron gets its own MI value."""
+        N_bins = 50
+        dt = 0.02
+        PX = jnp.ones(N_bins) / N_bins
+        F = jnp.ones((2, N_bins)) * 0.1
+        F = F.at[1, 25].set(2.0)  # neuron 1 peaked, neuron 0 uniform
+        mi = calculate_mutual_information(F, PX, dt)
+        assert float(mi[0]) < float(mi[1])
+
+    def test_mi_nonnegative(self):
+        """MI should always be non-negative."""
+        rng = np.random.default_rng(42)
+        N_bins = 30
+        dt = 0.02
+        F = jnp.array(rng.exponential(0.5, (5, N_bins)))
+        PX = jnp.ones(N_bins) / N_bins
+        mi = calculate_mutual_information(F, PX, dt)
+        assert jnp.all(mi >= -1e-6)
+
+
+class TestLoadDemoDataForceDownload:
+    def test_force_download_skips_cache(self, tmp_path, monkeypatch):
+        """force_download=True should bypass the cache and attempt download."""
+        import urllib.request
+
+        # Pre-populate cache
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        cached_file = cache_dir / "gridcells_synthetic.npz"
+        cached_file.write_bytes(b"stale")
+
+        download_attempted = False
+
+        def fake_urlopen(req, **kwargs):
+            nonlocal download_attempted
+            download_attempted = True
+            # Return a fake response with a valid releases JSON
+
+            class FakeResp:
+                def read(self):
+                    return b"[]"
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    pass
+
+            return FakeResp()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        # Patch home to use tmp_path
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+        with pytest.raises((FileNotFoundError, Exception)):
+            # Will fail because fake releases has no assets, but we just need to
+            # verify it attempted the download rather than returning cached data
+            load_demo_data("gridcells_synthetic.npz", force_download=True)
+
+        assert download_attempted

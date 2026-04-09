@@ -1,19 +1,22 @@
 # SIMPL
 
+<!-- docs-badges-start -->
 [![Tests](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml/badge.svg)](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-SIMPL-teal)](https://tomge.org/SIMPL/)
 [![Colab demo](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
 [![Paper](https://img.shields.io/badge/paper-ICLR%202025-blue)](https://openreview.net/pdf?id=9kFaNwX6rv)
 <!-- [![PyPI Downloads](https://img.shields.io/pepy/dt/simpl-neuro)](https://pepy.tech/projects/simpl-neuro) -->
+<!-- docs-badges-end -->
+[![Docs](https://img.shields.io/badge/docs-SIMPL-teal)](https://tomge.org/SIMPL/)
 
+<!-- docs-description-start -->
 **SIMPL** is a JAX-based Python package for jointly decoding latent neural representations and optimising tuning curves from spike data. It uses an EM algorithm alternating between Kalman-smoothed decoding and kernel density estimation. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
+<!-- docs-description-end -->
 
 [**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
 
-*Quick demo: the basic API and a clip of SIMPL training in real time.*
-
+<!-- docs-intro-start -->
 ## ✨ Key Features
 
 - ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
@@ -23,24 +26,27 @@
 - 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
 
 <p align="center">
-  <img src="assets/simpl_demo.gif" width=350>
+  <img src="assets/simpl_demo.gif" width=450>
   <br>
-  <em> Neural data analysis in <5 seconds </em>
+  <em> Neural data analysis in < 5 seconds </em>
 </p>
 
-<!-- docs-intro-start -->
 ## 🚀 Installation
 
-To install `simpl`:
+```bash
+pip install simpl-neuro
+```
 
-1. **Clone**: `git clone https://github.com/TomGeorge1234/SIMPL.git` and navigate to the root: `cd SIMPL`
-2. _(Recommended)_ Create a virtual environment (e.g. `python -m venv simpl_env` and `source simpl_env/bin/activate`).
-3. **Install**: `pip install .[demos]`. This will install the `simpl` package and its dependencies.
-4. **Run the demo**: `jupyter notebook examples/simpl_demo.ipynb`
+To access the demo notebook: 
+```bash
+pip install "simpl-neuro[demos]"
+simpl demo                # downloads the demo notebook into the current directory
+```
 
 <!-- docs-intro-end -->
 
 <!-- docs-usage-start -->
+<!-- docs-quickstart-start -->
 ## 🔧 API
 
 SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
@@ -75,6 +81,7 @@ model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mut
 # (optional) Resume training if not yet converged
 model.fit(Y, Xb, time, n_iterations=5, resume=True)
 ```
+<!-- docs-quickstart-end -->
 
 
 ### Prediction
@@ -193,7 +200,7 @@ SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Typic
 
 ```bash
 pip install -U "jax[cuda12]"   # NVIDIA GPU (CUDA)
-pip install .[metal]           # Apple Silicon GPU (experimental and not recommended, pins JAX to 0.4.35)
+pip install ".[metal]"           # Apple Silicon GPU (experimental and not recommended, pins JAX to 0.4.35)
 ```
 
 ```python
@@ -215,9 +222,10 @@ Y_accum = accumulate_spikes(Y, window=3)
 
 <!-- docs-usage-end -->
 
+<!-- docs-examples-start -->
 ## 📓 Examples
 
-The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
+The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
 
 1. **Synthetic grid cells** — fits SIMPL on artificial grid cell data with known ground truth, demonstrating decoded trajectories, receptive field recovery, log-likelihood improvements, and prediction on held-out data.
 2. **Real place cells** — fits SIMPL on real hippocampal place cell recordings from [Tanni et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/), where no ground truth is available.
@@ -225,6 +233,7 @@ The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks thro
 4. **Motor cortex hand reaching** — fits SIMPL on somatosensory cortex recordings from [Chowdhury et al. (2020)](https://pubmed.ncbi.nlm.nih.gov/31971510/), demonstrating higher-dimensional latent variables (2D and 4D) and model comparison across different behavioural initialisations (position vs velocity vs combined).
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
+<!-- docs-examples-end -->
 
 ## 📦 Package Structure
 
@@ -232,12 +241,11 @@ The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks thro
 src/simpl/
 ├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
 ├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
-├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
-├── environment.py     # Environment class (spatial discretisation)
-├── utils.py           # Gaussian helpers, CCA, data prep, I/O
-├── kalman.py          # KalmanFilter class + Kalman functions
 ├── kde.py             # KDE, Poisson log-likelihood, gaussian_kernel
-└── data/              # Bundled demo data
+├── kalman.py          # KalmanFilter class + Kalman functions
+├── environment.py     # Environment class (spatial discretisation)
+├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
+└── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ```
 
 ## 🧪 Development
@@ -254,6 +262,7 @@ ruff format --check src/
 pytest
 ```
 
+<!-- docs-cite-start -->
 ## 📝 Cite
 If you use SIMPL in your work, please cite it as:
 
@@ -269,3 +278,4 @@ If you use SIMPL in your work, please cite it as:
     url={https://openreview.net/forum?id=9kFaNwX6rv}
 }
 ```
+<!-- docs-cite-end -->

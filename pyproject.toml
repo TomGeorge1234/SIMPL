@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "simpl"
+name = "simpl-neuro"
 dynamic = ["version"]
 description = "SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour"
 readme = "README.md"
@@ -21,16 +21,12 @@ dependencies = [
     "netcdf4",
 ]
 
+[project.scripts]
+simpl = "simpl.cli:main"
+
 [project.optional-dependencies]
 demos = [
-    "jupyter", 
-    "ratinabox", 
-    "tqdm",
-]
-docs = [
-    "mkdocs-material",
-    "mkdocstrings[python]",
-    "mkdocs-include-markdown-plugin",
+    "jupyter",
 ]
 metal = [
     "jax==0.4.35",
@@ -44,6 +40,9 @@ dev = [
     "build",
     "twine",
     "nbstripout",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "mkdocs-include-markdown-plugin",
 ]
 
 [tool.hatch.version]
