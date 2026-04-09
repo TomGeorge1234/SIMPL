@@ -330,7 +330,7 @@ def cca(X: jax.Array, Y: jax.Array) -> tuple[np.ndarray, np.ndarray]:
     assert X.shape == Y.shape, "The predicted and true latent positions must have the same shape."
     D = X.shape[1]
 
-    cca = sklearn.cross_decomposition.CCA(n_components=D)
+    cca = sklearn.cross_decomposition.CCA(n_components=D, max_iter=2000)
     cca.fit(X, Y)
     coef = cca.coef_  # / cca._x_std # this randomly changed at some point
     intercept = cca.intercept_ - cca._x_mean @ coef.T
