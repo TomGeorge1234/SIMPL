@@ -1045,23 +1045,23 @@ def plot_all_metrics(
                 )
             # ML baseline for LL / bps panels
             # if var_name in ("bits_per_spike", "logPYXF") and "mode_l" in results and 1 in results.iteration.values:
-                # from simpl.utils import get_ML_loglikelihoods
+            # from simpl.utils import get_ML_loglikelihoods
 
-                # ml = get_ML_loglikelihoods(results)
-                # ml_key = f"{var_name}_val"
-                # if ml_key in ml:
-                #     y_ml = ml[ml_key]
-                #     ax.axhline(y_ml, color="k", ls=":", lw=0.8)
-                #     ax.text(
-                #         0.0,
-                #         y_ml,
-                #         " naive ML",
-                #         va="bottom",
-                #         ha="left",
-                #         fontsize="x-small",
-                #         color="k",
-                #         transform=ax.get_yaxis_transform(),
-                #     )
+            # ml = get_ML_loglikelihoods(results)
+            # ml_key = f"{var_name}_val"
+            # if ml_key in ml:
+            #     y_ml = ml[ml_key]
+            #     ax.axhline(y_ml, color="k", ls=":", lw=0.8)
+            #     ax.text(
+            #         0.0,
+            #         y_ml,
+            #         " naive ML",
+            #         va="bottom",
+            #         ha="left",
+            #         fontsize="x-small",
+            #         color="k",
+            #         transform=ax.get_yaxis_transform(),
+            #     )
         else:
             # per-neuron (possibly mean over place_field first)
             means = []
