@@ -146,10 +146,12 @@ class TestPoissonLogLikelihood:
         assert result.shape == (3, 4, 5)
 
     def test_masking_downstream(self):
-        np.random.seed(42)
         T, N_neurons = 50, 5
-        spikes = jnp.array(np.random.randint(0, 3, (T, N_neurons)))
-        rates = jnp.array(np.random.uniform(0.01, 0.5, (T, N_neurons)))
+        spikes = jnp.ones((T, N_neurons), dtype=jnp.int32) * 2
+        rates = jnp.ones((T, N_neurons)) * 0.5
         ll = poisson_log_likelihood(spikes, rates)
-        mask = jnp.ones((T, N_neurons), dtype=bool).at[:, :2].set(False)
+        mask_np = np.ones((T, N_neurons), dtype=bool)
+        mask_np[:, :2] = False
+        mask = jnp.array(mask_np)
+        # Masked columns have nonzero LL, so sums must differ
         assert not jnp.allclose(ll.sum(), (ll * mask).sum())

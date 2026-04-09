@@ -225,7 +225,7 @@ Y_accum = accumulate_spikes(Y, window=3)
 <!-- docs-examples-start -->
 ## 📓 Examples
 
-The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
+The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
 
 1. **Synthetic grid cells** — fits SIMPL on artificial grid cell data with known ground truth, demonstrating decoded trajectories, receptive field recovery, log-likelihood improvements, and prediction on held-out data.
 2. **Real place cells** — fits SIMPL on real hippocampal place cell recordings from [Tanni et al. (2022)](https://pubmed.ncbi.nlm.nih.gov/35835121/), where no ground truth is available.
@@ -241,12 +241,11 @@ The [`examples/simpl_demo.ipynb`](examples/simpl_demo.ipynb) notebook walks thro
 src/simpl/
 ├── __init__.py        # Top-level exports: SIMPL, load_datafile, ...
 ├── simpl.py           # Core SIMPL class (EM algorithm, fit/predict)
-├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
-├── environment.py     # Environment class (spatial discretisation)
-├── utils.py           # Gaussian helpers, CCA, data prep, I/O
-├── kalman.py          # KalmanFilter class + Kalman functions
 ├── kde.py             # KDE, Poisson log-likelihood, gaussian_kernel
-└── data/              # Bundled demo data
+├── kalman.py          # KalmanFilter class + Kalman functions
+├── environment.py     # Environment class (spatial discretisation)
+├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
+└── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ```
 
 ## 🧪 Development
