@@ -27,6 +27,7 @@ simpl = "simpl.cli:main"
 [project.optional-dependencies]
 demos = [
     "jupyter",
+    "ipympl",
 ]
 metal = [
     "jax==0.4.35",
