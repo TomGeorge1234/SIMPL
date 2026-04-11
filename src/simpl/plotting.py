@@ -764,6 +764,8 @@ def plot_receptive_fields(
             elif (r, c) in used_axes:
                 ax.set_xticks([])
                 ax.set_yticks([])
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
             else:
                 ax.axis("off")
 
