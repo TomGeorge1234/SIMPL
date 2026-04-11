@@ -664,7 +664,7 @@ def plot_receptive_fields(
         total_cols,
         figsize=(FIG_WIDTH / 6 * n_neuron_cols * n_cols_per_neuron, FIG_WIDTH / 6 * total_rows),
         squeeze=False,
-        gridspec_kw={"width_ratios": width_ratios},
+        gridspec_kw={"width_ratios": width_ratios, "hspace": 0.1, "wspace": 0.3},
     )
 
     # Pre-compute the starting column index for each neuron group (skipping spacers + cbars)
@@ -763,8 +763,6 @@ def plot_receptive_fields(
                 ax.set_yticks([])
             else:
                 ax.axis("off")
-
-    fig.tight_layout(h_pad=0.3, w_pad=0.3)
 
     # Match colorbar heights to their neighboring data axes (which may be shorter
     # than the grid cell due to aspect="equal").
