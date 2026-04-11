@@ -394,7 +394,8 @@ def plot_latent_trajectory(
         ``(t_start, t_end)`` in seconds.  Default: first 120 s.
     iterations : int or tuple of ints, optional
         Which iteration(s) to show.  Negative values index from the end of the
-        non-negative iterations (``-1`` = last iteration).  Default: all iterations.
+        non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
+        (behavior and final iteration).
     include_ground_truth : bool
         Show ``Xt`` as ``"k--"`` if present.
     **plot_kwargs
@@ -404,7 +405,7 @@ def plot_latent_trajectory(
     -------
     axes : np.ndarray of Axes, shape (D,)
     """
-    iterations_to_plot = _resolve_iterations(iterations, results, default=None)
+    iterations_to_plot = _resolve_iterations(iterations, results)
 
     if time_range is None:
         t0 = float(results.time.values[0])
@@ -538,6 +539,7 @@ def plot_receptive_fields(
     include_baselines: bool = False,
     sort_by_spatial_information: bool = False,
     ncols: int = 4,
+    threshold: float = 0,
     **plot_kwargs,
 ) -> np.ndarray:
     """Plot receptive fields for selected neurons.
@@ -645,7 +647,7 @@ def plot_receptive_fields(
                     vals.append(float(results.Ft.sel(neuron=n).values.max()))
                 else:
                     vals.append(float(results.F.sel(iteration=-1, neuron=n).values.max()))
-            neuron_vmax[int(n)] = max(vals) * hz_scale
+            neuron_vmax[int(n)] = max(max(vals) * hz_scale, threshold)
 
     # Width ratios: data columns are 1, cbar columns are 0.05 (2D only), spacer columns are 0.3
     cols_per_group = n_cols_per_neuron + (1 if D == 2 else 0)
@@ -703,7 +705,7 @@ def plot_receptive_fields(
 
         # Per-neuron normalization for 2D
         if D == 2:
-            imkw_n = {**imkw, "vmin": 0, "vmax": neuron_vmax[int(n)]}
+            imkw_n = {**imkw, "vmin": threshold, "vmax": neuron_vmax[int(n)]}
         else:
             imkw_n = imkw
 
@@ -711,7 +713,7 @@ def plot_receptive_fields(
         for ep in iterations:
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
-            F_ep = results.F.sel(iteration=ep, neuron=n).values * hz_scale
+            F_ep = np.clip(results.F.sel(iteration=ep, neuron=n).values * hz_scale, threshold, None)
             if D == 2:
                 im = ax.imshow(F_ep.T, **imkw_n)
             else:
@@ -726,9 +728,9 @@ def plot_receptive_fields(
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
             if "Ft" in results:
-                F_base = results.Ft.sel(neuron=n).values * hz_scale
+                F_base = np.clip(results.Ft.sel(neuron=n).values * hz_scale, threshold, None)
             else:
-                F_base = results.F.sel(iteration=-1, neuron=n).values * hz_scale
+                F_base = np.clip(results.F.sel(iteration=-1, neuron=n).values * hz_scale, threshold, None)
             if D == 2:
                 im = ax.imshow(F_base.T, **imkw_n)
             else:
@@ -744,9 +746,10 @@ def plot_receptive_fields(
             cbar_axes.add((row, cbar_col))
             vmax = neuron_vmax[int(n)]
             cb = fig.colorbar(im, cax=cbar_ax)
-            cb.set_ticks([0, vmax])
+            cb.set_ticks([threshold, vmax])
             hz_label = " Hz" if dt is not None else ""
-            cb.set_ticklabels(["0", f"{vmax:.1f}{hz_label}"])
+            low_label = f"<{threshold:g}" if threshold > 0 else "0"
+            cb.set_ticklabels([low_label, f"{vmax:.1f}{hz_label}"])
             cb.ax.tick_params(labelsize=6)
 
         # label
