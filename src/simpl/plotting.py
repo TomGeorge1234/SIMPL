@@ -631,10 +631,31 @@ def plot_receptive_fields(
             **plot_kwargs,
         )
 
-    # Width ratios: data columns are 1, spacer columns are 0.3
+    # Convert from spikes-per-bin to firing rate (Hz) if dt is available
+    dt = results.attrs.get("dt", None)
+    hz_scale = (1.0 / dt) if dt is not None else 1.0
+
+    # Pre-compute per-neuron vmax (shared across iterations) for 2D plots
+    neuron_vmax = {}
+    if D == 2:
+        for n in neurons:
+            vals = [float(results.F.sel(iteration=ep, neuron=n).values.max()) for ep in iterations]
+            if has_baselines:
+                if "Ft" in results:
+                    vals.append(float(results.Ft.sel(neuron=n).values.max()))
+                else:
+                    vals.append(float(results.F.sel(iteration=-1, neuron=n).values.max()))
+            neuron_vmax[int(n)] = max(vals) * hz_scale
+
+    # Width ratios: data columns are 1, cbar columns are 0.05 (2D only), spacer columns are 0.3
+    cols_per_group = n_cols_per_neuron + (1 if D == 2 else 0)
+    total_cols = n_neuron_cols * cols_per_group + (n_neuron_cols - 1)
+
     width_ratios = []
     for g in range(n_neuron_cols):
         width_ratios.extend([1] * n_cols_per_neuron)
+        if D == 2:
+            width_ratios.append(0.05)
         if g < n_neuron_cols - 1:
             width_ratios.append(0.3)
 
@@ -646,13 +667,14 @@ def plot_receptive_fields(
         gridspec_kw={"width_ratios": width_ratios},
     )
 
-    # Pre-compute the starting column index for each neuron group (skipping spacers)
+    # Pre-compute the starting column index for each neuron group (skipping spacers + cbars)
     group_col_starts = []
     for g in range(n_neuron_cols):
-        group_col_starts.append(g * (n_cols_per_neuron + 1))
+        group_col_starts.append(g * (cols_per_group + 1))
 
     # Track which axes are used for plotting
     used_axes = set()
+    cbar_axes = set()
 
     # build extent for imshow
     if D == 2 and extent is not None:
@@ -677,16 +699,23 @@ def plot_receptive_fields(
         col_base = group_col_starts[group]
 
         col_offset = 0
+        im = None  # track last imshow for colorbar
+
+        # Per-neuron normalization for 2D
+        if D == 2:
+            imkw_n = {**imkw, "vmin": 0, "vmax": neuron_vmax[int(n)]}
+        else:
+            imkw_n = imkw
 
         # iteration columns
         for ep in iterations:
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
-            F_ep = results.F.sel(iteration=ep, neuron=n)
+            F_ep = results.F.sel(iteration=ep, neuron=n).values * hz_scale
             if D == 2:
-                ax.imshow(F_ep.values.T, **imkw)
+                im = ax.imshow(F_ep.T, **imkw_n)
             else:
-                ax.plot(results[dim_names[0]].values, F_ep.values, **plot_kwargs)
+                ax.plot(results[dim_names[0]].values, F_ep, **plot_kwargs)
             if row == 0:
                 label = f"It {ep}" if ep != 0 else "It 0 (behavior)"
                 ax.set_title(label, fontsize=8)
@@ -697,15 +726,28 @@ def plot_receptive_fields(
             ax = axes[row, col_base + col_offset]
             used_axes.add((row, col_base + col_offset))
             if "Ft" in results:
-                F_base = results.Ft.sel(neuron=n)
+                F_base = results.Ft.sel(neuron=n).values * hz_scale
             else:
-                F_base = results.F.sel(iteration=-1, neuron=n)
+                F_base = results.F.sel(iteration=-1, neuron=n).values * hz_scale
             if D == 2:
-                ax.imshow(F_base.values.T, **imkw)
+                im = ax.imshow(F_base.T, **imkw_n)
             else:
-                ax.plot(results[dim_names[0]].values, F_base.values, **plot_kwargs)
+                ax.plot(results[dim_names[0]].values, F_base, **plot_kwargs)
             if row == 0:
                 ax.set_title(baseline_label, fontsize=8)
+
+        # colorbar column for 2D
+        if D == 2 and im is not None:
+            cbar_col = col_base + n_cols_per_neuron
+            cbar_ax = axes[row, cbar_col]
+            used_axes.add((row, cbar_col))
+            cbar_axes.add((row, cbar_col))
+            vmax = neuron_vmax[int(n)]
+            cb = fig.colorbar(im, cax=cbar_ax)
+            cb.set_ticks([0, vmax])
+            hz_label = " Hz" if dt is not None else ""
+            cb.set_ticklabels(["0", f"{vmax:.1f}{hz_label}"])
+            cb.ax.tick_params(labelsize=6)
 
         # label
         axes[row, col_base].set_ylabel(f"N{n}", fontsize=7, rotation=0, labelpad=15)
@@ -714,13 +756,31 @@ def plot_receptive_fields(
     for r in range(total_rows):
         for c in range(total_cols):
             ax = axes[r, c]
-            if (r, c) in used_axes:
+            if (r, c) in cbar_axes:
+                ax.set_xticks([])
+            elif (r, c) in used_axes:
                 ax.set_xticks([])
                 ax.set_yticks([])
             else:
                 ax.axis("off")
 
-    fig.tight_layout()
+    fig.tight_layout(h_pad=0.3, w_pad=0.3)
+
+    # Match colorbar heights to their neighboring data axes (which may be shorter
+    # than the grid cell due to aspect="equal").
+    if D == 2:
+        fig.canvas.draw()
+        for idx, n in enumerate(neurons):
+            row = idx // n_neuron_cols
+            group = idx % n_neuron_cols
+            col_base = group_col_starts[group]
+            cbar_col = col_base + n_cols_per_neuron
+            data_ax = axes[row, col_base + n_cols_per_neuron - 1]
+            cbar_ax = axes[row, cbar_col]
+            data_pos = data_ax.get_position()
+            cbar_pos = cbar_ax.get_position()
+            cbar_ax.set_position([cbar_pos.x0, data_pos.y0, cbar_pos.width, data_pos.height])
+
     return axes
 
 
