@@ -433,8 +433,8 @@ class SIMPL:
         Parameters
         ----------
         iterations : list of int, optional
-            Which iterations to analyse. If None (default), analyses only the
-            final iteration.
+            Which iterations to analyse. If None (default), analyses the
+            first and last iterations.
 
         Returns
         -------
@@ -461,8 +461,10 @@ class SIMPL:
             raise ValueError("Place field analysis is only supported for 2D environments.")
 
         if iterations is None:
-            iterations = [int(self.results_.iteration.values[-1])]
+            nn = [int(e) for e in self.results_.iteration.values if e >= 0]
+            iterations = sorted(set([nn[0], nn[-1]]))
 
+        pf_datasets = []
         for iteration in iterations:
             F = self.results_["F"].sel(iteration=iteration).values
             F_jax = jnp.array(F)
@@ -480,11 +482,11 @@ class SIMPL:
             pf_ds = _dict_to_dataset(pf_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
                 {"iteration": [iteration]}
             )
-            for var in pf_ds.data_vars:
-                if var in self.results_:
-                    self.results_[var] = pf_ds[var]
-                else:
-                    self.results_[var] = pf_ds[var]
+            pf_datasets.append(pf_ds)
+
+        merged = xr.concat(pf_datasets, dim="iteration")
+        for var in merged.data_vars:
+            self.results_[var] = merged[var]
 
         return self
 
