@@ -127,8 +127,8 @@ class TestPlotReceptiveFields:
 
         # include_baselines=True should use the F.sel(iteration=-1) fallback
         axes = plot_receptive_fields(res, neurons=[0], include_baselines=True)
-        # 3 columns: Ep 0 + Ep 1 + Best
-        assert axes.shape == (1, 3)
+        # 4 columns: Ep 0 + Ep 1 + Best + colorbar
+        assert axes.shape == (1, 4)
         plt.close("all")
 
     def test_single_iteration_int(self, results):
@@ -161,15 +161,17 @@ class TestPlotReceptiveFields:
     def test_spacer_and_unused_axes_off(self, results):
         """With multiple neuron groups, spacer and trailing axes should be turned off."""
         axes = plot_receptive_fields(results, neurons=[0, 1, 2], ncols=2, iterations=1)
-        # iterations=1 → 1 col per neuron, ncols=2 → 2 neuron groups per row
-        # total cols = 2*1 + 1 spacer = 3, total rows = 2
+        # iterations=1 → 1 col per neuron + 1 cbar (2D), ncols=2 → 2 neuron groups per row
+        # total cols = 2*(1+1) + 1 spacer = 5, total rows = 2
+        # Layout: [data, cbar, spacer, data, cbar]
         import matplotlib.pyplot as plt
 
         # spacer column should be off
-        assert not axes[0, 1].axison  # spacer
-        # trailing unused axes on row 2 should be off
-        assert not axes[1, 1].axison
+        assert not axes[0, 2].axison  # spacer
+        # trailing unused axes on row 2 should be off (spacer + group 1 data + cbar)
         assert not axes[1, 2].axison
+        assert not axes[1, 3].axison
+        assert not axes[1, 4].axison
         plt.close("all")
 
 
