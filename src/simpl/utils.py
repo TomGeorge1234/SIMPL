@@ -610,8 +610,13 @@ def create_speckled_mask(
 def find_time_jumps(
     time: np.ndarray,
     threshold_multiplier: float = 2.0,
+    include_start: bool = True,
 ) -> np.ndarray:
     """Find indices where the time step jumps significantly.
+    A time bin if considered a jump if the time _before_ the bin is more than ``threshold_multiplier`` times the median
+    time step.
+
+    Example: find_time_jumps(np.array([0, 1, 2, 3, 10, 11])) --> np.array([0, 4])
 
     Parameters
     ----------
@@ -620,6 +625,8 @@ def find_time_jumps(
     threshold_multiplier : float, optional
         A time step is considered a jump if it exceeds
         ``threshold_multiplier * median(dt)``.  Default: 2.0.
+    include_start : bool, optional
+        If True, include index 0 as a jump (since the first bin follows a gap from "before" the start). Default: True.
 
     Returns
     -------
@@ -628,7 +635,10 @@ def find_time_jumps(
     """
     dt = np.diff(time)
     median_dt = np.median(dt)
-    return np.where(dt > threshold_multiplier * median_dt)[0]
+    jumps = np.where(dt > threshold_multiplier * median_dt)[0] + 1  # add 1 to get the index of the bin after the jump
+    if include_start:
+        jumps = np.insert(jumps, 0, 0)
+    return jumps
 
 
 _AVAILABLE_DEMO_DATA = [

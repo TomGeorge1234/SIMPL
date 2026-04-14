@@ -488,18 +488,32 @@ class TestFindTimeJumps:
     def test_uniform_time_no_jumps(self):
         time = np.linspace(0, 10, 1000)
         jumps = find_time_jumps(time)
+        # only the start index since there are no gaps
+        np.testing.assert_array_equal(jumps, [0])
+
+    def test_uniform_time_no_start(self):
+        time = np.linspace(0, 10, 1000)
+        jumps = find_time_jumps(time, include_start=False)
         assert len(jumps) == 0
 
     def test_single_gap(self):
         time = np.concatenate([np.arange(0, 5, 0.01), np.arange(10, 15, 0.01)])
         jumps = find_time_jumps(time)
+        # index 0 (start) and 500 (first bin after the gap)
+        assert len(jumps) == 2
+        assert jumps[0] == 0
+        assert jumps[1] == 500
+
+    def test_single_gap_no_start(self):
+        time = np.concatenate([np.arange(0, 5, 0.01), np.arange(10, 15, 0.01)])
+        jumps = find_time_jumps(time, include_start=False)
         assert len(jumps) == 1
-        assert jumps[0] == 499  # last index before the gap
+        assert jumps[0] == 500  # first bin after the gap
 
     def test_custom_threshold(self):
-        time = np.array([0.0, 1.0, 2.0, 5.0, 6.0])  # gap at index 2
+        time = np.array([0.0, 1.0, 2.0, 5.0, 6.0])  # gap at index 2->3
         jumps = find_time_jumps(time, threshold_multiplier=1.5)
-        assert 2 in jumps
+        assert 3 in jumps
 
 
 class TestCreateSpeckleMaskValidation:
