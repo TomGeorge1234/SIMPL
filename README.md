@@ -17,7 +17,7 @@
 <img src="assets/simpl.gif" width=850>
 
 <!-- docs-intro-start -->
-## ✨ Key Features
+## Key Features
 
 - ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
 - 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Minimal intuitive hyperparameters. Get started in <10 lines of code.
@@ -31,7 +31,7 @@
   <em> Neural data analysis in < 5 seconds </em>
 </p>
 
-## 🚀 Installation
+## Installation
 
 ```bash
 pip install simpl-neuro
@@ -47,7 +47,7 @@ simpl demo                # downloads the demo notebook into the current directo
 
 <!-- docs-usage-start -->
 <!-- docs-quickstart-start -->
-## 🔧 API
+## API
 
 SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
 
@@ -223,7 +223,7 @@ Y_accum = accumulate_spikes(Y, window=3)
 <!-- docs-usage-end -->
 
 <!-- docs-examples-start -->
-## 📓 Examples
+## Examples
 
 The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
 
@@ -235,7 +235,7 @@ The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/ma
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
 <!-- docs-examples-end -->
 
-## 📦 Package Structure
+## Package Structure
 
 ```
 src/simpl/
@@ -248,7 +248,7 @@ src/simpl/
 └── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ```
 
-## 🧪 Development
+## Development
 
 ```bash
 # Install for development
@@ -263,7 +263,7 @@ pytest
 ```
 
 <!-- docs-cite-start -->
-## 📝 Cite
+## Cite
 If you use SIMPL in your work, please cite it as:
 
 > Tom George, Pierre Glaser, Kim Stachenfeld, Caswell Barry, & Claudia Clopath (2025). SIMPL: Scalable and hassle-free optimisation of neural representations from behaviour. In The Thirteenth International Conference on Learning Representations.
