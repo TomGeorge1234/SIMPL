@@ -1003,11 +1003,12 @@ def plot_spikes(
 
 
 def plot_metric(
-        results: xr.Dataset,
-        var_name: str,
-        show_neurons: bool = True,
-        ax=None,
-        **plot_kwargs,):
+    results: xr.Dataset,
+    var_name: str,
+    show_neurons: bool = True,
+    ax=None,
+    **plot_kwargs,
+):
     if ax is None:
         fig, ax = plt.subplots(figsize=(FIG_WIDTH * 0.35, FIG_WIDTH * 0.35), layout="constrained")
 
