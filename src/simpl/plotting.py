@@ -1019,6 +1019,8 @@ def plot_metric(
     other_dims = [d for d in da.dims if d != "iteration"]
     attrs = da.attrs
     ylabel = attrs.get("axis_title", attrs.get("axis title", var_name))
+    if ylabel.endswith(" (train)"):
+        ylabel = ylabel[:-8]
 
     is_scalar = len(other_dims) == 0
     has_place_field = "place_field" in other_dims
