@@ -3,6 +3,7 @@
 import matplotlib
 import numpy as np
 import pytest
+import xarray as xr
 
 matplotlib.use("Agg")  # non-interactive backend for CI
 
@@ -10,6 +11,7 @@ from simpl.plotting import (
     plot_all_metrics,
     plot_fitting_summary,
     plot_latent_trajectory,
+    plot_metric,
     plot_prediction,
     plot_receptive_fields,
     plot_spikes,
@@ -37,6 +39,49 @@ def fitted_model(demo_data):
 @pytest.fixture(scope="module")
 def results(fitted_model):
     return fitted_model.results_
+
+
+@pytest.fixture
+def metric_results():
+    """Small results Dataset with scalar, per-neuron, and place-field metrics."""
+    iterations = np.array([-1, 0, 1])
+    return xr.Dataset(
+        data_vars={
+            "scalar_metric": (
+                ("iteration",),
+                np.array([0.5, 1.0, 2.0]),
+                {"axis_title": "Scalar metric"},
+            ),
+            "scalar_metric_val": (
+                ("iteration",),
+                np.array([np.nan, 0.8, 1.7]),
+                {"axis_title": "Scalar metric validation"},
+            ),
+            "neuron_metric": (
+                ("iteration", "neuron"),
+                np.array([[np.nan, np.nan], [1.0, 3.0], [2.0, 4.0]]),
+                {"axis title": "Neuron metric"},
+            ),
+            "place_field_metric": (
+                ("iteration", "neuron", "place_field"),
+                np.array(
+                    [
+                        [[np.nan, np.nan], [np.nan, np.nan]],
+                        [[1.0, 3.0], [5.0, 7.0]],
+                        [[2.0, 4.0], [6.0, 8.0]],
+                    ]
+                ),
+                {"axis_title": "Place field metric"},
+            ),
+            "not_a_metric": (("iteration", "time"), np.ones((3, 2))),
+        },
+        coords={
+            "iteration": iterations,
+            "neuron": [0, 1],
+            "place_field": [0, 1],
+            "time": [0, 1],
+        },
+    )
 
 
 # ── Standalone function tests ─────────────────────────────────────────────────
@@ -183,11 +228,74 @@ class TestPlotAllMetrics:
 
         plt.close("all")
 
+    def test_wrapper_delegates_to_plot_metric(self, metric_results, monkeypatch):
+        calls = []
+
+        def fake_plot_metric(results, var_name, show_neurons=True, ax=None, **plot_kwargs):
+            calls.append((results, var_name, show_neurons, ax, plot_kwargs))
+            ax.set(xlabel="Iteration", ylabel=var_name)
+            return ax
+
+        monkeypatch.setattr("simpl.plotting.plot_metric", fake_plot_metric)
+
+        axes = plot_all_metrics(metric_results, show_neurons=False, ncols=2, alpha=0.3)
+
+        assert axes.shape == (2, 2)
+        assert [call[1] for call in calls] == ["scalar_metric", "neuron_metric", "place_field_metric"]
+        assert all(call[0] is metric_results for call in calls)
+        assert all(call[2] is False for call in calls)
+        assert [call[3] for call in calls] == list(axes.flat[:3])
+        assert all(call[4] == {"alpha": 0.3} for call in calls)
+        assert not axes.flat[3].get_visible()
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
     def test_show_neurons_false(self, results):
         axes = plot_all_metrics(results, show_neurons=False)
         assert axes.size > 0
         import matplotlib.pyplot as plt
 
+        plt.close("all")
+
+
+class TestPlotMetric:
+    def test_scalar_metric_returns_axis_and_plots_validation(self, metric_results):
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        returned = plot_metric(metric_results, "scalar_metric", ax=ax)
+
+        assert returned is ax
+        assert ax.get_xlabel() == "Iteration"
+        assert ax.get_ylabel() == "Scalar metric"
+        assert len(ax.collections) == 4  # train + validation scatter for two iterations
+        assert any(line.get_linestyle() == "--" for line in ax.lines)
+        plt.close("all")
+
+    def test_per_neuron_metric_can_hide_individual_neurons(self, metric_results):
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        returned = plot_metric(metric_results, "neuron_metric", show_neurons=False, ax=ax)
+
+        assert returned is ax
+        assert ax.get_ylabel() == "Neuron metric"
+        assert len(ax.collections) == 2  # one mean marker per plotted iteration
+        np.testing.assert_allclose(ax.collections[0].get_offsets()[0], [0.0, 2.0])
+        np.testing.assert_allclose(ax.collections[1].get_offsets()[0], [1.0, 3.0])
+        plt.close("all")
+
+    def test_place_field_metric_averages_place_fields_before_neurons(self, metric_results):
+        import matplotlib.pyplot as plt
+
+        _, ax = plt.subplots()
+        returned = plot_metric(metric_results, "place_field_metric", show_neurons=False, ax=ax)
+
+        assert returned is ax
+        assert ax.get_ylabel() == "Place field metric"
+        np.testing.assert_allclose(ax.collections[0].get_offsets()[0], [0.0, 4.0])
+        np.testing.assert_allclose(ax.collections[1].get_offsets()[0], [1.0, 5.0])
         plt.close("all")
 
 
