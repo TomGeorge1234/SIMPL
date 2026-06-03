@@ -48,6 +48,7 @@ class SIMPL:
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
+        compute_stability: bool = False,
         # Device
         use_gpu: bool | str = "if_available",
     ) -> None:
@@ -141,6 +142,13 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
+        compute_stability : bool, optional
+            Whether to compute the split-half ``stability`` metric (correlation between
+            receptive fields fitted on odd- vs even-minute data). This requires fitting two
+            extra sets of receptive fields per iteration and materialising two additional
+            ``(T, N_neurons)`` boolean masks, so it is disabled by default to save time and
+            memory on large datasets. When False, the ``stability`` metric is absent from
+            ``results_``. By default False.
         use_gpu : bool or str, optional
             Controls GPU usage. ``True`` forces GPU and raises an error if none is
             available. ``False`` forces CPU even when a GPU is present.
@@ -171,6 +179,7 @@ class SIMPL:
         self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
+        self.compute_stability = compute_stability
 
         # Fitted flag
         self.is_fitted_ = False
@@ -943,12 +952,19 @@ class SIMPL:
             )
 
         self._substatus("E✓·M  tuning curves")
-        stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
-        all_F, all_PX = vmap(kde_func)(stacked_masks)
-        F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-        PX = all_PX[0]
+        if self.compute_stability:
+            # Fit fields on the train mask plus the odd/even-minute splits in one vmap.
+            stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
+            all_F, all_PX = vmap(kde_func)(stacked_masks)
+            F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
+            PX = all_PX[0]
+        else:
+            F, PX = kde_func(self.spike_mask_)
         FX = self._interpolate_firing_rates(X, F)
-        M = {"F": F, "F_odd_minutes": F_odd_minutes, "F_even_minutes": F_even_minutes, "FX": FX, "PX": PX}
+        M = {"F": F, "FX": FX, "PX": PX}
+        if self.compute_stability:
+            M["F_odd_minutes"] = F_odd_minutes
+            M["F_even_minutes"] = F_even_minutes
         return M
 
     def _decode(
@@ -1120,8 +1136,8 @@ class SIMPL:
             F=self.M_["F"],
             Y=self.Y_,
             FX=self.M_["FX"],
-            F_odd_mins=self.M_["F_odd_minutes"],
-            F_even_mins=self.M_["F_even_minutes"],
+            F_odd_mins=self.M_.get("F_odd_minutes"),
+            F_even_mins=self.M_.get("F_even_minutes"),
             X_prev=self.lastX_,
             F_prev=self.lastF_,
             Xt=self.Xt_,
@@ -1402,8 +1418,14 @@ class SIMPL:
                     "Adjust val_frac or speckle_block_size_seconds."
                 )
 
-        self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
-        self.even_minute_mask_ = ~self.odd_minute_mask_
+        # Odd/even-minute masks are only needed for the split-half stability metric.
+        if self.compute_stability:
+            odd = (self.time_ // 60 % 2 == 0)[:, None]
+            self.odd_minute_mask_ = jnp.broadcast_to(odd, (self.T_, self.N_neurons_))
+            self.even_minute_mask_ = ~self.odd_minute_mask_
+        else:
+            self.odd_minute_mask_ = None
+            self.even_minute_mask_ = None
 
         if align_to_behavior is True:
             align_to_behavior = "trajectory"
@@ -1817,6 +1839,7 @@ class SIMPL:
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),
             "random_seed": self.random_seed,
+            "compute_stability": int(self.compute_stability),
             "use_gpu": int(self.use_gpu_),
         }
 
