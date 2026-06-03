@@ -557,7 +557,6 @@ def create_speckled_mask(
     random_seed: int = 0,
 ) -> jax.Array:
     """
-    TODO : Rewrite this in JAX
     Creates a boolean mask of size `size`. This mask is all True except along each column randomly
     there are contiguous blocks of False of length `block_size`. Overall ~`sparsity`
     of the mask is False. For example, if sparsity is 0.3, block size is 3 and size is
@@ -579,8 +578,19 @@ def create_speckled_mask(
 
     Returns
     -------
-    mask : np.ndarray
-        A boolean mask with the specified properties.
+    mask : jax.Array
+        A boolean mask with the specified properties, built on the default JAX device.
+
+    Notes
+    -----
+    Each column's False blocks are laid down vectorised, without a per-element Python loop:
+    for a chunk of columns, +1/-1 markers are scattered at every block's start/end into a
+    delta array, and a cumulative sum along time recovers the per-bin "inside a block"
+    count (``> 0`` ⇒ held out). Overlapping blocks within a column are handled naturally
+    by the running count. Columns are processed in chunks sized by ``MAX_BATCH_ELEMENTS``
+    so the transient integer delta array stays bounded, and each chunk is written into a
+    single pre-allocated boolean array; the result is moved to the default JAX device in
+    one (zero-copy, on CPU) ``device_put``.
     """
     if len(size) != 2 or size[0] <= 0 or size[1] <= 0:
         raise ValueError(f"size must be a pair of positive integers, got {size}")
@@ -595,16 +605,31 @@ def create_speckled_mask(
             f"block_size must be smaller than the time dimension so the mask leaves training data, got {block_size}"
         )
 
-    mask = np.ones(size, dtype=bool)
-    num_blocks_per_row = int(sparsity * size[0] / block_size)
-    np.random.seed(random_seed)
-    for row in range(size[1]):
-        for block in range(num_blocks_per_row):
-            # Randomly choose starting positions within the bounds
-            start_idx = np.random.randint(0, size[0] - block_size)
-            end_idx = min(start_idx + block_size, size[0])
-            mask[start_idx:end_idx, row] = False
-    return jnp.array(mask)
+    from simpl import MAX_BATCH_ELEMENTS
+
+    T, N = size
+    num_blocks_per_row = int(sparsity * T / block_size)
+    if num_blocks_per_row == 0:
+        return jnp.ones(size, dtype=bool)
+
+    # One random start index per (column, block); start in [0, T - block_size) so each
+    # block of length block_size fits within the time axis.
+    starts = random.randint(random.PRNGKey(random_seed), (N, num_blocks_per_row), 0, T - block_size)
+
+    # Process columns in chunks so the transient integer delta array stays bounded. Each
+    # chunk is written straight into one pre-allocated boolean array (no host+device
+    # boolean duplication); a single device_put moves the result to the JAX device.
+    col_chunk = max(1, min(N, MAX_BATCH_ELEMENTS // (T + 1)))
+    mask = np.empty((T, N), dtype=bool)
+    for c0 in range(0, N, col_chunk):
+        s = starts[c0 : c0 + col_chunk]  # (c, num_blocks)
+        c = s.shape[0]
+        col_ix = jnp.broadcast_to(jnp.arange(c)[:, None], (c, num_blocks_per_row))
+        # +1 at each block start, -1 one past each block end; cumsum gives the per-bin
+        # count of overlapping held-out blocks.
+        delta = jnp.zeros((T + 1, c), dtype=jnp.int32).at[s, col_ix].add(1).at[s + block_size, col_ix].add(-1)
+        mask[:, c0 : c0 + c] = np.asarray(jnp.cumsum(delta[:-1], axis=0) <= 0)
+    return jax.device_put(mask)
 
 
 def find_time_jumps(

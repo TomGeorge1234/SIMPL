@@ -48,6 +48,7 @@ class SIMPL:
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
+        compute_stability: bool = False,
         # Device
         use_gpu: bool | str = "if_available",
     ) -> None:
@@ -141,6 +142,13 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
+        compute_stability : bool, optional
+            Whether to compute the split-half ``stability`` metric (correlation between
+            receptive fields fitted on odd- vs even-minute data). This requires fitting two
+            extra sets of receptive fields per iteration and materialising two additional
+            ``(T, N_neurons)`` boolean masks, so it is disabled by default to save time and
+            memory on large datasets. When False, the ``stability`` metric is absent from
+            ``results_``. By default False.
         use_gpu : bool or str, optional
             Controls GPU usage. ``True`` forces GPU and raises an error if none is
             available. ``False`` forces CPU even when a GPU is present.
@@ -171,6 +179,7 @@ class SIMPL:
         self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
+        self.compute_stability = compute_stability
 
         # Fitted flag
         self.is_fitted_ = False
@@ -943,12 +952,19 @@ class SIMPL:
             )
 
         self._substatus("E✓·M  tuning curves")
-        stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
-        all_F, all_PX = vmap(kde_func)(stacked_masks)
-        F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-        PX = all_PX[0]
+        if self.compute_stability:
+            # Fit fields on the train mask plus the odd/even-minute splits in one vmap.
+            stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
+            all_F, all_PX = vmap(kde_func)(stacked_masks)
+            F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
+            PX = all_PX[0]
+        else:
+            F, PX = kde_func(self.spike_mask_)
         FX = self._interpolate_firing_rates(X, F)
-        M = {"F": F, "F_odd_minutes": F_odd_minutes, "F_even_minutes": F_even_minutes, "FX": FX, "PX": PX}
+        M = {"F": F, "FX": FX, "PX": PX}
+        if self.compute_stability:
+            M["F_odd_minutes"] = F_odd_minutes
+            M["F_even_minutes"] = F_even_minutes
         return M
 
     def _decode(
@@ -1089,8 +1105,11 @@ class SIMPL:
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
         # ── Evaluate and save results ──
-        self._evaluate_iteration()
+        # Compute the streamed train/val log-likelihood scalars once and reuse them for both
+        # the loglikelihoods_ table and the per-iteration results dataset (avoids a second
+        # full O(T·N) metrics pass).
         ll_data = kde.get_ll_and_bps_splits(self.Y_, self.M_["FX"], self.spike_mask_)
+        self._evaluate_iteration(ll_data)
         loglikelihoods = _dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [self.iteration_]}
         )
@@ -1108,27 +1127,34 @@ class SIMPL:
         self.X_ = self.E_["X"]
         self.F_ = self.M_["F"].reshape(self.N_neurons_, *self.xF_shape_)
 
-    def _evaluate_iteration(self) -> None:
+    def _evaluate_iteration(self, ll_data: dict) -> None:
         """Evaluate the current iteration's metrics and append to the results Dataset.
 
         Computes log-likelihoods, spatial information, stability, place field analysis,
         and (if ground truth is available) R², trajectory error, and field error. The
         results are stored under the current iteration in ``self.results_``.
+
+        Parameters
+        ----------
+        ll_data : dict
+            Pre-computed train/val log-likelihood scalars (``logPYXF``, ``bits_per_spike``,
+            …) from ``kde.get_ll_and_bps_splits``. Passed in (rather than recomputed here
+            from the full ``(T, N)`` ``FX``) so the streamed log-likelihood pass runs once.
         """
         evals = self._get_metrics(
             X=self.E_["X"],
             F=self.M_["F"],
-            Y=self.Y_,
-            FX=self.M_["FX"],
-            F_odd_mins=self.M_["F_odd_minutes"],
-            F_even_mins=self.M_["F_even_minutes"],
+            Y=None,  # log-likelihoods are supplied via ll_data; skip the recompute in _get_metrics
+            FX=None,
+            F_odd_mins=self.M_.get("F_odd_minutes"),
+            F_even_mins=self.M_.get("F_even_minutes"),
             X_prev=self.lastX_,
             F_prev=self.lastF_,
             Xt=self.Xt_,
             Ft=self.Ft_,
             PX=self.M_["PX"],
         )
-        iteration_data = {**self.M_, **self.E_, **evals}
+        iteration_data = {**self.M_, **self.E_, **evals, **ll_data}
         if not self.save_full_history_:
             iteration_data.pop("FX", None)
         iteration_data.pop("logPYXF_maps", None)
@@ -1200,8 +1226,9 @@ class SIMPL:
 
             # Warnings
             mi_rate = float(np.array(self.results_.mutual_information.sel(iteration=0)).sum())
-            active_per_bin = (np.array(self.Y_) > 0).sum(axis=1)
-            frac_2plus = float(np.mean(active_per_bin >= 2))
+            # Compute on-device to avoid copying the full (T, N) matrix back to host.
+            active_per_bin = (self.Y_ > 0).sum(axis=1)
+            frac_2plus = float(jnp.mean(active_per_bin >= 2))
             if frac_2plus < 0.05:
                 print("  ⚠ fewer than 5% of time bins have 2+ active neurons. Try coarsen_dt() or add more neurons.")
             if mi_rate < 1.0:
@@ -1307,7 +1334,9 @@ class SIMPL:
         # ── Convert data to JAX arrays (on the chosen device) ──
         neurons = np.arange(self.N_neurons_)
         device = self._jax_device()
-        self.Y_ = jax.device_put(jnp.array(Y), device)
+        # device_put a float32 view directly: np.asarray is a no-op when Y is already
+        # float32, avoiding an extra full (T, N) host copy from jnp.array(Y).
+        self.Y_ = jax.device_put(np.asarray(Y, dtype=np.float32), device)
         self.Xb_ = jax.device_put(jnp.array(Xb), device)
         self.time_ = jax.device_put(jnp.array(time), device)
         self.neuron_ = jax.device_put(jnp.array(neurons), device)
@@ -1392,15 +1421,21 @@ class SIMPL:
                 block_size=self.block_size_,
                 random_seed=self.random_seed,
             )
-            n_train = int(np.asarray(self.spike_mask_).sum())
+            n_train = int(jnp.sum(self.spike_mask_))
             if n_train == 0:
                 raise ValueError(
                     "The held-out mask produced an empty train split (no spikes are used for fitting). "
                     "Adjust val_frac or speckle_block_size_seconds."
                 )
 
-        self.odd_minute_mask_ = jnp.stack([jnp.array(self.time_ // 60 % 2 == 0)] * self.N_neurons_, axis=1)
-        self.even_minute_mask_ = ~self.odd_minute_mask_
+        # Odd/even-minute masks are only needed for the split-half stability metric.
+        if self.compute_stability:
+            odd = (self.time_ // 60 % 2 == 0)[:, None]
+            self.odd_minute_mask_ = jnp.broadcast_to(odd, (self.T_, self.N_neurons_))
+            self.even_minute_mask_ = ~self.odd_minute_mask_
+        else:
+            self.odd_minute_mask_ = None
+            self.even_minute_mask_ = None
 
         if align_to_behavior is True:
             align_to_behavior = "trajectory"
@@ -1510,7 +1545,7 @@ class SIMPL:
         env = self.environment_
         duration = float(self.time_[-1] - self.time_[0]) + self.dt_
         grid_str = "x".join(str(s) for s in env.discrete_env_shape)
-        total_spikes = int(np.array(self.Y_).sum())
+        total_spikes = int(jnp.sum(self.Y_))
         spike_str = (
             f"{total_spikes / 1_000_000:.1f}M"
             if total_spikes >= 1_000_000
@@ -1519,7 +1554,7 @@ class SIMPL:
             else str(total_spikes)
         )
         mean_fr = total_spikes / duration / self.N_neurons_
-        empty_frac = float(np.mean(np.array(self.Y_).sum(axis=1) == 0)) * 100
+        empty_frac = float(jnp.mean(jnp.sum(self.Y_, axis=1) == 0)) * 100
         n_trials = len(self.trial_boundaries_)
         line1 = [
             f"{self.N_neurons_} neurons",
@@ -1814,6 +1849,7 @@ class SIMPL:
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),
             "random_seed": self.random_seed,
+            "compute_stability": int(self.compute_stability),
             "use_gpu": int(self.use_gpu_),
         }
 
