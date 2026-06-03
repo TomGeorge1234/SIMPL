@@ -275,8 +275,17 @@ def get_ll_and_bps_splits(
     Y: jax.Array,
     FX: jax.Array,
     mask: jax.Array,
+    batch_size: int | None = None,
 ) -> dict:
     """Compute train/val log-likelihoods and bits-per-spike from spikes and predicted rates.
+
+    The whole computation reduces to four scalars, so it is streamed over the time axis in
+    a single batched pass: each batch contributes running sums (accumulated via ``tree.map``)
+    and the full ``(T, N_neurons)`` per-bin log-likelihood / ``~mask`` temporaries are never
+    materialised at once, keeping peak memory at ``O(batch_size * N_neurons)`` rather than
+    ``O(T * N_neurons)``. The constant-rate baseline log-likelihood has a closed form in the
+    per-neuron train/val spike sums, bin counts and log-factorial sums, so it needs no second
+    pass: ``Σ_t mask·[Y·log(μ+ε) − μ − log Y!] = log(μ+ε)·Σ(Y) − μ·Σ(mask) − Σ(log Y!)``.
 
     Parameters
     ----------
@@ -286,31 +295,57 @@ def get_ll_and_bps_splits(
         Predicted firing rates (expected spikes per time bin).
     mask : jax.Array, shape (T, N_neurons)
         Boolean training mask. True = train, False = validation.
+    batch_size : int or None
+        Number of time bins per batch. If None (default), chosen from
+        ``MAX_BATCH_ELEMENTS`` to target a small peak working set.
 
     Returns
     -------
     dict
         Keys: ``logPYXF``, ``logPYXF_val``, ``bits_per_spike``, ``bits_per_spike_val``.
     """
-    val_mask = ~mask
-    ll = poisson_log_likelihood(Y, FX)
+    T, N = Y.shape
+    if batch_size is None:
+        from simpl import MAX_BATCH_ELEMENTS
 
-    ll_train = (ll * mask).sum()
-    ll_val = (ll * val_mask).sum()
+        batch_size = max(256, MAX_BATCH_ELEMENTS // max(N, 1))
+    batch_size = min(batch_size, T)
 
-    mean_FX = (Y * mask).sum(axis=0, keepdims=True) / mask.sum(axis=0, keepdims=True)
-    mean_FX = jnp.broadcast_to(mean_FX, FX.shape)
-    ll_baseline = poisson_log_likelihood(Y, mean_FX)
+    @jax.jit
+    def _batch_sums(Y_b, FX_b, mask_b):
+        """Per-batch partial sums for both splits (suffix 0 = train, 1 = val)."""
+        log_fact = _log_factorial_stirling(Y_b)
+        ll = poisson_log_likelihood(Y_b, FX_b)  # model per-bin log-likelihood
+        out = {}
+        for s, m in (("0", mask_b), ("1", ~mask_b)):
+            out[f"ll{s}"] = (ll * m).sum()  # scalar model log-likelihood
+            out[f"spikes{s}"] = (Y_b * m).sum(axis=0)  # (N,) spike sum per neuron
+            out[f"bins{s}"] = m.sum(axis=0)  # (N,) bin count per neuron
+            out[f"logfact{s}"] = (log_fact * m).sum(axis=0)  # (N,) Σ log Y! per neuron
+        return out
+
+    def _sums(start):
+        end = min(start + batch_size, T)
+        return _batch_sums(Y[start:end], FX[start:end], mask[start:end])
+
+    acc = _sums(0)  # initialise with the first batch, then accumulate the rest
+    for start in range(batch_size, T, batch_size):
+        acc = jax.tree.map(jnp.add, acc, _sums(start))
+
+    def _bps(split):
+        """Bits-per-spike for one split from its accumulated per-neuron sums."""
+        spikes, bins, logfact = acc[f"spikes{split}"], acc[f"bins{split}"], acc[f"logfact{split}"]
+        mu = acc["spikes0"] / acc["bins0"]  # baseline rate = train mean (used for both splits)
+        ll_base = jnp.sum(jnp.log(mu + 1e-3) * spikes - mu * bins - logfact)
+        n_spikes = spikes.sum()
+        return jnp.where(n_spikes > 0, (acc[f"ll{split}"] - ll_base) / (n_spikes * jnp.log(2.0)), 0.0)
 
     LLs = {
-        "logPYXF": ll_train / mask.sum(),
-        "logPYXF_val": ll_val / val_mask.sum(),
+        "logPYXF": acc["ll0"] / acc["bins0"].sum(),
+        "logPYXF_val": acc["ll1"] / acc["bins1"].sum(),
+        "bits_per_spike": _bps("0"),
+        "bits_per_spike_val": _bps("1"),
     }
-    for m, suffix, ll_model in [(mask, "", ll_train), (val_mask, "_val", ll_val)]:
-        ll_base = (ll_baseline * m).sum()
-        n_spikes = (Y * m).sum()
-        LLs[f"bits_per_spike{suffix}"] = jnp.where(n_spikes > 0, (ll_model - ll_base) / (n_spikes * jnp.log(2.0)), 0.0)
-
     return {k: float(v) for k, v in LLs.items()}
 
 

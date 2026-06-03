@@ -1105,8 +1105,11 @@ class SIMPL:
         self.M_ = self._M_step(Y=self.Y_, X=X)
 
         # ── Evaluate and save results ──
-        self._evaluate_iteration()
+        # Compute the streamed train/val log-likelihood scalars once and reuse them for both
+        # the loglikelihoods_ table and the per-iteration results dataset (avoids a second
+        # full O(T·N) metrics pass).
         ll_data = kde.get_ll_and_bps_splits(self.Y_, self.M_["FX"], self.spike_mask_)
+        self._evaluate_iteration(ll_data)
         loglikelihoods = _dict_to_dataset(ll_data, self.variable_info_dict_, self.coordinates_dict_).expand_dims(
             {"iteration": [self.iteration_]}
         )
@@ -1124,18 +1127,25 @@ class SIMPL:
         self.X_ = self.E_["X"]
         self.F_ = self.M_["F"].reshape(self.N_neurons_, *self.xF_shape_)
 
-    def _evaluate_iteration(self) -> None:
+    def _evaluate_iteration(self, ll_data: dict) -> None:
         """Evaluate the current iteration's metrics and append to the results Dataset.
 
         Computes log-likelihoods, spatial information, stability, place field analysis,
         and (if ground truth is available) R², trajectory error, and field error. The
         results are stored under the current iteration in ``self.results_``.
+
+        Parameters
+        ----------
+        ll_data : dict
+            Pre-computed train/val log-likelihood scalars (``logPYXF``, ``bits_per_spike``,
+            …) from ``kde.get_ll_and_bps_splits``. Passed in (rather than recomputed here
+            from the full ``(T, N)`` ``FX``) so the streamed log-likelihood pass runs once.
         """
         evals = self._get_metrics(
             X=self.E_["X"],
             F=self.M_["F"],
-            Y=self.Y_,
-            FX=self.M_["FX"],
+            Y=None,  # log-likelihoods are supplied via ll_data; skip the recompute in _get_metrics
+            FX=None,
             F_odd_mins=self.M_.get("F_odd_minutes"),
             F_even_mins=self.M_.get("F_even_minutes"),
             X_prev=self.lastX_,
@@ -1144,7 +1154,7 @@ class SIMPL:
             Ft=self.Ft_,
             PX=self.M_["PX"],
         )
-        iteration_data = {**self.M_, **self.E_, **evals}
+        iteration_data = {**self.M_, **self.E_, **evals, **ll_data}
         if not self.save_full_history_:
             iteration_data.pop("FX", None)
         iteration_data.pop("logPYXF_maps", None)
