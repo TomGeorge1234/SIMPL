@@ -1002,6 +1002,124 @@ def plot_spikes(
     return ax
 
 
+def plot_metric(
+    results: xr.Dataset,
+    var_name: str,
+    show_neurons: bool = True,
+    ax=None,
+    **plot_kwargs,
+):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(FIG_WIDTH * 0.35, FIG_WIDTH * 0.35), layout="constrained")
+
+    iterations = _non_negative_iterations(results)
+    last_iteration = int(iterations[-1])
+    baselines = _baseline_iterations(results)
+
+    da = results[var_name]
+    other_dims = [d for d in da.dims if d != "iteration"]
+    attrs = da.attrs
+    ylabel = attrs.get("axis_title", attrs.get("axis title", var_name))
+    if ylabel.endswith(" (train)"):
+        ylabel = ylabel[:-8]
+
+    is_scalar = len(other_dims) == 0
+    has_place_field = "place_field" in other_dims
+
+    # Only plot iterations that have data for this variable (skip all-NaN iterations)
+    var_iterations = []
+    for e in iterations:
+        vals_e = da.sel(iteration=e)
+        if not np.all(np.isnan(vals_e.values)):
+            var_iterations.append(e)
+    var_iterations = np.array(var_iterations) if var_iterations else iterations
+
+    if is_scalar:
+        # line plot
+        val_name = f"{var_name}_val"
+        has_val = val_name in results.data_vars
+        vals = [float(da.sel(iteration=e)) for e in var_iterations]
+        vals_v = [float(results[val_name].sel(iteration=e)) for e in var_iterations] if has_val else None
+        for j in range(len(var_iterations)):
+            c = _iteration_color(var_iterations[j], last_iteration)
+            ax.scatter(var_iterations[j], vals[j], color=c, zorder=5, **plot_kwargs)
+            if has_val:
+                ax.scatter(
+                    var_iterations[j],
+                    vals_v[j],
+                    color=c,
+                    marker="o",
+                    facecolors="none",
+                    linewidth=1.5,
+                    zorder=5,
+                    **plot_kwargs,
+                )
+        for j in range(len(var_iterations) - 1):
+            c = _iteration_color(var_iterations[j + 1], last_iteration)
+            ax.plot(var_iterations[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
+            if has_val:
+                ax.plot(var_iterations[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
+        # baseline: only iteration -1 ("best model")
+        if -1 in baselines:
+            y_gt = float(da.sel(iteration=-1))
+            ax.axhline(y_gt, color="k", ls="--", lw=0.8)
+            ax.text(
+                0.0,
+                y_gt,
+                " ground truth",
+                va="bottom",
+                ha="left",
+                fontsize="x-small",
+                color="k",
+                transform=ax.get_yaxis_transform(),
+            )
+        # ML baseline for LL / bps panels
+        # if var_name in ("bits_per_spike", "logPYXF") and "mode_l" in results and 1 in results.iteration.values:
+        # from simpl.utils import get_ML_loglikelihoods
+
+        # ml = get_ML_loglikelihoods(results)
+        # ml_key = f"{var_name}_val"
+        # if ml_key in ml:
+        #     y_ml = ml[ml_key]
+        #     ax.axhline(y_ml, color="k", ls=":", lw=0.8)
+        #     ax.text(
+        #         0.0,
+        #         y_ml,
+        #         " naive ML",
+        #         va="bottom",
+        #         ha="left",
+        #         fontsize="x-small",
+        #         color="k",
+        #         transform=ax.get_yaxis_transform(),
+        #     )
+    else:
+        # per-neuron (possibly mean over place_field first)
+        means = []
+        for e in var_iterations:
+            c = _iteration_color(e, last_iteration)
+            vals_e = da.sel(iteration=e)
+            if has_place_field:
+                vals_e = vals_e.mean(dim="place_field", skipna=True)
+            v = vals_e.values
+            if show_neurons:
+                jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(v))
+                ax.scatter(e + jitter, v, color=c, alpha=0.15, s=5, linewidths=0)
+            if np.all(np.isnan(v)):
+                means.append(np.nan)
+            else:
+                means.append(float(np.nanmean(v)))
+            ax.scatter(e, means[-1], color=c, s=60, zorder=5, linewidths=0)
+        for j in range(len(var_iterations) - 1):
+            c = _iteration_color(var_iterations[j + 1], last_iteration)
+            ax.plot(var_iterations[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
+
+    ax.set(xlabel="Iteration", ylabel=ylabel, xlim=(-0.5, int(iterations[-1]) + 0.5))
+    outset_axes(ax)
+    ax.spines["bottom"].set_bounds(0, int(iterations[-1]))
+
+    return ax
+
+
 def plot_all_metrics(
     results: xr.Dataset,
     show_neurons: bool = True,
@@ -1024,9 +1142,6 @@ def plot_all_metrics(
     -------
     axes : np.ndarray of Axes
     """
-    iterations = _non_negative_iterations(results)
-    last_iteration = int(iterations[-1])
-    baselines = _baseline_iterations(results)
 
     # discover metric variables: anything with iteration dim and only neuron/place_field remaining
     # skip _val variants — they are plotted alongside their train counterpart
@@ -1051,104 +1166,7 @@ def plot_all_metrics(
 
     for i, var_name in enumerate(metric_names):
         ax = axes.flat[i]
-        da = results[var_name]
-        other_dims = [d for d in da.dims if d != "iteration"]
-        attrs = da.attrs
-        ylabel = attrs.get("axis_title", attrs.get("axis title", var_name))
-
-        is_scalar = len(other_dims) == 0
-        has_place_field = "place_field" in other_dims
-
-        # Only plot iterations that have data for this variable (skip all-NaN iterations)
-        var_iterations = []
-        for e in iterations:
-            vals_e = da.sel(iteration=e)
-            if not np.all(np.isnan(vals_e.values)):
-                var_iterations.append(e)
-        var_iterations = np.array(var_iterations) if var_iterations else iterations
-
-        if is_scalar:
-            # line plot
-            val_name = f"{var_name}_val"
-            has_val = val_name in results.data_vars
-            vals = [float(da.sel(iteration=e)) for e in var_iterations]
-            vals_v = [float(results[val_name].sel(iteration=e)) for e in var_iterations] if has_val else None
-            for j in range(len(var_iterations)):
-                c = _iteration_color(var_iterations[j], last_iteration)
-                ax.scatter(var_iterations[j], vals[j], color=c, zorder=5, **plot_kwargs)
-                if has_val:
-                    ax.scatter(
-                        var_iterations[j],
-                        vals_v[j],
-                        color=c,
-                        marker="o",
-                        facecolors="none",
-                        linewidth=1.5,
-                        zorder=5,
-                        **plot_kwargs,
-                    )
-            for j in range(len(var_iterations) - 1):
-                c = _iteration_color(var_iterations[j + 1], last_iteration)
-                ax.plot(var_iterations[j : j + 2], vals[j : j + 2], color=c, lw=0.8, zorder=3)
-                if has_val:
-                    ax.plot(var_iterations[j : j + 2], vals_v[j : j + 2], color=c, lw=0.8, ls="--", zorder=3)
-            # baseline: only iteration -1 ("best model")
-            if -1 in baselines:
-                y_gt = float(da.sel(iteration=-1))
-                ax.axhline(y_gt, color="k", ls="--", lw=0.8)
-                ax.text(
-                    0.0,
-                    y_gt,
-                    " ground truth",
-                    va="bottom",
-                    ha="left",
-                    fontsize="x-small",
-                    color="k",
-                    transform=ax.get_yaxis_transform(),
-                )
-            # ML baseline for LL / bps panels
-            # if var_name in ("bits_per_spike", "logPYXF") and "mode_l" in results and 1 in results.iteration.values:
-            # from simpl.utils import get_ML_loglikelihoods
-
-            # ml = get_ML_loglikelihoods(results)
-            # ml_key = f"{var_name}_val"
-            # if ml_key in ml:
-            #     y_ml = ml[ml_key]
-            #     ax.axhline(y_ml, color="k", ls=":", lw=0.8)
-            #     ax.text(
-            #         0.0,
-            #         y_ml,
-            #         " naive ML",
-            #         va="bottom",
-            #         ha="left",
-            #         fontsize="x-small",
-            #         color="k",
-            #         transform=ax.get_yaxis_transform(),
-            #     )
-        else:
-            # per-neuron (possibly mean over place_field first)
-            means = []
-            for e in var_iterations:
-                c = _iteration_color(e, last_iteration)
-                vals_e = da.sel(iteration=e)
-                if has_place_field:
-                    vals_e = vals_e.mean(dim="place_field", skipna=True)
-                v = vals_e.values
-                if show_neurons:
-                    jitter = np.random.default_rng(int(e)).uniform(-0.15, 0.15, size=len(v))
-                    ax.scatter(e + jitter, v, color=c, alpha=0.15, s=5, linewidths=0)
-                if np.all(np.isnan(v)):
-                    means.append(np.nan)
-                else:
-                    means.append(float(np.nanmean(v)))
-                ax.scatter(e, means[-1], color=c, s=60, zorder=5, linewidths=0)
-            for j in range(len(var_iterations) - 1):
-                c = _iteration_color(var_iterations[j + 1], last_iteration)
-                ax.plot(var_iterations[j : j + 2], means[j : j + 2], color=c, lw=0.8, zorder=3)
-
-        ax.set(xlabel="Iteration", ylabel=ylabel, xlim=(-0.5, int(iterations[-1]) + 0.5))
-        outset_axes(ax)
-        ax.spines["bottom"].set_bounds(0, int(iterations[-1]))
+        plot_metric(results, var_name, show_neurons=show_neurons, ax=ax, **plot_kwargs)
 
     # legend on first panel showing train/val distinction
     first_ax = axes.flat[0]
