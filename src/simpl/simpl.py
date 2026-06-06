@@ -726,6 +726,7 @@ class SIMPL:
         neurons: list[int] | np.ndarray | None = None,
         include_baselines: bool = False,
         sort_by_spatial_information: bool = False,
+        max_neurons: int | None = None,
         ncols: int = 4,
         **plot_kwargs,
     ) -> np.ndarray:
@@ -743,6 +744,10 @@ class SIMPL:
         sort_by_spatial_information : bool
             If ``True``, reorder neurons so that the most spatially informative
             appear first (uses the last training iteration).
+        max_neurons : int, optional
+            If set, plot at most this many neurons.  Combine with
+            ``sort_by_spatial_information=True`` to plot only the top-N most
+            spatially informative neurons.
         ncols : int
             Maximum number of neuron-columns in the grid.
         **plot_kwargs
@@ -765,6 +770,7 @@ class SIMPL:
             neurons=neurons,
             include_baselines=include_baselines,
             sort_by_spatial_information=sort_by_spatial_information,
+            max_neurons=max_neurons,
             ncols=ncols,
             **plot_kwargs,
         )

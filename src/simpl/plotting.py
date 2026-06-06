@@ -538,6 +538,7 @@ def plot_receptive_fields(
     neurons: list[int] | np.ndarray | None = None,
     include_baselines: bool = False,
     sort_by_spatial_information: bool = False,
+    max_neurons: int | None = None,
     ncols: int = 4,
     threshold: float = 0,
     **plot_kwargs,
@@ -560,6 +561,10 @@ def plot_receptive_fields(
     sort_by_spatial_information : bool
         If ``True``, reorder neurons so that the most spatially informative
         appear first (uses the last training iteration).
+    max_neurons : int, optional
+        If set, plot at most this many neurons.  Combine with
+        ``sort_by_spatial_information=True`` to plot only the top-N most
+        spatially informative neurons.
     ncols : int
         Maximum number of neuron-columns in the grid.
     **plot_kwargs
@@ -582,6 +587,9 @@ def plot_receptive_fields(
 
     if sort_by_spatial_information:
         neurons = _sort_neurons_by_si(results, neurons)
+
+    if max_neurons is not None:
+        neurons = neurons[:max_neurons]
 
     if len(neurons) > 50:
         warnings.warn(f"Plotting {len(neurons)} neurons — this may be slow.", stacklevel=2)
