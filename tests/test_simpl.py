@@ -34,6 +34,21 @@ class TestSIMPLInit:
         assert model.use_kalman_smoothing is False
         assert model.speed_prior_effective_ >= model.kalman_off_speed_prior_
 
+    def test_kalman_smoothing_off_matches_likelihood_mode(self, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(use_kalman_smoothing=False)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=1,
+        )
+
+        mode_l = model.results_["mode_l"].sel(iteration=1)
+        mu_s = model.results_["mu_s"].sel(iteration=1)
+        np.testing.assert_allclose(mu_s, mode_l, rtol=1e-5, atol=1e-5)
+
 
 class TestSIMPLFit:
     def test_fit_returns_self(self, demo_data):
