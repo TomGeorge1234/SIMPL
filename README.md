@@ -1,12 +1,17 @@
-# SIMPL
+<div align="center">
+
+<p align="center">
+  <img src="assets/simpl_logo.png" width="420" alt="SIMPL logo">
+</p>
 
 <!-- docs-badges-start -->
 [![Tests](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml/badge.svg)](https://github.com/TomGeorge1234/SIMPL/actions/workflows/ci.yml)
 [![Colab demo](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
 [![Paper](https://img.shields.io/badge/paper-ICLR%202025-blue)](https://openreview.net/pdf?id=9kFaNwX6rv)
+[![Docs](https://img.shields.io/badge/docs-SIMPL-teal)](https://tomge.org/SIMPL/)
 <!-- [![PyPI Downloads](https://img.shields.io/pepy/dt/simpl-neuro)](https://pepy.tech/projects/simpl-neuro) -->
 <!-- docs-badges-end -->
-[![Docs](https://img.shields.io/badge/docs-SIMPL-teal)](https://tomge.org/SIMPL/)
+
 
 <!-- docs-description-start -->
 **SIMPL** is a JAX-based Python package for jointly decoding latent neural representations and optimising tuning curves from spike data. It uses an EM algorithm alternating between Kalman-smoothed decoding and kernel density estimation. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
@@ -15,6 +20,8 @@
 [**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
+
+</div> 
 
 <!-- docs-intro-start -->
 ## Key Features
