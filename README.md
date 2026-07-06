@@ -64,9 +64,9 @@ from simpl import SIMPL
 # 1. Configure the model (no data, no computation)
 model = SIMPL(
     speed_prior=0.4,        # prior on agent speed (m/s) — controls Kalman smoothing
+    behavior_prior=None,    # optional soft pull towards behavioural positions (same units as Xb)
     kernel_bandwidth=0.02,  # KDE bandwidth for fitting receptive fields
     bin_size=0.02,          # spatial bin size for environment discretisation
-    env_pad=0.0,            # padding around data bounds
 )
 
 # 2. Fit
@@ -90,6 +90,64 @@ model.fit(Y, Xb, time, n_iterations=5, resume=True)
 ```
 <!-- docs-quickstart-end -->
 
+<!-- docs-model-start -->
+### Approximate model (_the maths_) 
+
+SIMPL optimises a latent trajectory $z_{1:T}$ and tuning curves $F(z)$ under:
+
+$$
+p(z_{1:T}, y_{1:T} \mid F)
+\;\propto\;
+\prod_t
+\underbrace{\color{#2f80ed}{p(y_t \mid z_t, F)}}_{\color{#2f80ed}{\mathrm{observation\ model}}}\,
+\underbrace{\color{#27ae60}{p(z_t \mid z_{t-\Delta t})}}_{\color{#27ae60}{\mathrm{dynamics\ model}}}
+$$
+
+The spike likelihood comes from the fitted tuning curves. For neuron $n$, $F_n(z_t)$ is the expected spike count in that time bin, i.e. its tuning curve:
+
+$$
+\color{#2f80ed}{p(y_t \mid z_t, F)}
+=
+\color{#2f80ed}{\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(z_t)\right)}
+$$
+
+The tuning curves are estimated by the standard KDE equation from the current latent trajectory:
+
+$$
+\color{#2f80ed}{F_n(z)
+=
+\frac{\sum_t y_{t,n}\,K_h(z, z_t)}
+{\sum_t K_h(z, z_t)}}
+$$
+
+where $K_h$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corrects for non-uniform occupancy, so $F_n(z)$ is an expected spike count per time bin at position $z$.
+
+The temporal prior is a Gaussian random-walk model controlled by `speed_prior`:
+
+$$
+\color{#27ae60}{p(z_t \mid z_{t-\Delta t})}
+\approx
+\color{#27ae60}{\mathcal{N}\!\left(z_t; z_{t-\Delta t}, (\texttt{speed\_prior}\,\Delta t)^2 I\right)}
+$$
+
+> **Optional (`behavior_prior`)**  
+> SIMPL can also include a soft Gaussian tether to the behavioural initialisation, giving:
+>
+> $$
+> \color{#8a8f98}{p(z_t \mid z_{t-\Delta t}, z_t^{(0)})}
+> \propto
+> \underbrace{\color{#27ae60}{\mathcal{N}\!\left(z_t; z_{t-\Delta t}, (\texttt{speed\_prior}\,\Delta t)^2 I\right)}}_{\color{#27ae60}{\mathrm{latent\ close\ to\ previous\ latent}}}
+> \,
+> \underbrace{\color{#d35400}{\mathcal{N}\!\left(z_t; z_t^{(0)}, \texttt{behavior\_prior}^2 I\right)}}_{\color{#d35400}{\mathrm{latent\ close\ to\ initialisation}}}
+> $$
+
+**Discretisation note.** SIMPL uses time and space bins for computation, but the fitted model is not parameterised in arbitrary "per-bin" units. The timestep $\Delta t$ is inferred from the timestamps, so `speed_prior` has units of `[behaviour units] / second`; changing the temporal bin width rescales the transition variance through $(\texttt{speed\_prior}\,\Delta t)^2$.
+
+Receptive fields are evaluated on a spatial grid with bin size $\Delta x$, but decoded positions are not restricted to those grid points. The grid is used to build a likelihood map, which is then approximated by a continuous Gaussian over position (see the paper); the Kalman filter/smoother operates on that continuous observation.
+
+In this sense, SIMPL is theoretically agnostic to the chosen $\Delta t$ and $\Delta x$. In practice, those choices can still affect numerical accuracy, smoothness of the KDE estimate, runtime, and memory use.
+
+<!-- docs-model-end -->
 
 ### Prediction
 

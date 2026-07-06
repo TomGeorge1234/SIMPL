@@ -51,6 +51,7 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Model: model.md
   - API Reference:
     - SIMPL: api/simpl.md
     - Environment: api/environment.md
