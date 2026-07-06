@@ -3,6 +3,7 @@ site_url: https://tomge.org/SIMPL/
 repo_url: https://github.com/TomGeorge1234/SIMPL
 theme:
   name: material
+  favicon: assets/favicon_io/favicon.ico
   palette:
     # Light mode
     - scheme: default
