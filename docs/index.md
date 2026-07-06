@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../assets/simpl_logo.png" width="420" alt="SIMPL logo">
+  <img src="assets/simpl_logo.png" width="420" alt="SIMPL logo">
 </p>
 
 # SIMPL
