@@ -1,16 +1,13 @@
 window.MathJax = {
   loader: {
-    load: ["[tex]/html"]
+    load: ["[tex]/color"]
   },
   tex: {
     inlineMath: [["\\(", "\\)"]],
     displayMath: [["\\[", "\\]"]],
     processEscapes: true,
     processEnvironments: true,
-    packages: {"[+]": ["html"]},
-    macros: {
-      textcolor: ["\\style{color:###1}{#2}", 2]
-    }
+    packages: {"[+]": ["color"]}
   },
   options: {
     ignoreHtmlClass: ".*|",
