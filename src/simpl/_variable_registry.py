@@ -226,7 +226,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
             "formula": (
-                r"$\log P(Y_t|X_t=x, F)"
+                r"$\log P(y_t|X_t=x, F)"
                 r" = \sum_n \log \mathrm{Poisson}(y_{t,n}; F_n(x))$"
             ),
             "reshape": True,

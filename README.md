@@ -113,7 +113,16 @@ model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-li
 <!-- docs-model-notation-start -->
 #### Notation
 
-SIMPL uses uppercase $X$ for the latent trajectory/random variable and lowercase $x$ for a generic point in latent space. In spatial-navigation datasets $X_t$ is usually position at time bin $t$, but the same notation also covers any decoded latent variable. `Xb` is the behavioral/initial trajectory used to start the fit, and `Xt` is optional ground truth for simulations. Receptive fields are written as $F_n(x)$; evaluated along the decoded trajectory, $F_n(X_t)$ is neuron $n$'s expected spike count in time bin $t$ and is the rate parameter of the Poisson observation model.
+SIMPL uses:
+
+- **Latent trajectory:** $X$ in maths, `X` / `model.X_` in code. $X_t$ is the inferred latent at time bin $t$.
+- **Latent-space coordinate:** $x$ in maths, a grid point in `model.xF_` in code. This is a possible position/location, not a whole trajectory.
+- **Behavioral initialisation:** $X_{\mathrm{beh}}$ or $X_b$ in maths, `Xb` in code. This starts the fit and can optionally tether the latent through `behavior_prior`.
+- **Simulation ground truth:** $X_{\mathrm{true}}$ in maths, `Xt` in code. This is only used when known, for evaluation metrics.
+- **Spike counts:** $Y$ in maths/code for the full `(time, neuron)` matrix. $y_t$ is one time-bin vector, and $y_{t,n}$ is one neuron's count.
+- **Receptive fields:** $F$ in maths, `F` / `model.F_` in code. $F_n(x)$ is neuron $n$'s expected spike count at latent-space point $x$.
+
+Thus $F_n(X_t)$ is neuron $n$'s expected spike count at the decoded latent position and is the Poisson rate parameter.
 <!-- docs-model-notation-end -->
 
 <!-- docs-model-objective-start -->
@@ -122,7 +131,7 @@ SIMPL uses uppercase $X$ for the latent trajectory/random variable and lowercase
 _This is only a summary, see [ICLR paper](https://openreview.net/forum?id=9kFaNwX6rv) for full details._ SIMPL optimises a latent trajectory $X_{1:T}$ and receptive fields $F(x)$ under:
 
 $$
-p(X_{1:T}, y_{1:T} \mid F)
+p(X_{1:T}, Y \mid F)
 \;\propto\;
 \prod_t
 \underbrace{\textcolor{A92E5E}{p(y_t \mid X_t, F)}}_{\textcolor{A92E5E}{\mathrm{observation\ model}}}\,
