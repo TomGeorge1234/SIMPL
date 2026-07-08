@@ -125,8 +125,8 @@ $$
 p(X_{1:T}, y_{1:T} \mid F)
 \;\propto\;
 \prod_t
-\underbrace{\textcolor{rgb(169,46,94)}{p(y_t \mid X_t, F)}}_{\textcolor{rgb(169,46,94)}{\mathrm{observation\ model}}}\,
-\underbrace{\textcolor{rgb(29,92,132)}{p(X_t \mid X_{t-\Delta t})}}_{\textcolor{rgb(29,92,132)}{\mathrm{dynamics\ model}}}
+\underbrace{\textcolor{A92E5E}{p(y_t \mid X_t, F)}}_{\textcolor{A92E5E}{\mathrm{observation\ model}}}\,
+\underbrace{\textcolor{1D5C84}{p(X_t \mid X_{t-\Delta t})}}_{\textcolor{1D5C84}{\mathrm{dynamics\ model}}}
 $$
 <!-- docs-model-objective-end -->
 
@@ -136,20 +136,20 @@ $$
 The temporal prior is a Gaussian random-walk model controlled by `speed_prior`:
 
 $$
-\textcolor{rgb(29,92,132)}{p(X_t \mid X_{t-\Delta t})}
+\textcolor{1D5C84}{p(X_t \mid X_{t-\Delta t})}
 \approx
-\textcolor{rgb(29,92,132)}{\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}
+\textcolor{1D5C84}{\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}
 $$
 
 **Optional (`behavior_prior`)**  
 SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), giving:
 
 $$
-\textcolor{rgb(29,92,132)}{p(X_t \mid X_{t-\Delta t})}
+\textcolor{1D5C84}{p(X_t \mid X_{t-\Delta t})}
 \propto
-\underbrace{\textcolor{rgb(29,92,132)}{\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}}_{\textcolor{rgb(29,92,132)}{\mathrm{latent\ close\ to\ previous\ latent}}}
+\underbrace{\textcolor{1D5C84}{\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}}_{\textcolor{1D5C84}{\mathrm{latent\ close\ to\ previous\ latent}}}
 \,
-\cdot \underbrace{\textcolor{rgb(163,204,144)}{\mathcal{N}\!\left(X_t; X_t^{(0)}, \mathtt{behavior\_prior}^2 I\right)}}_{\textcolor{rgb(163,204,144)}{\mathrm{latent\ close\ to\ initialisation}}}
+\cdot \underbrace{\textcolor{A3CC90}{\mathcal{N}\!\left(X_t; X_t^{(0)}, \mathtt{behavior\_prior}^2 I\right)}}_{\textcolor{A3CC90}{\mathrm{latent\ close\ to\ initialisation}}}
 $$
 <!-- docs-model-dynamics-end -->
 
@@ -159,18 +159,15 @@ $$
 The spike likelihood comes from the fitted tuning curves:
 
 $$
-\textcolor{rgb(169,46,94)}{p(y_t \mid X_t, F)}
+\textcolor{A92E5E}{p(y_t \mid X_t, F)}
 =
-\textcolor{rgb(169,46,94)}{\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)}
+\textcolor{A92E5E}{\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)}
 $$
 
 where, for neuron $n$, $F_n(X_t)$ is the expected spike count in that time bin, i.e. its tuning curve evaluated at the decoded latent position. The tuning curve itself is estimated by the standard KDE equation from the current latent:
 
 $$
-\textcolor{rgb(169,46,94)}{F_n(x)
-=
-\frac{\sum_t y_{t,n}\,K(x, X_t)}
-{\sum_t K(x, X_t)}}
+\textcolor{A92E5E}{F_n(x) = \frac{\sum_t y_{t,n}\,K(x, X_t)}{\sum_t K(x, X_t)}}
 $$
 
 $K$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corrects for non-uniform occupancy. Receptive fields are evaluated on a spatial grid with bin size $\Delta x$, but decoded positions are not restricted to those grid points.

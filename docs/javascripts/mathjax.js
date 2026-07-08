@@ -9,7 +9,7 @@ window.MathJax = {
     processEnvironments: true,
     packages: {"[+]": ["html"]},
     macros: {
-      textcolor: ["\\style{color:#1}{#2}", 2]
+      textcolor: ["\\style{color:###1}{#2}", 2]
     }
   },
   options: {
