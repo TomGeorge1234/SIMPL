@@ -160,6 +160,7 @@ $$
 \,
 \cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \mathtt{behavior\_prior}^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
 $$
+
 <!-- docs-model-dynamics-end -->
 
 <!-- docs-model-observation-start -->
