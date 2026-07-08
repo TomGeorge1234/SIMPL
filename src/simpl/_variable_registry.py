@@ -516,8 +516,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["neuron"],
             "formula": (
-                r"$I=\int \frac{F_n(x)}{\Delta t} \log_2"
-                r" \frac{F_n(x)}{\bar F_n} p_X(x)\, dx$"
+                r"$I=\frac{1}{\Delta t}\sum_x p_X(x)\,F_n(x)"
+                r"\,\log_2 \frac{F_n(x)}{\bar F_n}$"
             ),
         },
         "negative_entropy": {

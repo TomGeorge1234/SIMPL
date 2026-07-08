@@ -14,10 +14,10 @@
 
 
 <!-- docs-description-start -->
-**SIMPL** is a JAX-python package for **optimising latent representations and neural tuning curves** from spike data. It does this by iteratively decoding the latent and fiting the tuning curves, starting from behavior or stimuli. It is lightweight, scalable, and very fast. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
+**SIMPL** is a JAX-python package for **optimising latent representations and neural tuning curves** from spike data. It does this by iteratively decoding the latent and fitting the tuning curves, starting from behavior or stimuli. It is lightweight, scalable, and very fast. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
 <!-- docs-description-end -->
 
-[**Overview**](#key-features) | [**Quickstart**](#quickstart) | [**Model / Maths**](#model--maths) | [**Plotting and Metrics**](#plotting-and-metrics) | [**Advanced Usage**](#advanced-usage) | [**Examples/Demos**](#examplesdemos) | [**Cite**](#cite)
+[**Overview**](#key-features) | [**Install**](#installation) | [**Quickstart**](#quickstart) | [**Examples**](#examplesdemos) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
 
@@ -25,15 +25,18 @@
 
 ---
 
+<br>
+<br>
+
 <!-- docs-intro-start -->
 <!-- docs-features-start -->
 ## Key Features
 
 - **Fast** — fits 200 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
-- **Scalable** - scales to state-of-the-art size neural datasets (1000s or neurons, millions of time poins, billions of spikes) on CPU.
+- **Scalable** - scales to state-of-the-art size neural datasets (1000s of neurons, millions of time points, billions of spikes) on CPU.
 - **Simple** — scikit-learn API. Minimal hyperparameters. Get started in <10 lines of code.
-- **Flexible** — works 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Trial-structure aware. Examples and demo provided.
-- **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
+- **Flexible** — works 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Trial-structure aware. Examples provided.
+- **Rich outputs** — results stored as `xarray.Dataset` with per-iteration variables, metrics and units.
 - **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
 
 <p align="center">
@@ -50,33 +53,37 @@
 pip install simpl-neuro
 ```
 
-To run the demo notebook locally (recommended) or [![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/simpl/blob/main/examples/simpl_demo.ipynb)
+To run the demo notebook locally (or else [![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/simpl/blob/main/examples/simpl_demo.ipynb))
 ```bash
 pip install "simpl-neuro[demos]"
 simpl demo                # downloads demo notebook into the cwd
 ```
+If you need GPU, see the Advanced Usage section.
 <!-- docs-install-end -->
 
 <!-- docs-intro-end -->
 
 ---
 
+<br>
+<br>
+
 <!-- docs-usage-start -->
 <!-- docs-quickstart-start -->
 ## Quickstart
 
 <!-- docs-quickstart-body-start -->
-SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
+SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`. For hyperparameter units, see the Model / Maths section.
 
 ```python
 from simpl import SIMPL
 
 # 1. Configure the model (no data, no computation)
 model = SIMPL(
-    speed_prior=0.4,        # prior on latent speed
+    speed_prior=0.4,        # "0.4m/s" prior on latent speed
     behavior_prior=None,    # (optional) soft tether to the initial behaviour/stimulus
-    kernel_bandwidth=0.02,  # kernel bandwidth for KDE receptive field
-    bin_size=0.02,          # spatial bin size for environment discretisation
+    kernel_bandwidth=0.02,  # "2 cm" kernel bandwidth for KDE spike smoothing
+    bin_size=0.02,          # "2 cm" spatial bin size for environment discretisation
 )
 
 # 2. Fit
@@ -112,29 +119,31 @@ model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-li
 
 ---
 
+<br>
+<br>
+
 <!-- docs-model-start -->
-## Model / Maths
+## Model, Maths and Notation
 
 <!-- docs-model-body-start -->
 <!-- docs-model-notation-start -->
-#### Notation
+### Notation
 
-SIMPL uses:
+SIMPL tries to stick to the following notations:
 
-- **Latent trajectory:** $X$ in maths, `X` / `model.X_` in code. $X_t$ is the inferred latent at time bin $t$.
-- **Latent-space coordinate:** $x$ in maths, a grid point in `model.xF_` in code. This is a possible position/location, not a whole trajectory.
-- **Behavioral initialisation:** $X_{\mathrm{beh}}$ or $X_b$ in maths, `Xb` in code. This starts the fit and can optionally tether the latent through `behavior_prior`.
-- **Simulation ground truth:** $X_{\mathrm{true}}$ in maths, `Xt` in code. This is only used when known, for evaluation metrics.
-- **Spike counts:** $Y$ in maths/code for the full `(time, neuron)` matrix. $y_t$ is one time-bin vector, and $y_{t,n}$ is one neuron's count.
-- **Receptive fields:** $F$ in maths, `F` / `model.F_` in code. $F_n(x)$ is neuron $n$'s expected spike count at latent-space point $x$.
-
-Thus $F_n(X_t)$ is neuron $n$'s expected spike count at the decoded latent position and is the Poisson rate parameter.
+- **Latent trajectory:** $X \in \mathbb{R}^{T \times D}$ in maths, `X` / `model.X_` in code. $X_t$ is the inferred latent at time bin $t$.
+   - **Latent-space coordinate:** $x$ in maths, a grid point in `model.xF_` in code. This is a possible position/location, not a whole trajectory.
+   - **Behavioral initialisation:** $X_b$ in maths, `Xb` in code. This starts the fit and can optionally tether the latent through `behavior_prior`. $X_t$/`Xt` is ground truth (if known). 
+- **Spike counts:** $Y \in \mathbb{R}^{T \times N}$. $y_t$ is one time-bin vector, and $y_{t,n}$ is one neuron's count in one time bin.
+- **Receptive fields:** $F \in \mathbb{R}^{N \times N_{\textrm{bins}}}$. `F` / `model.F_` in code are reshaped to the environment size, e.g. `F.shape = (N, N_x_bins, N_y_bins, ...)`. $F_n(x)$ is neuron $n$'s expected spike count at latent-space point $x$. Thus $F_n(X_t)$ is neuron $n$'s expected spike count at the decoded latent position and is the Poisson rate parameter.
 <!-- docs-model-notation-end -->
 
 <!-- docs-model-objective-start -->
-#### Full objective
+### Full model
 
-_This is only a summary, see [ICLR paper](https://openreview.net/forum?id=9kFaNwX6rv) for full details._ SIMPL optimises a latent trajectory $X_{1:T}$ and receptive fields $F(x)$ under:
+_This is only a summary, see [ICLR paper](https://openreview.net/forum?id=9kFaNwX6rv) for full details._
+
+At its heart SIMPL approximately optimises a latent trajectory $X_{1:T}$ and receptive fields $F(x)$ under:
 
 $$
 p(X_{1:T}, Y \mid F)
@@ -146,7 +155,7 @@ $$
 <!-- docs-model-objective-end -->
 
 <!-- docs-model-dynamics-start -->
-#### Dynamics model
+### Dynamics model
 
 The temporal prior is a Gaussian random-walk model controlled by $\sigma_v$ (`speed_prior`):
 
@@ -166,10 +175,13 @@ $$
 \,
 \cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \sigma_b^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
 $$
+
+Once fields are estimated an approximation (see paper) converts Poisson-nonlinear observations to linear observations, allowing these dynamics to be inferred with fast Kalman smoothing.
+
 <!-- docs-model-dynamics-end -->
 
 <!-- docs-model-observation-start -->
-#### Observation model
+### Observation model
 
 The spike likelihood comes from the fitted tuning curves:
 
@@ -188,9 +200,9 @@ $K$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corr
 
 
 <!-- docs-model-units-start -->
-#### Units and discretisation
+### Units and Discretisation
 
-All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on your data), not arbitrary time/spatial-bin units. 
+All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on _your_ data of course), not arbitrary time/spatial-bin units. 
 <!-- docs-model-units-end -->
 
 <!-- docs-model-body-end -->
@@ -198,13 +210,16 @@ All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) ar
 
 ---
 
+<br>
+<br>
+
 <!-- docs-plotting-start -->
 ## Plotting and Metrics
 
 <!-- docs-plotting-body-start -->
-#### Metrics
+### Metrics
 
-The three headline fitting metrics are:
+The four headline fitting metrics are:
 
 - **Spike log-likelihood** (`logPYXF`, `logPYXF_val`) — the mean Poisson log-likelihood of the observed spike counts under the fitted receptive fields evaluated along the decoded trajectory. It answers: how well do the fitted tuning curves predict spikes at the decoded positions?
 
@@ -221,6 +236,12 @@ $$
 \mathrm{BPS} = \frac{\mathcal{L}(\hat{F}) - \mathcal{L}(\bar{F})}{N_{\mathrm{spk}} \ln 2}
 $$
 
+- **Skaggs spatial information** (`spatial_information`) — the standard spatial-information rate for each neuron, in bits/sec. It measures how informative the receptive field is about latent position in the small-time-bin limit:
+
+$$
+I_{\mathrm{Skaggs}} = \frac{1}{\Delta t}\sum_x p_X(x)\,F_n(x)\,\log_2 \frac{F_n(x)}{\bar{F}_n}
+$$
+
 - **Mutual information** (`mutual_information`) — the exact finite-time-bin mutual information between spike count and latent position, per neuron, in bits/s. This asks how many bits per second the spikes from each neuron carry about $X$:
 
 $$
@@ -229,14 +250,15 @@ $$
 
 Other metrics available in `model.results_` include:
 
-- `spatial_information` — Skaggs spatial information in bits/s; in the small-bin limit it approaches mutual information.
 - `X_R2`, `X_err` — latent-position agreement with ground truth, when `Xt` is registered with `add_baselines`.
 - `F_err` — receptive-field error against ground-truth fields, when `Ft` is registered.
 - `stability` — correlation between fields estimated from odd and even minutes.
 - `field_change`, `trajectory_change` — per-iteration changes in tuning curves and decoded trajectory.
 - `negative_entropy`, `sparsity` — compactness/sparsity summaries of the fitted tuning curves.
 
-#### Plotting
+For 2D environments, `model.analyse_place_fields()` adds morphology metrics to `model.results_`, including place-field count, size, position, roundness, and peak firing rate. This uses connected-component analysis on receptive fields and is not run automatically during `fit()`.
+
+### Plotting
 
 Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
 
@@ -257,6 +279,9 @@ model.plot_spikes(time_range=(0, 60))
 
 # Auto-discover and plot all per-iteration metrics
 model.plot_all_metrics(show_neurons=False)
+
+# 2D place-field morphology metrics
+model.analyse_place_fields()
 
 # Prediction on held-out data
 model.predict(Y_test)
@@ -283,6 +308,9 @@ model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 <!-- docs-plotting-end -->
 
 ---
+
+<br>
+<br>
 
 ## Advanced Usage
 
@@ -348,7 +376,7 @@ If your timestamps have gaps (e.g. concatenated sessions), SIMPL will warn you a
 <!-- docs-trials-end -->
 
 <!-- docs-gpu-start -->
-### GPU acceleration
+### GPU Acceleration
 
 SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Typical neural recordings (< 2 hrs) fit in under 60 s on CPU alone, so a GPU is rarely needed.
 
@@ -385,6 +413,9 @@ Y_accum = accumulate_spikes(Y, window=3)
 
 ---
 
+<br>
+<br>
+
 <!-- docs-examples-start -->
 ## Examples/Demos
 
@@ -401,6 +432,9 @@ The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/ma
 <!-- docs-examples-end -->
 
 ---
+
+<br>
+<br>
 
 ## Code and Development
 
@@ -436,6 +470,9 @@ pytest
 <!-- docs-development-end -->
 
 ---
+
+<br>
+<br>
 
 <!-- docs-cite-start -->
 ## Cite
