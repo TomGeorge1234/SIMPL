@@ -29,3 +29,8 @@
 [data-md-color-scheme="slate"] {
   --md-typeset-a-color: #82b1ff;
 }
+
+/* Hide the "Made with Material for MkDocs" generator banner. */
+.md-footer-meta__inner {
+  display: none;
+}
