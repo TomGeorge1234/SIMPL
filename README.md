@@ -221,7 +221,8 @@ All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) ar
 
 The four headline fitting metrics are:
 
-- **Spike log-likelihood** (`logPYXF`, `logPYXF_val`) — the mean Poisson log-likelihood of the observed spike counts under the fitted receptive fields evaluated along the decoded trajectory. It answers: how well do the fitted tuning curves predict spikes at the decoded positions?
+- **Spike log-likelihood** (`logPYXF`, `logPYXF_val`) — the mean Poisson log-likelihood of the observed spike counts under the fitted receptive fields evaluated along the decoded trajectory. 
+  > We strongly suggest using `bits_per_spike` over `logPYXF` for comparisons. Its zero point is interpretable, and the normalisation makes it easier to compare datasets with different neuron counts or recording lengths.
 
 $$
 \mathcal{L}
@@ -242,19 +243,15 @@ $$
 I_{\mathrm{Skaggs}} = \frac{1}{\Delta t}\sum_x p_X(x)\,F_n(x)\,\log_2 \frac{F_n(x)}{\bar{F}_n}
 $$
 
-- **Mutual information** (`mutual_information`) — the exact finite-time-bin mutual information between spike count and latent position, per neuron, in bits/s. This asks how many bits per second the spikes from each neuron carry about $X$:
-
-$$
-I(X;Y) = \frac{1}{\Delta t} \sum_x \sum_k P(X=x)\,P(k \mid X=x) \log_2 \frac{P(k \mid X=x)}{P(k)}
-$$
-
 Other metrics available in `model.results_` include:
 
+- `mutual_information` — the exact finite-time-bin analog of spatial information, $I(X;Y)$, in bits/s. It is the same idea as Skaggs spatial information, but computed from the full spike-count distribution rather than the small-bin approximation.
 - `X_R2`, `X_err` — latent-position agreement with ground truth, when `Xt` is registered with `add_baselines`.
 - `F_err` — receptive-field error against ground-truth fields, when `Ft` is registered.
 - `stability` — correlation between fields estimated from odd and even minutes.
 - `field_change`, `trajectory_change` — per-iteration changes in tuning curves and decoded trajectory.
 - `negative_entropy`, `sparsity` — compactness/sparsity summaries of the fitted tuning curves.
+
 
 For 2D environments, `model.analyse_place_fields()` adds morphology metrics to `model.results_`, including place-field count, size, position, roundness, and peak firing rate. This uses connected-component analysis on receptive fields and is not run automatically during `fit()`.
 
