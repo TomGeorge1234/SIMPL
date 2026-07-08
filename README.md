@@ -142,28 +142,29 @@ $$
 <!-- docs-model-dynamics-start -->
 #### Dynamics model
 
-The temporal prior is a Gaussian random-walk model controlled by `speed_prior`:
+The temporal prior is a Gaussian random-walk model controlled by $\sigma_v$ (`speed_prior`):
 
 $$
 {\color{1D5C84}p(X_t \mid X_{t-\Delta t})}
 \approx
-{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}
+{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}
 $$
 
 **Optional (`behavior_prior`)**  
-SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), giving:
+SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), controlled by $\sigma_b$ (`behavior_prior`):
 
 $$
 {\color{1D5C84}p(X_t \mid X_{t-\Delta t})}
 \propto
-\underbrace{{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\mathtt{speed\_prior}\,\Delta t)^2 I\right)}}_{{\color{1D5C84}\mathrm{latent\ close\ to\ previous\ latent}}}
+\underbrace{{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}}_{{\color{1D5C84}\mathrm{latent\ close\ to\ previous\ latent}}}
 \,
-\cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \mathtt{behavior\_prior}^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
+\cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \sigma_b^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
 $$
 <!-- docs-model-dynamics-end -->
 
 <!-- docs-model-observation-start -->
 #### Observation model
+
 The spike likelihood comes from the fitted tuning curves:
 
 $$
