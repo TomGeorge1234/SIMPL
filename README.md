@@ -17,11 +17,13 @@
 **SIMPL** is a JAX-python package for **optimising latent representations and neural tuning curves** from spike data. It does this by iteratively decoding the latent and fiting the tuning curves, starting from behavior or stimuli. It is lightweight, scalable, and very fast. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
 <!-- docs-description-end -->
 
-[**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
+[**Overview**](#key-features) | [**Quickstart**](#quickstart) | [**Model / Maths**](#model--maths) | [**Plotting and Metrics**](#plotting-and-metrics) | [**Advanced Usage**](#advanced-usage) | [**Examples/Demos**](#examplesdemos) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
 
 </div> 
+
+---
 
 <!-- docs-intro-start -->
 <!-- docs-features-start -->
@@ -56,6 +58,8 @@ simpl demo                # downloads demo notebook into the cwd
 <!-- docs-install-end -->
 
 <!-- docs-intro-end -->
+
+---
 
 <!-- docs-usage-start -->
 <!-- docs-quickstart-start -->
@@ -106,8 +110,10 @@ model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-li
 <!-- docs-quickstart-body-end -->
 <!-- docs-quickstart-end -->
 
+---
+
 <!-- docs-model-start -->
-### Model (_in brief_) 
+## Model / Maths
 
 <!-- docs-model-body-start -->
 <!-- docs-model-notation-start -->
@@ -192,9 +198,10 @@ All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) ar
 <!-- docs-model-body-end -->
 <!-- docs-model-end -->
 
+---
 
 <!-- docs-plotting-start -->
-### Plotting and Metrics
+## Plotting and Metrics
 
 <!-- docs-plotting-body-start -->
 #### Metrics
@@ -283,6 +290,10 @@ model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
 
 <!-- docs-plotting-body-end -->
 <!-- docs-plotting-end -->
+
+---
+
+## Advanced Usage
 
 <!-- docs-saving-start -->
 ### Saving and loading
@@ -381,6 +392,8 @@ Y_accum = accumulate_spikes(Y, window=3)
 
 <!-- docs-usage-end -->
 
+---
+
 <!-- docs-examples-start -->
 ## Examples/Demos
 
@@ -396,8 +409,12 @@ The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/ma
 <!-- docs-examples-body-end -->
 <!-- docs-examples-end -->
 
+---
+
+## Code and Development
+
 <!-- docs-package-start -->
-## Package Structure
+### Package Structure
 
 ```
 src/simpl/
@@ -412,7 +429,7 @@ src/simpl/
 <!-- docs-package-end -->
 
 <!-- docs-development-start -->
-## Development
+### Development
 
 ```bash
 # Install for development
@@ -426,6 +443,8 @@ ruff format --check src/
 pytest
 ```
 <!-- docs-development-end -->
+
+---
 
 <!-- docs-cite-start -->
 ## Cite
