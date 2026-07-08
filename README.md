@@ -218,20 +218,13 @@ $$
 - **Bits per spike** (`bits_per_spike`, `bits_per_spike_val`) — how much better the fitted tuning curves explain spikes than a mean-rate baseline, in bits per observed spike. This is useful for comparing fits across datasets with different spike counts or bin sizes:
 
 $$
-\mathrm{BPS}
-= \frac{\mathcal{L}(\hat{F}) - \mathcal{L}(\bar{F})}
-{N_{\mathrm{spk}} \ln 2}
+\mathrm{BPS} = \frac{\mathcal{L}(\hat{F}) - \mathcal{L}(\bar{F})}{N_{\mathrm{spk}} \ln 2}
 $$
 
 - **Mutual information** (`mutual_information`) — the exact finite-time-bin mutual information between spike count and latent position, per neuron, in bits/s. This asks how many bits per second the spikes from each neuron carry about $X$:
 
 $$
-I(X;Y)
-= \frac{1}{\Delta t}
-\sum_x \sum_k
-P(X=x)\,P(k \mid X=x)
-\log_2
-\frac{P(k \mid X=x)}{P(k)}
+I(X;Y) = \frac{1}{\Delta t} \sum_x \sum_k P(X=x)\,P(k \mid X=x) \log_2 \frac{P(k \mid X=x)}{P(k)}
 $$
 
 Other metrics available in `model.results_` include:
