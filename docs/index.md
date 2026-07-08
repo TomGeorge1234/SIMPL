@@ -2,8 +2,6 @@
   <img src="assets/simpl_logo.png" width="420" alt="SIMPL logo">
 </p>
 
-# SIMPL
-
 {%
   include-markdown "../README.md"
   rewrite-relative-urls=false
@@ -27,14 +25,7 @@
   end="<!-- docs-intro-end -->"
 %}
 
-{%
-  include-markdown "../README.md"
-  rewrite-relative-urls=false
-  start="<!-- docs-quickstart-start -->"
-  end="<!-- docs-quickstart-end -->"
-%}
-
-See the [Getting Started](getting-started.md) guide for a full walkthrough, or jump to the [API Reference](api/simpl.md).
+See the [Quickstart](quickstart.md) for the core workflow, [Examples/Demos](examples.md) for complete walkthroughs, or [Code & Docstring Reference](api/simpl.md) for raw docstrings.
 
 {%
   include-markdown "../README.md"

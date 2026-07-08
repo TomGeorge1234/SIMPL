@@ -1,10 +1,13 @@
 site_name: SIMPL
 site_url: https://tomge.org/SIMPL/
 repo_url: https://github.com/TomGeorge1234/SIMPL
+repo_name: TomGeorge1234/SIMPL
 theme:
   name: material
   logo: assets/simpl_emblem.png
   favicon: assets/favicon_io/favicon.ico
+  icon:
+    repo: fontawesome/brands/github
   palette:
     # Light mode
     - scheme: default
@@ -49,10 +52,13 @@ plugins:
             show_source: true
             docstring_style: numpy
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
-  - Model: model.md
-  - API Reference:
+  - Overview: index.md
+  - Quickstart: quickstart.md
+  - Model / Maths: model.md
+  - Plotting and Metrics: plotting.md
+  - Advanced Usage: advanced-usage.md
+  - Examples/Demos: examples.md
+  - Code & Docstring Reference:
     - SIMPL: api/simpl.md
     - Environment: api/environment.md
     - Kalman Filter: api/kalman.md

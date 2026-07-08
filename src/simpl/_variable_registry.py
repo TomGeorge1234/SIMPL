@@ -109,59 +109,59 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position",
-            "formula": r"$x(t)$",
+            "formula": r"$X(t)$",
         },
         "F": {
             "name": "Model",
             "description": (
                 "The receptive fields of the neurons "
-                "(probability of the neurons firing at each "
-                "position in one time step (of length dt)."
+                "(expected spike count for each neuron at each "
+                "latent position in one time step of length dt)."
             ),
             "dims": ["neuron", *dim],
             "axis_title": "Receptive field",
             "reshape": True,
-            "formula": r"$r(x)$",
+            "formula": r"$F_n(x)$",
         },
         "F_odd_minutes": {
             "name": "Model (odd minutes)",
             "description": (
                 "The receptive fields of the neurons "
-                "(probability of the neurons firing at each "
-                "position in one time step) calculated from "
+                "(expected spike count for each neuron at each "
+                "latent position in one time step) calculated from "
                 "the odd minutes of the data."
             ),
             "dims": ["neuron", *dim],
             "axis_title": "Receptive field (odd mins)",
-            "Formula": r"$r_{\textrm{odd}}(x)$",
+            "formula": r"$F_{n,\textrm{odd}}(x)$",
             "reshape": True,
         },
         "F_even_minutes": {
             "name": "Model (even minutes)",
             "description": (
                 "The receptive fields of the neurons "
-                "(probability of the neurons firing at each "
-                "position in one time step) calculated from "
+                "(expected spike count for each neuron at each "
+                "latent position in one time step) calculated from "
                 "the even minutes of the data."
             ),
             "dims": ["neuron", *dim],
             "axis_title": "Receptive field (even mins)",
-            "Formula": r"$r_{\textrm{even}}(x)$",
+            "formula": r"$F_{n,\textrm{even}}(x)$",
             "reshape": True,
         },
         "FX": {
-            "name": "Firing rates trajectories",
+            "name": "Receptive fields along trajectory",
             "description": (
-                "An estimate of the firing rate of the "
-                "neurons at each time step based on the "
-                "latest position estimates and their "
-                "receptive fields. Only stored when "
+                "The fitted receptive fields evaluated along "
+                "the latest latent trajectory X, i.e. F(X_t). "
+                "Values are expected spike counts per time bin. "
+                "Only stored when "
                 "save_full_history is True. See also "
                 "FX_first_iteration and FX_last_iteration."
             ),
             "dims": ["time", "neuron"],
-            "axis_title": r"Firing rate",
-            "formula": r"$f(t)$",
+            "axis_title": r"Expected spike count",
+            "formula": r"$F_n(X_t)$",
         },
         "PX": {
             "name": "Occupancy",
@@ -174,7 +174,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": [*dim],
             "axis_title": "Occupancy",
-            "formula": r"$p(x)$",
+            "formula": r"$p_X(x)$",
             "reshape": True,
         },
         # Ground truth data variables
@@ -190,7 +190,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position (behavior)",
-            "formula": r"$x_{\textrm{beh}}(t)$",
+            "formula": r"$X_{\textrm{beh}}(t)$",
         },
         "Xt": {
             "name": "Latent (ground truth)",
@@ -201,7 +201,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["time", "dim"],
             "axis_title": "Position (true)",
-            "formula": r"$x_{\textrm{true}}(t)$",
+            "formula": r"$X_{\textrm{true}}(t)$",
         },
         "Ft": {
             "name": "Model (ground truth)",
@@ -214,7 +214,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["neuron", *dim],
             "reshape": True,
             "axis_title": "Receptive field (true)",
-            "formula": r"$r_{\textrm{true}}(x)$",
+            "formula": r"$F_{n,\textrm{true}}(x)$",
         },
         # Likelihood maps and Gaussian posterior parameters
         "logPYXF_maps": {
@@ -225,7 +225,10 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["time", *dim],
             "axis_title": "Log-likelihood map",
-            "formula": r"$\log P(Y|x, \Theta)$",
+            "formula": (
+                r"$\log P(Y_t|X_t=x, F)"
+                r" = \sum_n \log \mathrm{Poisson}(y_{t,n}; F_n(x))$"
+            ),
             "reshape": True,
         },
         "mu_l": {
@@ -370,8 +373,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
                 "posterior P(X | Y_prime) (i.e. run the "
                 "Kalman model) and then marginalise out X "
                 "from the likelihood of the new observations "
-                "given the latent: P(Y | Y_prime) = int_X "
-                "P(Y | X) P(X | Y_prime). This is called the "
+                "given the latent: P(Y | Y_prime) = "
+                "integral P(Y | X) P(X | Y_prime) dX. This is called the "
                 "posterior predictive and, for Kalman models, "
                 "has analytic form P(Y_i | Y_prime) = "
                 "Normal(Y_i | Y_hat, S) where "
@@ -403,8 +406,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": (
                 "See logPYF but for observations derived from "
                 "the validation spikes i.e. logPYF_val = "
-                "P(Y_val|Y_train) = int_X "
-                "P(Y_val|X)P(X|Y_train). Its analogous to "
+                "P(Y_val|Y_train) = integral "
+                "P(Y_val|X)P(X|Y_train) dX. Its analogous to "
                 'asking "were the validation observations (~validation '
                 "spikes) P(Y_val|X) likely under the decoded "
                 'trajectory P(X|Y_train)?" or in other words '
@@ -420,20 +423,27 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": (
                 "The Poisson log-likelihood of the model: how "
                 "well are the spike counts predicted by the "
-                "firing rates along the trajectory? Normalised "
-                "by the number of spike-time bins to make it "
-                "comparable across validation and train splits."
+                "receptive fields F evaluated along the decoded "
+                "latent trajectory X? "
+                "Normalised by the number of spike-time bins to "
+                "make it comparable across validation and train splits."
             ),
             "dims": [],
             "axis title": "Spike log-likelihood",
-            "formula": r"$\log P(Y|X(t), \Theta)$",
+            "formula": (
+                r"$\sum_t \sum_n \log \mathrm{Poisson}"
+                r"\left(y_{t,n}; F_n(X_t)\right)$"
+            ),
         },
         "logPYXF_val": {
             "name": "Mean spike log-likelihood given trajectory (validation)",
             "description": "See logPYXF, but applied to the validation spikes.",
             "dims": [],
             "axis title": "Spike log-likelihood (validation)",
-            "formula": r"$\log P(Y_{\textrm{val}}|X(t), \Theta)$",
+            "formula": (
+                r"$\sum_t \sum_n \log \mathrm{Poisson}"
+                r"\left(y^{\mathrm{val}}_{t,n}; F_n(X_t)\right)$"
+            ),
         },
         "bits_per_spike": {
             "name": "Bits per spike (train)",
@@ -451,8 +461,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": [],
             "axis_title": "Bits per spike (train)",
             "formula": (
-                r"$\frac{\mathcal{L}(\hat\lambda)"
-                r" - \mathcal{L}(\bar\lambda)}"
+                r"$\frac{\mathcal{L}(\hat F)"
+                r" - \mathcal{L}(\bar F)}"
                 r"{N_{\mathrm{spk}} \ln 2}$"
             ),
         },
@@ -462,8 +472,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": [],
             "axis_title": "Bits per spike (validation)",
             "formula": (
-                r"$\frac{\mathcal{L}_{\mathrm{val}}(\hat\lambda)"
-                r" - \mathcal{L}_{\mathrm{val}}(\bar\lambda)}"
+                r"$\frac{\mathcal{L}_{\mathrm{val}}(\hat F)"
+                r" - \mathcal{L}_{\mathrm{val}}(\bar F)}"
                 r"{N_{\mathrm{spk,val}} \ln 2}$"
             ),
         },
@@ -472,10 +482,10 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "name": "Mutual information",
             "description": (
                 "Exact mutual information between spike count "
-                "and position, per neuron, in bits/s. Interpret "
+                "and latent position, per neuron, in bits/s. Interpret "
                 "this as on average how many bits of information "
                 "per second do spikes from this neuron tell me "
-                "about position. Computed from the Poisson "
+                "about X. Computed from the Poisson "
                 "likelihood and position occupancy. In the small "
                 "time-bin limit, mutual information converges to "
                 "the Skaggs spatial information (bits/s), but "
@@ -486,9 +496,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["neuron"],
             "formula": (
                 r"$I(X;Y) = \frac{1}{\Delta t}\sum_x \sum_k"
-                r" P(x)\, \mathrm{Pois}(k;\lambda(x))"
-                r"\, \log_2 \frac{\mathrm{Pois}(k;\lambda(x))}"
-                r"{P(k)}$"
+                r" P(X=x)\,P(k|X=x)\,\log_2 \frac{P(k|X=x)}{P(k)}$"
             ),
         },
         "spatial_information": {
@@ -497,8 +505,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": (
                 "Skaggs spatial information per neuron (bits/s). "
                 "Interpret this as how much information, in "
-                "bits-per-second, does the firing rate of this "
-                "neuron tell me about position. Note: the "
+                "bits-per-second, does the receptive field of this "
+                "neuron tell me about latent position. Note: the "
                 "bits/spike form of SI is provably identical to "
                 "the bits-per-spike (BPS) metric; this rate form "
                 "is SI_rate = BPS * mean_firing_rate. See "
@@ -508,8 +516,8 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["neuron"],
             "formula": (
-                r"$I=\int_x \lambda(x) \log_2"
-                r" \frac{\lambda(x)}{\lambda} p(x)\, dx$"
+                r"$I=\int \frac{F_n(x)}{\Delta t} \log_2"
+                r" \frac{F_n(x)}{\bar F_n} p_X(x)\, dx$"
             ),
         },
         "negative_entropy": {
@@ -524,7 +532,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": "The fraction of bins where the firing is greater than 0.1 * max firing rate.",
             "dims": ["neuron"],
             "axis title": "Spatial sparsity",
-            "formula": r"$\rho(r(x))$",
+            "formula": r"$\rho(F_n(x))$",
         },
         "stability": {
             "name": "Stability",
@@ -533,7 +541,7 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             ),
             "dims": ["neuron"],
             "axis title": "Field stability",
-            "formula": r"$\textrm{Corr}(r_{\textrm{odd}}(x), r_{\textrm{even}}(x))$",
+            "formula": r"$\textrm{Corr}(F_{n,\textrm{odd}}(x), F_{n,\textrm{even}}(x))$",
         },
         "field_count": {
             "name": "Number of fields",
@@ -560,14 +568,14 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": "The change in the place fields from the last iteration.",
             "dims": ["neuron"],
             "axis title": "Field change",
-            "formula": r"$\|r_{e}(x) - r_{e-1}(x)\|$",
+            "formula": r"$\|F_{n,e}(x) - F_{n,e-1}(x)\|$",
         },
         "trajectory_change": {
             "name": "Latent shift",
             "description": "The average change in the latent positions from the last iteration.",
             "dims": ["time"],
             "axis title": "Latent change",
-            "formula": r"$\|x_{e}(t) - x_{e-1}(t)\|$",
+            "formula": r"$\|X_{e}(t) - X_{e-1}(t)\|$",
         },
         # Baselines : calculated when ground truth data is available
         "X_R2": {
@@ -582,14 +590,14 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "description": "The mean squared error between the true and estimated latent positions.",
             "dims": [],
             "axis title": "Latent error",
-            "formula": r"$\|x_{\textrm{true}}(t) - x_{\textrm{est}}(t)\|$",
+            "formula": r"$\|X_{\textrm{true}}(t) - X_{\textrm{est}}(t)\|$",
         },
         "F_err": {
             "name": "Model error",
             "description": "The mean squared error between the true and estimated place fields.",
             "dims": [],
             "axis title": "Receptive field error",
-            "formula": r"$\|r_{\textrm{true}}(x) - r_{\textrm{est}}(x)\|$",
+            "formula": r"$\|F_{n,\textrm{true}}(x) - F_{n,\textrm{est}}(x)\|$",
         },
         # Other variables
         "spike_mask": {
