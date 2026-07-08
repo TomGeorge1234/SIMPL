@@ -174,9 +174,7 @@ $$
 The spike likelihood comes from the fitted tuning curves:
 
 $$
-{\color{A92E5E}p(y_t \mid X_t, F)}
-=
-{\color{A92E5E}\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)}
+{\color{A92E5E}p(y_t \mid X_t, F)} = {\color{A92E5E}\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)}
 $$
 
 where, for neuron $n$, $F_n(X_t)$ is the expected spike count in that time bin, i.e. its tuning curve evaluated at the decoded latent position. The tuning curve itself is estimated by the standard KDE equation from the current latent:
