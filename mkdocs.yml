@@ -1,4 +1,4 @@
-site_name: SIMPL
+site_name: ""
 site_url: https://tomge.org/SIMPL/
 repo_url: https://github.com/TomGeorge1234/SIMPL
 repo_name: TomGeorge1234/SIMPL
@@ -37,6 +37,7 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 extra_javascript:
+  - javascripts/homepage.js
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 extra_css:
@@ -52,7 +53,7 @@ plugins:
             show_source: true
             docstring_style: numpy
 nav:
-  - Overview: index.md
+  - SIMPL: index.md
   - Quickstart: quickstart.md
   - Model / Maths: model.md
   - Plotting and Metrics: plotting.md

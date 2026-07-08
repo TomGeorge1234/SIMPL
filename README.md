@@ -17,7 +17,7 @@
 **SIMPL** is a JAX-python package for **optimising latent representations and neural tuning curves** from spike data. It does this by iteratively decoding the latent and fitting the tuning curves, starting from behavior or stimuli. It is lightweight, scalable, and very fast. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
 <!-- docs-description-end -->
 
-[**Overview**](#key-features) | [**Install**](#installation) | [**Quickstart**](#quickstart) | [**Examples**](#examplesdemos) | [**Cite**](#cite)
+[**Install**](#installation) | [**Quickstart**](#quickstart) | [**Examples**](#examplesdemos) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
 
