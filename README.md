@@ -14,59 +14,76 @@
 
 
 <!-- docs-description-start -->
-**SIMPL** is a fast JAX-based Python package for iteratively refining latent representations and tuning curves from spike data starting from behavior or stimulus. It uses an EM algorithm alternating between decoding and tuning curve fiting. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
+**SIMPL** is a JAX-python package for **optimising latent representations and neural tuning curves** from spike data. It does this by iteratively decoding the latent and fitting the tuning curves, starting from behavior or stimuli. It is lightweight, scalable, and very fast. Published at [ICLR 2025](https://openreview.net/forum?id=9kFaNwX6rv).
 <!-- docs-description-end -->
 
-[**Install**](#installation) | [**Demo**](#examples) | [**API**](#api) | [**Key Features**](#key-features) | [**Cite**](#cite)
+[**Install**](#installation) | [**Quickstart**](#quickstart) | [**Examples**](#examplesdemos) | [**Cite**](#cite)
 
 <img src="assets/simpl.gif" width=850>
 
 </div> 
 
+---
+
+<br>
+<br>
+
 <!-- docs-intro-start -->
+<!-- docs-features-start -->
 ## Key Features
 
-- ⚡ **Fast** — fits 100 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
-- 🎯 **Simple** — scikit-learn-style `fit()` / `predict()` API. Minimal intuitive hyperparameters. Get started in <10 lines of code.
-- 🧠 **Flexible** — works with 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Examples and demo provided.
-- 📊 **Rich outputs** — results stored as `xarray.Dataset` with per-iteration metrics, units, baselines, and diagnostics.
-- 📈 **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
+- **Fast** — fits 200 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
+- **Scalable** - scales to state-of-the-art size neural datasets (1000s of neurons, millions of time points, billions of spikes) on CPU.
+- **Simple** — scikit-learn API. Minimal hyperparameters. Get started in <10 lines of code.
+- **Flexible** — works 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Trial-structure aware. Examples provided.
+- **Rich outputs** — results stored as `xarray.Dataset` with per-iteration variables, metrics and units.
+- **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
 
 <p align="center">
   <img src="assets/simpl_demo.gif" width=450>
   <br>
   <em> Neural data analysis in < 5 seconds </em>
 </p>
+<!-- docs-features-end -->
 
+<!-- docs-install-start -->
 ## Installation
 
 ```bash
 pip install simpl-neuro
 ```
 
-To access the demo notebook: 
+To run the demo notebook locally (or else [![](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/simpl/blob/main/examples/simpl_demo.ipynb))
 ```bash
 pip install "simpl-neuro[demos]"
-simpl demo                # downloads the demo notebook into the current directory
+simpl demo                # downloads demo notebook into the cwd
 ```
+If you need GPU, see the Advanced Usage section.
+<!-- docs-install-end -->
 
 <!-- docs-intro-end -->
 
+---
+
+<br>
+<br>
+
 <!-- docs-usage-start -->
 <!-- docs-quickstart-start -->
-## API
+## Quickstart
 
-SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
+<!-- docs-quickstart-body-start -->
+SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`. For hyperparameter units, see the Model / Maths section.
 
 ```python
 from simpl import SIMPL
 
 # 1. Configure the model (no data, no computation)
 model = SIMPL(
-    speed_prior=0.4,        # prior on agent speed (m/s) — controls Kalman smoothing
-    kernel_bandwidth=0.02,  # KDE bandwidth for fitting receptive fields
-    bin_size=0.02,          # spatial bin size for environment discretisation
-    env_pad=0.0,            # padding around data bounds
+    speed_prior=0.4,        # "0.4m/s" prior on latent speed
+    behavior_prior=None,    # (optional) soft tether to the initial behaviour/stimulus
+    kernel_bandwidth=0.02,  # "2 cm" kernel bandwidth for KDE spike smoothing
+    bin_size=0.02,          # "2 cm" spatial bin size for environment discretisation
 )
 
 # 2. Fit
@@ -88,8 +105,6 @@ model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mut
 # (optional) Resume training if not yet converged
 model.fit(Y, Xb, time, n_iterations=5, resume=True)
 ```
-<!-- docs-quickstart-end -->
-
 
 ### Prediction
 
@@ -99,6 +114,146 @@ Decode new spikes using the fitted receptive fields (no behavioural input needed
 X_decoded = model.predict(Y_new)
 model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-likelihoods, etc.)
 ```
+<!-- docs-quickstart-body-end -->
+<!-- docs-quickstart-end -->
+
+---
+
+<br>
+<br>
+
+<!-- docs-model-start -->
+## Model, Maths and Notation
+
+<!-- docs-model-body-start -->
+<!-- docs-model-notation-start -->
+### Notation
+
+SIMPL tries to stick to the following notations:
+
+- **Latent trajectory:** $X \in \mathbb{R}^{T \times D}$ in maths, `X` / `model.X_` in code. $X_t$ is the inferred latent at time bin $t$.
+   - **Latent-space coordinate:** $x$ in maths, a grid point in `model.xF_` in code. This is a possible position/location, not a whole trajectory.
+   - **Behavioral initialisation:** $X_b$ in maths, `Xb` in code. This starts the fit and can optionally tether the latent through `behavior_prior`. $X_t$/`Xt` is ground truth (if known). 
+- **Spike counts:** $Y \in \mathbb{R}^{T \times N}$. $y_t$ is one time-bin vector, and $y_{t,n}$ is one neuron's count in one time bin.
+- **Receptive fields:** $F \in \mathbb{R}^{N \times N_{\textrm{bins}}}$. `F` / `model.F_` in code are reshaped to the environment size, e.g. `F.shape = (N, N_x_bins, N_y_bins, ...)`. $F_n(x)$ is neuron $n$'s expected spike count at latent-space point $x$. Thus $F_n(X_t)$ is neuron $n$'s expected spike count at the decoded latent position and is the Poisson rate parameter.
+<!-- docs-model-notation-end -->
+
+<!-- docs-model-objective-start -->
+### Full model
+
+_This is only a summary, see [ICLR paper](https://openreview.net/forum?id=9kFaNwX6rv) for full details._
+
+At its heart SIMPL approximately optimises a latent trajectory $X_{1:T}$ and receptive fields $F(x)$ under:
+
+$$
+p(X_{1:T}, Y \mid F)
+\;\propto\;
+\prod_t
+\underbrace{{\color{A92E5E}p(y_t \mid X_t, F)}}_{{\color{A92E5E}\mathrm{observation\ model}}}\,
+\underbrace{{\color{1D5C84}p(X_t \mid X_{t-\Delta t})}}_{{\color{1D5C84}\mathrm{dynamics\ model}}}
+$$
+<!-- docs-model-objective-end -->
+
+<!-- docs-model-dynamics-start -->
+### Dynamics model
+
+The temporal prior is a Gaussian random-walk model controlled by $\sigma_v$ (`speed_prior`):
+
+$$
+{\color{1D5C84}p(X_t \mid X_{t-\Delta t})}
+\approx
+{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}
+$$
+
+**Optional (`behavior_prior`)**  
+SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), controlled by $\sigma_b$ (`behavior_prior`):
+
+$$
+{\color{1D5C84}p(X_t \mid X_{t-\Delta t})}
+\propto
+\underbrace{{\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}}_{{\color{1D5C84}\mathrm{latent\ close\ to\ previous\ latent}}}
+\,
+\cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \sigma_b^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
+$$
+
+Once fields are estimated an approximation (see paper) converts Poisson-nonlinear observations to linear observations, allowing these dynamics to be inferred with fast Kalman smoothing.
+
+<!-- docs-model-dynamics-end -->
+
+<!-- docs-model-observation-start -->
+### Observation model
+
+The spike likelihood comes from the fitted tuning curves:
+
+$$
+{\color{A92E5E}p(y_t \mid X_t, F)} = {\color{A92E5E}\prod_n \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)}
+$$
+
+where, for neuron $n$, $F_n(X_t)$ is the expected spike count in that time bin, i.e. its tuning curve evaluated at the decoded latent position. The tuning curve itself is estimated by the standard KDE equation from the current latent:
+
+$$
+{\color{A92E5E}F_n(x) = \frac{\sum_t y_{t,n}\,K(x, X_t)}{\sum_t K(x, X_t)}}
+$$
+
+$K$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corrects for non-uniform occupancy. Receptive fields are evaluated on a spatial grid with bin size $\Delta x$, but decoded positions are not restricted to those grid points.
+<!-- docs-model-observation-end -->
+
+
+<!-- docs-model-units-start -->
+### Units and Discretisation
+
+All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on _your_ data of course), not arbitrary time/spatial-bin units. 
+<!-- docs-model-units-end -->
+
+<!-- docs-model-body-end -->
+<!-- docs-model-end -->
+
+---
+
+<br>
+<br>
+
+<!-- docs-plotting-start -->
+## Plotting and Metrics
+
+<!-- docs-plotting-body-start -->
+### Metrics
+
+The four headline fitting metrics are:
+
+- **Spike log-likelihood** (`logPYXF`, `logPYXF_val`) — the mean Poisson log-likelihood of the observed spike counts under the fitted receptive fields evaluated along the decoded trajectory. 
+  > We strongly suggest using `bits_per_spike` over `logPYXF` for comparisons. Its zero point is interpretable, and the normalisation makes it easier to compare datasets with different neuron counts or recording lengths.
+
+$$
+\mathcal{L}
+=
+\sum_t \sum_n
+\log \mathrm{Poisson}\!\left(y_{t,n}; F_n(X_t)\right)
+$$
+
+- **Bits per spike** (`bits_per_spike`, `bits_per_spike_val`) — how much better the fitted tuning curves explain spikes than a mean-rate baseline, in bits per observed spike. This is useful for comparing fits across datasets with different spike counts or bin sizes:
+
+$$
+\mathrm{BPS} = \frac{\mathcal{L}(\hat{F}) - \mathcal{L}(\bar{F})}{N_{\mathrm{spk}} \ln 2}
+$$
+
+- **Skaggs spatial information** (`spatial_information`) — the standard spatial-information rate for each neuron, in bits/sec. It measures how informative the receptive field is about latent position in the small-time-bin limit:
+
+$$
+I_{\mathrm{Skaggs}} = \frac{1}{\Delta t}\sum_x p_X(x)\,F_n(x)\,\log_2 \frac{F_n(x)}{\bar{F}_n}
+$$
+
+Other metrics available in `model.results_` include:
+
+- `mutual_information` — the exact finite-time-bin analog of spatial information, $I(X;Y)$, in bits/s. It is the same idea as Skaggs spatial information, but computed from the full spike-count distribution rather than the small-bin approximation.
+- `X_R2`, `X_err` — latent-position agreement with ground truth, when `Xt` is registered with `add_baselines`.
+- `F_err` — receptive-field error against ground-truth fields, when `Ft` is registered.
+- `stability` — correlation between fields estimated from odd and even minutes.
+- `field_change`, `trajectory_change` — per-iteration changes in tuning curves and decoded trajectory.
+- `negative_entropy`, `sparsity` — compactness/sparsity summaries of the fitted tuning curves.
+
+
+For 2D environments, `model.analyse_place_fields()` adds morphology metrics to `model.results_`, including place-field count, size, position, roundness, and peak firing rate. This uses connected-component analysis on receptive fields and is not run automatically during `fit()`.
 
 ### Plotting
 
@@ -122,6 +277,9 @@ model.plot_spikes(time_range=(0, 60))
 # Auto-discover and plot all per-iteration metrics
 model.plot_all_metrics(show_neurons=False)
 
+# 2D place-field morphology metrics
+model.analyse_place_fields()
+
 # Prediction on held-out data
 model.predict(Y_test)
 model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
@@ -143,7 +301,17 @@ model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
   <em> Bits-per-spike and mutual-information metrics improve across epochs and exceed naive ML </em>
 </p>
 
+<!-- docs-plotting-body-end -->
+<!-- docs-plotting-end -->
 
+---
+
+<br>
+<br>
+
+## Advanced Usage
+
+<!-- docs-saving-start -->
 ### Saving and loading
 
 ```python
@@ -159,7 +327,9 @@ model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.025, bin_size=0.02)
 model.load("results.nc")
 model.fit(Y, Xb, time, n_iterations=5, resume=True)  # pick up where you left off
 ```
+<!-- docs-saving-end -->
 
+<!-- docs-baselines-start -->
 ### Ground truth baselines
 
 If you have ground truth positions (and optionally ground truth receptive fields), register them before fitting so that baseline metrics (latent R2, field error, etc.) are computed at each iteration:
@@ -168,7 +338,9 @@ If you have ground truth positions (and optionally ground truth receptive fields
 model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
 model.fit(Y, Xb, time, n_iterations=5)  # baselines computed automatically
 ```
+<!-- docs-baselines-end -->
 
+<!-- docs-angular-start -->
 ### 1D angular / circular data
 
 SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step.
@@ -185,7 +357,9 @@ model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 ```
 
 > **Note:** The wrapped Kalman filter assumes a tight posterior (σ ≪ 2π). If posterior uncertainty is large relative to the circular domain, decoding accuracy may degrade.
+<!-- docs-angular-end -->
 
+<!-- docs-trials-start -->
 ### Trial boundaries
 
 When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
@@ -196,8 +370,10 @@ model.fit(Y, Xb, time, n_iterations=5, trial_boundaries=[0, 5000, 12000])
 ```
 
 If your timestamps have gaps (e.g. concatenated sessions), SIMPL will warn you and suggest using `trial_boundaries` to avoid smoothing across the jumps.
+<!-- docs-trials-end -->
 
-### GPU acceleration
+<!-- docs-gpu-start -->
+### GPU Acceleration
 
 SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Typical neural recordings (< 2 hrs) fit in under 60 s on CPU alone, so a GPU is rarely needed.
 
@@ -213,8 +389,10 @@ pip install ".[metal]"           # Apple Silicon GPU (experimental and not recom
 ```python
 model = SIMPL(use_gpu=False)   # force CPU
 ```
+<!-- docs-gpu-end -->
 
 
+<!-- docs-preprocessing-start -->
 ### Data preprocessing utilities
 
 ```python
@@ -226,12 +404,19 @@ Y_coarse, Xb_coarse, time_coarse = coarsen_dt(Y, Xb, time, dt_multiplier=2)
 # Accumulate spikes with a causal sliding window
 Y_accum = accumulate_spikes(Y, window=3)
 ```
+<!-- docs-preprocessing-end -->
 
 <!-- docs-usage-end -->
 
-<!-- docs-examples-start -->
-## Examples
+---
 
+<br>
+<br>
+
+<!-- docs-examples-start -->
+## Examples/Demos
+
+<!-- docs-examples-body-start -->
 The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb) notebook walks through the full SIMPL workflow across four datasets:
 
 1. **Synthetic grid cells** — fits SIMPL on artificial grid cell data with known ground truth, demonstrating decoded trajectories, receptive field recovery, log-likelihood improvements, and prediction on held-out data.
@@ -240,9 +425,18 @@ The [`examples/simpl_demo.ipynb`](https://github.com/TomGeorge1234/SIMPL/blob/ma
 4. **Motor cortex hand reaching** — fits SIMPL on somatosensory cortex recordings from [Chowdhury et al. (2020)](https://pubmed.ncbi.nlm.nih.gov/31971510/), demonstrating higher-dimensional latent variables (2D and 4D) and model comparison across different behavioural initialisations (position vs velocity vs combined).
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/TomGeorge1234/SIMPL/blob/main/examples/simpl_demo.ipynb)
+<!-- docs-examples-body-end -->
 <!-- docs-examples-end -->
 
-## Package Structure
+---
+
+<br>
+<br>
+
+## Code and Development
+
+<!-- docs-package-start -->
+### Package Structure
 
 ```
 src/simpl/
@@ -254,8 +448,10 @@ src/simpl/
 ├── plotting.py        # Built-in diagnostic plots (trajectory, fields, metrics)
 └── utils.py           # Gaussian helpers, CCA, data prep, I/O
 ```
+<!-- docs-package-end -->
 
-## Development
+<!-- docs-development-start -->
+### Development
 
 ```bash
 # Install for development
@@ -268,6 +464,12 @@ ruff format --check src/
 # Run tests
 pytest
 ```
+<!-- docs-development-end -->
+
+---
+
+<br>
+<br>
 
 <!-- docs-cite-start -->
 ## Cite

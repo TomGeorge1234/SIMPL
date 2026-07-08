@@ -1,10 +1,13 @@
-site_name: SIMPL
+site_name: ""
 site_url: https://tomge.org/SIMPL/
 repo_url: https://github.com/TomGeorge1234/SIMPL
+repo_name: TomGeorge1234/SIMPL
 theme:
   name: material
   logo: assets/simpl_emblem.png
   favicon: assets/favicon_io/favicon.ico
+  icon:
+    repo: fontawesome/brands/github
   palette:
     # Light mode
     - scheme: default
@@ -34,6 +37,7 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 extra_javascript:
+  - javascripts/homepage.js
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 extra_css:
@@ -49,9 +53,13 @@ plugins:
             show_source: true
             docstring_style: numpy
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
-  - API Reference:
+  - SIMPL: index.md
+  - Quickstart: quickstart.md
+  - Model / Maths: model.md
+  - Plotting and Metrics: plotting.md
+  - Advanced Usage: advanced-usage.md
+  - Examples/Demos: examples.md
+  - Code & Docstring Reference:
     - SIMPL: api/simpl.md
     - Environment: api/environment.md
     - Kalman Filter: api/kalman.md

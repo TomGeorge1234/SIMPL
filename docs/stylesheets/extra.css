@@ -9,8 +9,17 @@
 [data-md-color-scheme="default"] .md-header .md-header__title {
   color: #333;
 }
+[data-md-color-scheme="default"] .md-header__title {
+  display: none;
+}
+[data-md-color-scheme="default"] .md-header__button.md-logo {
+  margin-right: 0;
+}
 [data-md-color-scheme="default"] .md-header .md-icon {
   color: #555;
+}
+[data-md-color-scheme="default"] article.md-content__inner:has(> p:first-child > img[alt="SIMPL logo"]) > h1:first-child {
+  display: none;
 }
 [data-md-color-scheme="default"] .md-tabs {
   background-color: #f8f9fa;
@@ -28,4 +37,9 @@
 }
 [data-md-color-scheme="slate"] {
   --md-typeset-a-color: #82b1ff;
+}
+
+/* Hide the "Made with Material for MkDocs" generator banner. */
+.md-footer-meta__inner {
+  display: none;
 }

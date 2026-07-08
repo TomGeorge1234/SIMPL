@@ -82,9 +82,9 @@ class SIMPL:
         - **Xb** : Behavioral initialisation, shape (T, D). The starting estimate of latent positions,
           typically derived from tracked behavior (e.g. animal position).
         - **Xt** : Ground truth latent positions (if available), shape (T, D). Used for evaluation only.
-        - **F** : Receptive fields (place fields), shape (N_neurons, N_bins) — the estimated firing rate of each neuron
-          as a function of position, discretised on the environment grid.
-        - **FX** : Firing rates along the trajectory, shape (T, N_neurons) — F evaluated at the latent positions X.
+        - **F** : Receptive fields (place fields), shape (N_neurons, N_bins) — expected spike counts
+          per time bin for each neuron as a function of latent position, discretised on the environment grid.
+        - **FX** : Expected spike counts along the trajectory, shape (T, N_neurons) — F evaluated at X.
 
         Parameters
         ----------
