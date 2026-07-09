@@ -155,6 +155,18 @@ class TestCCA:
         X_pred = X @ coef.T + intercept
         assert jnp.allclose(X, X_pred, atol=0.1)
 
+    def test_scaled_feature_mapping(self):
+        rng = np.random.default_rng(42)
+        X = rng.normal(size=(200, 2)) * np.array([10.0, 0.2]) + np.array([5.0, -3.0])
+        true_coef = np.array([[0.7, -0.2], [0.1, 1.4]])
+        true_intercept = np.array([2.0, -1.0])
+        Y = X @ true_coef.T + true_intercept
+
+        coef, intercept = cca(jnp.array(X), jnp.array(Y))
+        Y_pred = X @ coef.T + intercept
+
+        assert np.sqrt(np.mean((Y - Y_pred) ** 2)) < 1.0
+
 
 class TestCorrelationAtLag:
     def test_autocorrelation_lag_zero(self):

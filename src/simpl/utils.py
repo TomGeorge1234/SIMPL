@@ -332,8 +332,9 @@ def cca(X: jax.Array, Y: jax.Array) -> tuple[np.ndarray, np.ndarray]:
 
     cca = sklearn.cross_decomposition.CCA(n_components=D, max_iter=2000)
     cca.fit(X, Y)
-    coef = cca.coef_  # / cca._x_std # this randomly changed at some point
-    intercept = cca.intercept_ - cca._x_mean @ coef.T
+    origin = np.zeros((1, D))
+    intercept = cca.predict(origin)[0]
+    coef = (cca.predict(np.eye(D)) - intercept).T
     return coef, intercept
 
 
