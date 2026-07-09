@@ -1351,11 +1351,7 @@ class SIMPL:
         # ── Check speed prior against data ──
         displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
         median_speed = float(np.median(displacements / self.dt_))
-        if (
-            self.speed_prior is not None
-            and median_speed > 0
-            and self.speed_prior < 0.2 * median_speed
-        ):
+        if self.speed_prior is not None and median_speed > 0 and self.speed_prior < 0.2 * median_speed:
             warnings.warn(
                 f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
                 f"({median_speed:.4g}). This may impede the decoded trajectory. "
