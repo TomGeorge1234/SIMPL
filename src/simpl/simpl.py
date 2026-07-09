@@ -191,7 +191,7 @@ class SIMPL:
         self,
         Y: np.ndarray,
         Xb: np.ndarray,
-        time: np.ndarray | None = None,
+        time: np.ndarray | None,
         n_iterations: int = 5,
         trial_boundaries: np.ndarray | None = None,
         align_to_behavior: bool | str = "trajectory",
@@ -230,7 +230,7 @@ class SIMPL:
             Behavioral initialisation positions. This is the starting estimate of the latent
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
-        time : np.ndarray or None, shape (T,), optional
+        time : np.ndarray or None, shape (T,) or None
             Time stamps (in seconds) for each time bin. Values should be uniformly
             increasing (Kalman filter is poorly defined otherwise). ``dt`` is automatically
             inferred as ``median(diff(time))``. If None, the data are treated as
