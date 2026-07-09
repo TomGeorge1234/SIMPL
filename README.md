@@ -165,6 +165,8 @@ $$
 {\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}
 $$
 
+Smaller `speed_prior` values enforce smoother decoded trajectories; larger values let each time bin follow the spike likelihood more freely. Set `speed_prior=None` to strictly disable Kalman smoothing entirely.
+
 **Optional (`behavior_prior`)**  
 SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), controlled by $\sigma_b$ (`behavior_prior`):
 
@@ -175,6 +177,8 @@ $$
 \,
 \cdot \underbrace{{\color{A3CC90}\mathcal{N}\!\left(X_t; X_t^{(0)}, \sigma_b^2 I\right)}}_{{\color{A3CC90}\mathrm{latent\ close\ to\ initialisation}}}
 $$
+
+Smaller `behavior_prior` values enforce decoded trajectory to be closer to the behavior passed into `Xb`; larger values let each time bin follow the spike likelihood more freely (potentially moving far from behavior). Set `behavior_prior=None` to strictly disable behavior tether.
 
 Once fields are estimated an approximation (see paper) converts Poisson-nonlinear observations to linear observations, allowing these dynamics to be inferred with fast Kalman smoothing.
 

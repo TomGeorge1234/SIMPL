@@ -35,8 +35,7 @@ class SIMPL:
         self,
         # Model hyperparameters
         kernel_bandwidth: float = 0.02,
-        speed_prior: float = 0.1,
-        use_kalman_smoothing: bool = True,
+        speed_prior: float | None = 0.1,
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
@@ -92,15 +91,13 @@ class SIMPL:
             The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
             meters) used for KDE when fitting receptive fields. Smaller values give sharper
             fields but are noisier; larger values smooth more. By default 0.02.
-        speed_prior : float, optional
+        speed_prior : float or None, optional
             Prior on agent speed in units of meters per second. This controls the strength of
             the Kalman smoother: a low speed prior constrains the decoded trajectory to be
             smooth, while a high value lets the trajectory follow the spike likelihood more
-            closely. By default 0.1 m/s.
-        use_kalman_smoothing : bool, optional
-            Whether to use Kalman smoothing dynamics in the E-step. If False, the speed prior
-            is set very high, effectively disabling temporal smoothing and letting the
-            trajectory follow the per-bin maximum-likelihood estimate. By default True.
+            closely. Set to None to disable Kalman smoothing and let the trajectory follow
+            the per-bin maximum-likelihood estimate independently in each time bin. By default
+            0.1 m/s.
         behavior_prior : float or None, optional
             Prior on how far the latent positions can deviate from the behavioral positions,
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
@@ -165,7 +162,6 @@ class SIMPL:
         # Model hyperparameters
         self.kernel_bandwidth = kernel_bandwidth
         self.speed_prior = speed_prior
-        self.use_kalman_smoothing = use_kalman_smoothing
         self.behavior_prior = behavior_prior
         self.is_1D_angular = is_1D_angular
 
@@ -1270,7 +1266,7 @@ class SIMPL:
             raise ValueError("time must be strictly increasing")
         dt_median = np.median(dt)
         if (
-            self.use_kalman_smoothing
+            self.speed_prior is not None
             and dt_median > 0
             and np.max(np.abs(dt - dt_median)) / dt_median > 0.01
             and trial_boundaries is None
@@ -1355,7 +1351,11 @@ class SIMPL:
         # ── Check speed prior against data ──
         displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
         median_speed = float(np.median(displacements / self.dt_))
-        if median_speed > 0 and self.speed_prior < 0.2 * median_speed:
+        if (
+            self.speed_prior is not None
+            and median_speed > 0
+            and self.speed_prior < 0.2 * median_speed
+        ):
             warnings.warn(
                 f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
                 f"({median_speed:.4g}). This may impede the decoded trajectory. "
@@ -1470,14 +1470,10 @@ class SIMPL:
 
     def _init_kalman_filter(self) -> None:
         """Set up the Kalman filter from prior parameters."""
-        speed_sigma = self.speed_prior * self.dt_
-
         # Kalman configuration
         self.speed_prior_requested_ = self.speed_prior
         self.kalman_off_speed_prior_ = 1e10
-        speed_prior_effective = (
-            self.speed_prior if self.use_kalman_smoothing else max(self.speed_prior, self.kalman_off_speed_prior_)
-        )
+        speed_prior_effective = self.speed_prior if self.speed_prior is not None else self.kalman_off_speed_prior_
         self.speed_prior_effective_ = speed_prior_effective
         speed_sigma = speed_prior_effective * self.dt_
 
@@ -1845,8 +1841,7 @@ class SIMPL:
             "dt": self.dt_,
             "trial_boundaries": trial_boundaries,
             "kernel_bandwidth": self.kernel_bandwidth,
-            "speed_prior": self.speed_prior,
-            "use_kalman_smoothing": int(self.use_kalman_smoothing),
+            "speed_prior": np.nan if self.speed_prior is None else self.speed_prior,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",
