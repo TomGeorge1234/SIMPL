@@ -35,7 +35,7 @@
 - **Fast** — fits 200 neurons over 1 hour of data in under 10 seconds on CPU. GPU optional but rarely needed.
 - **Scalable** - scales to state-of-the-art size neural datasets (1000s of neurons, millions of time points, billions of spikes) on CPU.
 - **Simple** — scikit-learn API. Minimal hyperparameters. Get started in <10 lines of code.
-- **Flexible** — works 1D angular data (e.g. head direction), 2D spatial data (e.g. place/grid cells), and higher dimensions. Trial-structure aware. Examples provided.
+- **Flexible** — 1D, 1D _angular_ (e.g. head direction), 2D spatial (e.g. place/grid cells), and higher dimensional data all permitted. Trial-structure aware. Temporal or non-temporal data.
 - **Rich outputs** — results stored as `xarray.Dataset` with per-iteration variables, metrics and units.
 - **Visual** — built-in plotting for trajectories, receptive fields, spike rasters, and fitting summaries.
 
@@ -165,7 +165,7 @@ $$
 {\color{1D5C84}\mathcal{N}\!\left(X_t; X_{t-\Delta t}, (\sigma_v\,\Delta t)^2 I\right)}
 $$
 
-Smaller `speed_prior` values enforce smoother decoded trajectories; larger values let each time bin follow the spike likelihood more freely. Set `speed_prior=None` to strictly disable Kalman smoothing entirely.
+Smaller `speed_prior` values enforce smoother decoded trajectories; larger values let each time bin follow the spike likelihood more freely. Set `speed_prior=None` disables Kalman smoothing. For data without meaningful temporal structure, see [Temporal vs. non-temporal datasets](#temporal-vs-non-temporal-datasets).
 
 **Optional (`behavior_prior`)**  
 SIMPL can also include a soft Gaussian tether to whatever the latent was initialised to (typically behavior), controlled by $\sigma_b$ (`behavior_prior`):
@@ -343,6 +343,23 @@ model.add_baselines(Xt=Xt, Ft=Ft, Ft_coords_dict={"y": ybins, "x": xbins})
 model.fit(Y, Xb, time, n_iterations=5)  # baselines computed automatically
 ```
 <!-- docs-baselines-end -->
+
+<!-- docs-nontemporal-start -->
+### Temporal vs. non-temporal datasets
+
+Temporal structure enters SIMPL only through the Kalman smoothing prior. A temporal dataset might be hippocampal navigation, where neighboring samples are adjacent moments in an animal's trajectory and smoothness over time is meaningful. A non-temporal dataset might be neural responses to visual stimuli, where each point is a separate trial and neighboring rows do not imply temporal continuity. 
+
+Once Kalman smoothing is disabled, SIMPL is, in effect, iterative maximum likelihood: each observation is decoded independently from the current receptive fields, then the receptive fields are refit from those decoded positions.
+
+If your samples do not have meaningful time stamps or temporal ordering, omit `time` when calling `fit()`:
+
+```python
+model = SIMPL(speed_prior=None)
+model.fit(Y, Xb)
+```
+
+When `time` is omitted, SIMPL treats the data as non-temporal, replaces the missing time coordinate with `np.arange(T)`, and forcefully disables Kalman smoothing. In this setting, the saved `time` coordinate is better interpreted as trial/sample index rather than physical time.
+<!-- docs-nontemporal-end -->
 
 <!-- docs-angular-start -->
 ### 1D angular / circular data

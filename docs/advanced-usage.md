@@ -14,6 +14,12 @@
 
 {%
   include-markdown "../README.md"
+  start="<!-- docs-nontemporal-start -->"
+  end="<!-- docs-nontemporal-end -->"
+%}
+
+{%
+  include-markdown "../README.md"
   start="<!-- docs-angular-start -->"
   end="<!-- docs-angular-end -->"
 %}

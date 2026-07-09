@@ -191,7 +191,7 @@ class SIMPL:
         self,
         Y: np.ndarray,
         Xb: np.ndarray,
-        time: np.ndarray,
+        time: np.ndarray | None = None,
         n_iterations: int = 5,
         trial_boundaries: np.ndarray | None = None,
         align_to_behavior: bool | str = "trajectory",
@@ -230,10 +230,12 @@ class SIMPL:
             Behavioral initialisation positions. This is the starting estimate of the latent
             trajectory, typically the tracked position of the animal. D is the number of
             latent dimensions (e.g. 2 for 2D position).
-        time : np.ndarray, shape (T,)
+        time : np.ndarray or None, shape (T,), optional
             Time stamps (in seconds) for each time bin. Values should be uniformly
-            increasing (Kalman filter is poorly defined otherwise. ``dt`` is automatically
-            inferred as ``median(diff(time))``.
+            increasing (Kalman filter is poorly defined otherwise). ``dt`` is automatically
+            inferred as ``median(diff(time))``. If None, the data are treated as
+            non-temporal: SIMPL uses ``np.arange(T)`` as a placeholder coordinate and
+            disables Kalman smoothing regardless of ``speed_prior``.
         n_iterations : int, optional
             Number of EM iterations to train after iteration 0. Set to 0 to run only the initial
             M-step (useful for manual iteration control via ``_fit_iteration()``). By default 5.
@@ -617,10 +619,11 @@ class SIMPL:
         results = utils.load_results(os.fspath(path))
 
         # Run full setup from saved data (environment, Kalman filter, masks, etc.)
+        saved_is_temporal = bool(results.attrs.get("is_temporal", 1))
         self.fit(
             Y=results["Y"].values,
             Xb=results["Xb"].values,
-            time=np.asarray(results.coords["time"].values, dtype=float),
+            time=np.asarray(results.coords["time"].values, dtype=float) if saved_is_temporal else None,
             n_iterations=0,
             trial_boundaries=np.atleast_1d(np.asarray(results.attrs.get("trial_boundaries", [0]), dtype=int)),
         )
@@ -1246,27 +1249,42 @@ class SIMPL:
     def _init_from_data(self, Y, Xb, time, trial_boundaries, align_to_behavior) -> None:
         """Validate inputs and initialise all internal state from raw data."""
         # ── Validate inputs ──
-        time = np.asarray(time, dtype=float)
-
         if len(Xb.shape) == 1:  # Handle 1D case where Xb is (T,) instead of (T, 1)
             Xb = Xb[:, np.newaxis]
         if Y.shape[0] != Xb.shape[0]:
             raise ValueError(f"Y and Xb must have the same number of time bins (got {Y.shape[0]} and {Xb.shape[0]})")
+
+        self.is_temporal_ = time is not None
+        if self.is_temporal_:
+            time = np.asarray(time, dtype=float)
+        else:
+            if self.speed_prior is not None:
+                warnings.warn(
+                    "time was not provided, so SIMPL is treating the data as non-temporal. "
+                    "Kalman smoothing is disabled and speed_prior is ignored. "
+                    "Set speed_prior=None to silence this warning."
+                )
+            time = np.arange(Y.shape[0], dtype=float)
+
         if time.ndim != 1:
             raise ValueError(f"time must be a 1D array (got shape {time.shape})")
         if Y.shape[0] != len(time):
             raise ValueError(f"Y and time must have the same length (got {Y.shape[0]} and {len(time)})")
-        if len(time) < 2:
+        if self.is_temporal_ and len(time) < 2:
             raise ValueError("time must contain at least 2 samples so dt can be inferred")
         if not np.all(np.isfinite(time)):
             raise ValueError("time must contain only finite values")
 
         dt = np.diff(time)
-        if not np.all(dt > 0):
-            raise ValueError("time must be strictly increasing")
-        dt_median = np.median(dt)
+        if self.is_temporal_:
+            if not np.all(dt > 0):
+                raise ValueError("time must be strictly increasing")
+            dt_median = np.median(dt)
+        else:
+            dt_median = 1.0
         if (
-            self.speed_prior is not None
+            self.is_temporal_
+            and self.speed_prior is not None
             and dt_median > 0
             and np.max(np.abs(dt - dt_median)) / dt_median > 0.01
             and trial_boundaries is None
@@ -1342,7 +1360,7 @@ class SIMPL:
         self.Xb_ = jax.device_put(jnp.array(Xb), device)
         self.time_ = jax.device_put(jnp.array(time), device)
         self.neuron_ = jax.device_put(jnp.array(neurons), device)
-        self.dt_ = float(np.median(dt))
+        self.dt_ = float(dt_median)
 
         self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
         self.xF_shape_ = self.environment_.discrete_env_shape
@@ -1351,7 +1369,12 @@ class SIMPL:
         # ── Check speed prior against data ──
         displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
         median_speed = float(np.median(displacements / self.dt_))
-        if self.speed_prior is not None and median_speed > 0 and self.speed_prior < 0.2 * median_speed:
+        if (
+            self.is_temporal_
+            and self.speed_prior is not None
+            and median_speed > 0
+            and self.speed_prior < 0.2 * median_speed
+        ):
             warnings.warn(
                 f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
                 f"({median_speed:.4g}). This may impede the decoded trajectory. "
@@ -1469,7 +1492,9 @@ class SIMPL:
         # Kalman configuration
         self.speed_prior_requested_ = self.speed_prior
         self.kalman_off_speed_prior_ = 1e10
-        speed_prior_effective = self.speed_prior if self.speed_prior is not None else self.kalman_off_speed_prior_
+        speed_prior_effective = (
+            self.speed_prior if self.is_temporal_ and self.speed_prior is not None else self.kalman_off_speed_prior_
+        )
         self.speed_prior_effective_ = speed_prior_effective
         speed_sigma = speed_prior_effective * self.dt_
 
@@ -1835,9 +1860,10 @@ class SIMPL:
             "env_pad": self.environment_.pad,
             "bin_size": self.environment_.bin_size,
             "dt": self.dt_,
+            "is_temporal": int(self.is_temporal_),
             "trial_boundaries": trial_boundaries,
             "kernel_bandwidth": self.kernel_bandwidth,
-            "speed_prior": np.nan if self.speed_prior is None else self.speed_prior,
+            "speed_prior": np.nan if self.speed_prior is None or not self.is_temporal_ else self.speed_prior,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",
