@@ -351,14 +351,14 @@ Temporal structure enters SIMPL only through the Kalman smoothing prior. A tempo
 
 Once Kalman smoothing is disabled, SIMPL is, in effect, iterative maximum likelihood: each observation is decoded independently from the current receptive fields, then the receptive fields are refit from those decoded positions.
 
-If your samples do not have meaningful time stamps or temporal ordering, omit `time` when calling `fit()`:
+If your samples do not have meaningful time stamps or temporal ordering, pass `time=None` when calling `fit()`:
 
 ```python
 model = SIMPL(speed_prior=None)
-model.fit(Y, Xb)
+model.fit(Y, Xb, time=None)
 ```
 
-When `time` is omitted, SIMPL treats the data as non-temporal, replaces the missing time coordinate with `np.arange(T)`, and forcefully disables Kalman smoothing. In this setting, the saved `time` coordinate is better interpreted as trial/sample index rather than physical time.
+When `time=None`, SIMPL treats the data as non-temporal, replaces the missing time coordinate with `np.arange(T)`, and forcefully disables Kalman smoothing. In this setting, the saved `time` coordinate is better interpreted as trial/sample index rather than physical time.
 <!-- docs-nontemporal-end -->
 
 <!-- docs-angular-start -->

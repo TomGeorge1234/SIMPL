@@ -1260,7 +1260,7 @@ class SIMPL:
         else:
             if self.speed_prior is not None:
                 warnings.warn(
-                    "time was not provided, so SIMPL is treating the data as non-temporal. "
+                    "time=None was passed, so SIMPL is treating the data as non-temporal. "
                     "Kalman smoothing is disabled and speed_prior is ignored. "
                     "Set speed_prior=None to silence this warning."
                 )

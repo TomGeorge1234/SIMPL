@@ -41,6 +41,7 @@ class TestSIMPLInit:
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
+            time=None,
             n_iterations=0,
         )
 
@@ -60,6 +61,7 @@ class TestSIMPLInit:
             model.fit(
                 Y=demo_data["Y"][:N, :N_neurons],
                 Xb=demo_data["Xb"][:N],
+                time=None,
                 n_iterations=0,
             )
 
