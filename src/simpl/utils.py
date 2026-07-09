@@ -795,7 +795,7 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     """Save a SIMPL results ``xr.Dataset`` to a netCDF file.
 
     Before writing, the function performs several type conversions required by
-    the netCDF4 format: boolean arrays (e.g. ``spike_mask``) are cast to
+    the NetCDF format: boolean arrays (e.g. ``spike_mask``) are cast to
     ``int32``, boolean ``attrs`` are cast to ``int``, and ``trial_slices``
     (a list of Python ``slice`` objects) is serialised to a flat ``int64``
     array.  Use ``load_results`` to reload and automatically reverse
@@ -814,7 +814,7 @@ def save_results_to_netcdf(results: xr.Dataset, path: str) -> None:
     for var in results_to_save.data_vars:
         if "reshape" in results_to_save[var].attrs:
             results_to_save[var].attrs["reshape"] = int(results_to_save[var].attrs["reshape"])
-    results_to_save.to_netcdf(path)
+    results_to_save.to_netcdf(path, engine="h5netcdf")
 
 
 def load_results(path: str) -> xr.Dataset:

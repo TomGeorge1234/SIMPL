@@ -21,23 +21,23 @@ class TestSIMPLInit:
         assert not hasattr(model, "Y_")
         assert not hasattr(model, "results_")
 
-    def test_use_kalman_smoothing_argument(self, demo_data):
+    def test_speed_prior_none_disables_kalman_smoothing(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(use_kalman_smoothing=False, speed_prior=0.1)
+        model = SIMPL(speed_prior=None)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
             time=demo_data["time"][:N],
             n_iterations=0,
         )
-        assert model.use_kalman_smoothing is False
+        assert model.speed_prior is None
         assert model.speed_prior_effective_ >= model.kalman_off_speed_prior_
 
     def test_kalman_smoothing_off_matches_likelihood_mode(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
-        model = SIMPL(use_kalman_smoothing=False)
+        model = SIMPL(speed_prior=None)
         model.fit(
             Y=demo_data["Y"][:N, :N_neurons],
             Xb=demo_data["Xb"][:N],
@@ -297,8 +297,7 @@ class TestSIMPLSaveLoadResults:
         N_neurons = min(5, demo_data["Y"].shape[1])
         model = SIMPL(
             kernel_bandwidth=0.03,
-            speed_prior=0.2,
-            use_kalman_smoothing=False,
+            speed_prior=None,
             behavior_prior=0.4,
             is_1D_angular=False,
             bin_size=0.05,
@@ -316,8 +315,7 @@ class TestSIMPLSaveLoadResults:
         )
 
         assert model.results_.attrs["kernel_bandwidth"] == 0.03
-        assert model.results_.attrs["speed_prior"] == 0.2
-        assert model.results_.attrs["use_kalman_smoothing"] == 0
+        assert np.isnan(model.results_.attrs["speed_prior"])
         assert model.results_.attrs["behavior_prior"] == 0.4
         assert model.results_.attrs["is_1D_angular"] == 0
         assert model.results_.attrs["bin_size"] == 0.05
@@ -335,7 +333,7 @@ class TestSIMPLSaveLoadResults:
         assert "F" in loaded
         assert loaded.F.shape == model.results_.F.shape
         assert loaded.attrs["kernel_bandwidth"] == 0.03
-        assert loaded.attrs["use_kalman_smoothing"] == 0
+        assert np.isnan(loaded.attrs["speed_prior"])
         np.testing.assert_allclose(loaded.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
 
 

@@ -19,6 +19,8 @@ dependencies = [
     "scikit-image",
     "matplotlib",
     "netcdf4",
+    "h5netcdf",
+    "h5py",
 ]
 
 [project.scripts]
