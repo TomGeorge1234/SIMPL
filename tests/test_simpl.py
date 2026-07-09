@@ -34,6 +34,41 @@ class TestSIMPLInit:
         assert model.speed_prior is None
         assert model.speed_prior_effective_ >= model.kalman_off_speed_prior_
 
+    def test_time_none_uses_non_temporal_mode(self, demo_data):
+        N = 200
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(speed_prior=None)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=None,
+            n_iterations=0,
+        )
+
+        assert model.is_temporal_ is False
+        np.testing.assert_array_equal(np.asarray(model.time_), np.arange(N))
+        assert model.dt_ == 1.0
+        assert model.speed_prior_effective_ >= model.kalman_off_speed_prior_
+        assert model.results_.attrs["is_temporal"] == 0
+        assert np.isnan(model.results_.attrs["speed_prior"])
+
+    def test_time_none_warns_when_speed_prior_would_be_ignored(self, demo_data):
+        N = 200
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        model = SIMPL(speed_prior=0.1)
+
+        with pytest.warns(UserWarning, match="non-temporal"):
+            model.fit(
+                Y=demo_data["Y"][:N, :N_neurons],
+                Xb=demo_data["Xb"][:N],
+                time=None,
+                n_iterations=0,
+            )
+
+        assert model.is_temporal_ is False
+        assert model.speed_prior_effective_ >= model.kalman_off_speed_prior_
+        assert np.isnan(model.results_.attrs["speed_prior"])
+
     def test_kalman_smoothing_off_matches_likelihood_mode(self, demo_data):
         N = 500
         N_neurons = min(5, demo_data["Y"].shape[1])
