@@ -81,7 +81,7 @@ from simpl import SIMPL
 # 1. Load your data
 Y = ...     # spike counts (T, N_neurons)
 Xb = ...    # behavioural initialisation positions (T, D)
-time = ...  # timestamps (T,)
+time = ...  # timestamps (T,) or use time = np.linspace(0, T_end, len(Y)) if length is known but timestamps aren't
 
 # 2. Configure the model (no data, no computation)
 model = SIMPL(
@@ -275,6 +275,7 @@ model.plot_fitting_summary()
 
 # Decoded trajectory (all iterations by default)
 model.plot_latent_trajectory()
+model.plot_latent_trajectory(time_range=60)  # first 60 seconds
 model.plot_latent_trajectory(time_range=(0, 60), iterations=(0, 3, 5))  # zoom in, specific iterations
 
 # Receptive fields (iteration 0 + last by default)

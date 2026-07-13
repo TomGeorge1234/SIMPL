@@ -233,9 +233,12 @@ class SIMPL:
         time : np.ndarray or None, shape (T,) or None
             Time stamps (in seconds) for each time bin. Values should be uniformly
             increasing (Kalman filter is poorly defined otherwise). ``dt`` is automatically
-            inferred as ``median(diff(time))``. If None, the data are treated as
-            non-temporal: SIMPL uses ``np.arange(T)`` as a placeholder coordinate and
-            disables Kalman smoothing regardless of ``speed_prior``.
+            inferred as ``median(diff(time))``. If timestamps are unavailable but the final
+            recording time is known, construct them with
+            ``np.linspace(0, T_end, len(Y))``; the final time is included. If
+            None, the data are treated as non-temporal: SIMPL uses ``np.arange(T)`` as a
+            placeholder coordinate and disables Kalman smoothing regardless of
+            ``speed_prior``.
         n_iterations : int, optional
             Number of EM iterations to train after iteration 0. Set to 0 to run only the initial
             M-step (useful for manual iteration control via ``_fit_iteration()``). By default 5.
@@ -689,7 +692,7 @@ class SIMPL:
 
     def plot_latent_trajectory(
         self,
-        time_range: tuple[float, float] | None = None,
+        time_range: float | tuple[float, float] | None = None,
         iterations: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
         **plot_kwargs,
@@ -698,8 +701,9 @@ class SIMPL:
 
         Parameters
         ----------
-        time_range : tuple, optional
-            ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+        time_range : float or tuple, optional
+            A float plots that many seconds from the start time. A tuple specifies
+            ``(t_start, t_end)`` in seconds. Default: first 120 s.
         iterations : int or tuple of ints, optional
             Which iteration(s) to show.  Negative values index from the end
             (``-1`` = last iteration). Default: ``(0, -1)`` (behavior and

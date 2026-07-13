@@ -381,7 +381,7 @@ def _plot_trajectory_panel(
 
 def plot_latent_trajectory(
     results: xr.Dataset,
-    time_range: tuple[float, float] | None = None,
+    time_range: float | tuple[float, float] | None = None,
     iterations: int | tuple[int, ...] | None = None,
     include_ground_truth: bool = True,
     **plot_kwargs,
@@ -391,8 +391,9 @@ def plot_latent_trajectory(
     Parameters
     ----------
     results : xr.Dataset
-    time_range : tuple, optional
-        ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+    time_range : float or tuple, optional
+        A float plots that many seconds from the start time. A tuple specifies
+        ``(t_start, t_end)`` in seconds. Default: first 120 s.
     iterations : int or tuple of ints, optional
         Which iteration(s) to show.  Negative values index from the end of the
         non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
@@ -411,6 +412,9 @@ def plot_latent_trajectory(
     if time_range is None:
         t0 = float(results.time.values[0])
         time_range = (t0, t0 + 120)
+    elif np.isscalar(time_range):
+        t0 = float(results.time.min())
+        time_range = (t0, t0 + float(time_range))
 
     dim_names = list(results.dim.values)
     tslice = slice(*time_range)

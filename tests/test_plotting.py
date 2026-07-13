@@ -120,6 +120,15 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
+    def test_scalar_time_range_starts_at_minimum_time(self, results):
+        axes = plot_latent_trajectory(results, time_range=30.0)
+        t0 = float(results.time.min())
+
+        assert axes[0].get_xlim() == (np.floor(t0), np.ceil(t0 + 30.0))
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
     def test_single_iteration(self, results):
         axes = plot_latent_trajectory(results, iterations=1)
         assert len(axes) == len(results.dim.values)
