@@ -156,8 +156,9 @@ def plot_fitting_summary(
     ----------
     results : xr.Dataset
         The ``results_`` Dataset from a fitted SIMPL model.
-    show_neurons : bool
+    show_neurons : bool, optional
         Show individual neuron dots for per-neuron metrics (mutual information).
+        Default: ``True``.
     **plot_kwargs
         Forwarded to the main scatter calls.
 
@@ -396,8 +397,8 @@ def plot_latent_trajectory(
         Which iteration(s) to show.  Negative values index from the end of the
         non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
         (behavior and final iteration).
-    include_ground_truth : bool
-        Show ``Xt`` as ``"k--"`` if present.
+    include_ground_truth : bool, optional
+        Show ``Xt`` as ``"k--"`` if present. Default: ``True``.
     **plot_kwargs
         Forwarded to ``ax.plot``.
 
@@ -483,8 +484,20 @@ def plot_prediction(
         assert Xt.shape[0] == T, f"Xt length {Xt.shape[0]} != prediction_results time length {T}"
 
     if time_range is not None:
-        tslice = slice(*time_range)
-        mask = (prediction_results.time.values >= time_range[0]) & (prediction_results.time.values <= time_range[1])
+        if len(time_range) != 2:
+            raise ValueError("time_range must contain exactly two values: (t_start, t_end).")
+        t_start, t_end = time_range
+        available_start = float(prediction_results.time.values[0])
+        available_end = float(prediction_results.time.values[-1])
+        if t_start > t_end:
+            raise ValueError(f"time_range start ({t_start}) must not exceed end ({t_end}).")
+        if t_start < available_start or t_end > available_end:
+            raise ValueError(
+                f"time_range ({t_start}, {t_end}) is outside the available prediction range "
+                f"({available_start}, {available_end})."
+            )
+        tslice = slice(t_start, t_end)
+        mask = (prediction_results.time.values >= t_start) & (prediction_results.time.values <= t_end)
     else:
         tslice = slice(None)
         mask = slice(None)
@@ -549,24 +562,27 @@ def plot_receptive_fields(
     ----------
     results : xr.Dataset
     extent : tuple, optional
-        Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``.  Used for 2-D imshow.
+        Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``. Used for 2-D
+        ``imshow``. Default: ``None``.
     iterations : int or tuple of int, optional
         Which iteration(s) to show.  Negative values index from the end of the
         non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
         (behavior and final iteration).
     neurons : array-like, optional
         Subset of neuron indices.  Default: all neurons.
-    include_baselines : bool
-        Show ground-truth fields (``Ft``) if present.
-    sort_by_spatial_information : bool
+    include_baselines : bool, optional
+        Show ground-truth fields (``Ft``) if present. Default: ``False``.
+    sort_by_spatial_information : bool, optional
         If ``True``, reorder neurons so that the most spatially informative
-        appear first (uses the last training iteration).
+        appear first (uses the last training iteration). Default: ``False``.
     max_neurons : int, optional
         If set, plot at most this many neurons.  Combine with
         ``sort_by_spatial_information=True`` to plot only the top-N most
-        spatially informative neurons.
-    ncols : int
-        Maximum number of neuron-columns in the grid.
+        spatially informative neurons. Default: ``None``.
+    ncols : int, optional
+        Maximum number of neuron-columns in the grid. Default: 4.
+    threshold : float, optional
+        Values below this threshold are masked. Default: 0.
     **plot_kwargs
         Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -944,7 +960,8 @@ def plot_spikes(
     time_range : tuple, optional
         ``(t_start, t_end)`` in seconds.  Default: first 120 s.
     neurons : array-like, optional
-        Subset of neuron indices to display.  Default: all neurons.
+        Subset of neuron indices to display. Neurons retain the supplied order
+        and are indexed from zero on the displayed y-axis. Default: all neurons.
     sort_by_spatial_information : bool
         If ``True``, reorder neurons so that the most spatially informative
         appear at the top of the heatmap (uses the last training iteration).
@@ -1004,7 +1021,7 @@ def plot_spikes(
     fig.colorbar(im, ax=ax, label="Spike count", shrink=0.8, pad=0.02)
 
     ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Neuron")
+    ax.set_ylabel("Neuron (index in displayed order)")
     outset_axes(ax)
 
     return ax
