@@ -78,7 +78,12 @@ SIMPL follows sklearn conventions: configure hyperparameters at init, pass data 
 ```python
 from simpl import SIMPL
 
-# 1. Configure the model (no data, no computation)
+# 1. Load your data
+Y = ...     # spike counts (T, N_neurons)
+Xb = ...    # behavioural initialisation positions (T, D)
+time = ...  # timestamps (T,)
+
+# 2. Configure the model (no data, no computation)
 model = SIMPL(
     speed_prior=0.4,        # "0.4m/s" prior on latent speed
     behavior_prior=None,    # (optional) soft tether to the initial behaviour/stimulus
@@ -86,20 +91,20 @@ model = SIMPL(
     bin_size=0.02,          # "2 cm" spatial bin size for environment discretisation
 )
 
-# 2. Fit
+# 3. Fit
 model.fit(
-    Y,                      # spike counts (T, N_neurons)
-    Xb,                     # behavioural initialisation positions (T, D)
-    time,                   # timestamps (T,)
+    Y,                      # spike counts
+    Xb,                     # behavioural initialisation positions
+    time,                   # timestamps
     n_iterations=5,
     )
 
-# 3. Access results
+# 4. Access results
 model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, *env_dims)
 model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
-# 4. Plot results 
+# 5. Plot results
 model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mutual information. 
 
 # (optional) Resume training if not yet converged
@@ -111,6 +116,7 @@ model.fit(Y, Xb, time, n_iterations=5, resume=True)
 Decode new spikes using the fitted receptive fields (no behavioural input needed). The new data must be binned at the same `dt` as the training data.
 
 ```python
+Y_new = ...  # new spike counts (T_new, N_neurons)
 X_decoded = model.predict(Y_new)
 model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-likelihoods, etc.)
 ```
