@@ -267,7 +267,7 @@ For 2D environments, `model.analyse_place_fields()` adds morphology metrics to `
 
 ### Plotting
 
-Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
+Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — to create figures from scratch, use `model.results_` (an `xarray.Dataset`) to access the data directly.
 
 ```python
 # Log-likelihood and spatial information across iterations
@@ -275,7 +275,7 @@ model.plot_fitting_summary()
 
 # Decoded trajectory (all iterations by default)
 model.plot_latent_trajectory()
-model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific iterations
+model.plot_latent_trajectory(time_range=(0, 60), iterations=(0, 3, 5))  # zoom in, specific iterations
 
 # Receptive fields (iteration 0 + last by default)
 model.plot_receptive_fields(neurons=[0, 5, 10])
@@ -292,7 +292,10 @@ model.analyse_place_fields()
 
 # Prediction on held-out data
 model.predict(Y_test)
-model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
+model.plot_prediction(
+  Xb=Xb_test, 
+  Xt=Xt_test, # Xt_test is optional ground truth for the prediction data
+  )
 ```
 
 <p align="center">
@@ -389,7 +392,7 @@ model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 <!-- docs-trials-start -->
 ### Trial boundaries
 
-When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
+When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices marking where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
 
 ```python
 # Three trials starting at time-bins 0, 5000, and 12000
