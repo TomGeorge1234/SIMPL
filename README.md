@@ -78,7 +78,12 @@ SIMPL follows sklearn conventions: configure hyperparameters at init, pass data 
 ```python
 from simpl import SIMPL
 
-# 1. Configure the model (no data, no computation)
+# 1. Load your data
+Y = ...     # spike counts (T, N_neurons)
+Xb = ...    # behavioural initialisation positions (T, D)
+time = ...  # timestamps (T,) or use time = np.linspace(0, T_end, len(Y)) if length is known but timestamps aren't
+
+# 2. Configure the model (no data, no computation)
 model = SIMPL(
     speed_prior=0.4,        # "0.4m/s" prior on latent speed
     behavior_prior=None,    # (optional) soft tether to the initial behaviour/stimulus
@@ -86,20 +91,20 @@ model = SIMPL(
     bin_size=0.02,          # "2 cm" spatial bin size for environment discretisation
 )
 
-# 2. Fit
+# 3. Fit
 model.fit(
-    Y,                      # spike counts (T, N_neurons)
-    Xb,                     # behavioural initialisation positions (T, D)
-    time,                   # timestamps (T,)
+    Y,                      # spike counts
+    Xb,                     # behavioural initialisation positions
+    time,                   # timestamps
     n_iterations=5,
     )
 
-# 3. Access results
+# 4. Access results
 model.X_           # final decoded latent positions, shape (T, D)
 model.F_           # final receptive fields, shape (N_neurons, *env_dims)
 model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
-# 4. Plot results 
+# 5. Plot results
 model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mutual information. 
 
 # (optional) Resume training if not yet converged
@@ -111,6 +116,7 @@ model.fit(Y, Xb, time, n_iterations=5, resume=True)
 Decode new spikes using the fitted receptive fields (no behavioural input needed). The new data must be binned at the same `dt` as the training data.
 
 ```python
+Y_new = ...  # new spike counts (T_new, N_neurons)
 X_decoded = model.predict(Y_new)
 model.prediction_results_  # xr.Dataset with rich results (mu_s, sigma_s, log-likelihoods, etc.)
 ```
@@ -261,7 +267,7 @@ For 2D environments, `model.analyse_place_fields()` adds morphology metrics to `
 
 ### Plotting
 
-Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — for publication-quality figures, use `model.results_` (an `xarray.Dataset`) to access the data directly.
+Built-in plotting methods provide quick diagnostics. All methods return matplotlib `Axes` for further customisation — to create figures from scratch, use `model.results_` (an `xarray.Dataset`) to access the data directly.
 
 ```python
 # Log-likelihood and spatial information across iterations
@@ -269,7 +275,8 @@ model.plot_fitting_summary()
 
 # Decoded trajectory (all iterations by default)
 model.plot_latent_trajectory()
-model.plot_latent_trajectory(time_range=(0, 60))  # zoom in, specific iterations
+model.plot_latent_trajectory(time_range=60)  # first 60 seconds
+model.plot_latent_trajectory(time_range=(0, 60), iterations=(0, 3, 5))  # zoom in, specific iterations
 
 # Receptive fields (iteration 0 + last by default)
 model.plot_receptive_fields(neurons=[0, 5, 10])
@@ -286,7 +293,10 @@ model.analyse_place_fields()
 
 # Prediction on held-out data
 model.predict(Y_test)
-model.plot_prediction(Xb=Xb_test, Xt=Xt_test)
+model.plot_prediction(
+  Xb=Xb_test, 
+  Xt=Xt_test, # Xt_test is optional ground truth for the prediction data
+  )
 ```
 
 <p align="center">
@@ -383,7 +393,7 @@ model.fit(Y, Xb, time, n_iterations=5)  # Xb should be in radians, [-pi, pi)
 <!-- docs-trials-start -->
 ### Trial boundaries
 
-When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
+When data comes from multiple recording sessions or trials, you don't want the Kalman smoother blending across discontinuities. Pass `trial_boundaries` — an array of time-bin indices marking where each new trial starts — and SIMPL will run the filter/smoother independently within each segment. The initial state for each trial is estimated from the likelihood modes within that trial.
 
 ```python
 # Three trials starting at time-bins 0, 5000, and 12000

@@ -15,7 +15,7 @@ authors = [
 dependencies = [
     "jax",
     "xarray",
-    "scikit-learn>=1.3",
+    "scikit-learn",
     "scikit-image",
     "matplotlib",
     "netcdf4",

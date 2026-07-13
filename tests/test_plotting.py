@@ -120,6 +120,15 @@ class TestPlotLatentTrajectory:
 
         plt.close("all")
 
+    def test_scalar_time_range_starts_at_minimum_time(self, results):
+        axes = plot_latent_trajectory(results, time_range=30.0)
+        t0 = float(results.time.min())
+
+        assert axes[0].get_xlim() == (np.floor(t0), np.ceil(t0 + 30.0))
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
     def test_single_iteration(self, results):
         axes = plot_latent_trajectory(results, iterations=1)
         assert len(axes) == len(results.dim.values)
@@ -316,10 +325,11 @@ class TestPlotSpikes:
         plt.close("all")
 
     def test_neuron_subset(self, results):
-        ax = plot_spikes(results, neurons=[0, 1])
+        ax = plot_spikes(results, neurons=[4, 5, 2, 3])
         import matplotlib.pyplot as plt
 
         assert ax is not None
+        assert ax.get_ylabel() == "Neuron (index in displayed order)"
         plt.close("all")
 
     def test_custom_ncols(self, results):
@@ -375,6 +385,15 @@ class TestPlotPrediction:
         axes = plot_prediction(pred, time_range=(t0, t0 + 5))
         assert len(axes) == len(fitted_model.results_.dim.values)
         plt.close("all")
+
+    @pytest.mark.parametrize("time_range", [(-1, 5), (0, 1000), (5, 4)])
+    def test_out_of_range_time_range_raises(self, fitted_model, demo_data, time_range):
+        N_test = 200
+        Y_test = demo_data["Y"][-N_test:, :10]
+        fitted_model.predict(Y_test)
+
+        with pytest.raises(ValueError, match="time_range"):
+            plot_prediction(fitted_model.prediction_results_, time_range=time_range)
 
     def test_wrapper_unfitted_raises(self):
         model = SIMPL()

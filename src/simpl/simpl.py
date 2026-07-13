@@ -233,9 +233,12 @@ class SIMPL:
         time : np.ndarray or None, shape (T,) or None
             Time stamps (in seconds) for each time bin. Values should be uniformly
             increasing (Kalman filter is poorly defined otherwise). ``dt`` is automatically
-            inferred as ``median(diff(time))``. If None, the data are treated as
-            non-temporal: SIMPL uses ``np.arange(T)`` as a placeholder coordinate and
-            disables Kalman smoothing regardless of ``speed_prior``.
+            inferred as ``median(diff(time))``. If timestamps are unavailable but the final
+            recording time is known, construct them with
+            ``np.linspace(0, T_end, len(Y))``; the final time is included. If
+            None, the data are treated as non-temporal: SIMPL uses ``np.arange(T)`` as a
+            placeholder coordinate and disables Kalman smoothing regardless of
+            ``speed_prior``.
         n_iterations : int, optional
             Number of EM iterations to train after iteration 0. Set to 0 to run only the initial
             M-step (useful for manual iteration control via ``_fit_iteration()``). By default 5.
@@ -246,7 +249,7 @@ class SIMPL:
             sessions). If None, all data is treated as a single trial. By default None.
         align_to_behavior : bool or str, optional
             How to linearly align (via CCA) the decoded latent positions to the behavioral
-            coordinate system after each E-step. Options:
+            coordinate system after each E-step. Default: ``"trajectory"``. Options:
 
             - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
               to ``Xb``.
@@ -425,7 +428,7 @@ class SIMPL:
 
         return X_decoded
 
-    def analyse_place_fields(self, iterations: list[int] | None = None) -> "SIMPL":
+    def analyse_place_fields(self, iterations: int | tuple[int, ...] | list[int] | None = None) -> "SIMPL":
         """Run place field morphology analysis and add results to ``self.results_``.
 
         Identifies individual place fields in each neuron's receptive field
@@ -439,9 +442,10 @@ class SIMPL:
 
         Parameters
         ----------
-        iterations : list of int, optional
-            Which iterations to analyse. If None (default), analyses the
-            first and last iterations.
+        iterations : int or sequence of int, optional
+            Which iterations to analyse. Negative values index from the end of
+            the non-negative training iterations (``-1`` = last iteration).
+            If None (default), analyses the first and last iterations.
 
         Returns
         -------
@@ -467,9 +471,12 @@ class SIMPL:
         if self.environment_.D != 2:
             raise ValueError("Place field analysis is only supported for 2D environments.")
 
+        training_iterations = [int(e) for e in self.results_.iteration.values if e >= 0]
         if iterations is None:
-            nn = [int(e) for e in self.results_.iteration.values if e >= 0]
-            iterations = sorted(set([nn[0], nn[-1]]))
+            iterations = sorted({training_iterations[0], training_iterations[-1]})
+        elif np.isscalar(iterations):
+            iterations = [int(iterations)]
+        iterations = [training_iterations[i] if i < 0 else i for i in iterations]
 
         pf_datasets = []
         for iteration in iterations:
@@ -665,12 +672,12 @@ class SIMPL:
         show_neurons: bool = True,
         **plot_kwargs,
     ) -> np.ndarray:
-        """Two-panel summary: log-likelihood (left) and spatial information (right).
+        """Two-panel summary: bits per spike (left) and mutual information (right).
 
         Parameters
         ----------
-        show_neurons : bool
-            Show individual neuron dots for per-neuron metrics.
+        show_neurons : bool, optional
+            Show individual neuron dots for per-neuron metrics. Default: ``True``.
         **plot_kwargs
             Forwarded to the main scatter calls.
 
@@ -685,7 +692,7 @@ class SIMPL:
 
     def plot_latent_trajectory(
         self,
-        time_range: tuple[float, float] | None = None,
+        time_range: float | tuple[float, float] | None = None,
         iterations: int | tuple[int, ...] | None = None,
         include_ground_truth: bool = True,
         **plot_kwargs,
@@ -694,13 +701,15 @@ class SIMPL:
 
         Parameters
         ----------
-        time_range : tuple, optional
-            ``(t_start, t_end)`` in seconds.  Default: first 120 s.
+        time_range : float or tuple, optional
+            A float plots that many seconds from the start time. A tuple specifies
+            ``(t_start, t_end)`` in seconds. Default: first 120 s.
         iterations : int or tuple of ints, optional
             Which iteration(s) to show.  Negative values index from the end
-            (``-1`` = last iteration).  Default: all iterations.
-        include_ground_truth : bool
-            Show ``Xt`` as ``"k--"`` if present.
+            (``-1`` = last iteration). Default: ``(0, -1)`` (behavior and
+            final iteration).
+        include_ground_truth : bool, optional
+            Show ``Xt`` as ``"k--"`` if present. Default: ``True``.
         **plot_kwargs
             Forwarded to ``ax.plot``.
 
@@ -727,6 +736,7 @@ class SIMPL:
         sort_by_spatial_information: bool = False,
         max_neurons: int | None = None,
         ncols: int = 4,
+        threshold: float = 0,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot receptive fields for selected neurons.
@@ -738,17 +748,20 @@ class SIMPL:
             (``-1`` = last iteration).  Default: ``(0, -1)``.
         neurons : array-like, optional
             Subset of neuron indices.  Default: all neurons.
-        include_baselines : bool
+        include_baselines : bool, optional
             Show ground-truth fields (``Ft``) if present, else ``F`` at iteration -1.
-        sort_by_spatial_information : bool
+            Default: ``False``.
+        sort_by_spatial_information : bool, optional
             If ``True``, reorder neurons so that the most spatially informative
-            appear first (uses the last training iteration).
+            appear first (uses the last training iteration). Default: ``False``.
         max_neurons : int, optional
             If set, plot at most this many neurons.  Combine with
             ``sort_by_spatial_information=True`` to plot only the top-N most
-            spatially informative neurons.
-        ncols : int
-            Maximum number of neuron-columns in the grid.
+            spatially informative neurons. Default: ``None``.
+        ncols : int, optional
+            Maximum number of neuron-columns in the grid. Default: 4.
+        threshold : float, optional
+            Mask receptive-field values below this threshold. Default: 0.
         **plot_kwargs
             Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -771,6 +784,7 @@ class SIMPL:
             sort_by_spatial_information=sort_by_spatial_information,
             max_neurons=max_neurons,
             ncols=ncols,
+            threshold=threshold,
             **plot_kwargs,
         )
 
@@ -784,10 +798,10 @@ class SIMPL:
 
         Parameters
         ----------
-        show_neurons : bool
-            Show individual neuron dots for per-neuron metrics.
-        ncols : int
-            Number of columns in the grid.
+        show_neurons : bool, optional
+            Show individual neuron dots for per-neuron metrics. Default: ``True``.
+        ncols : int, optional
+            Number of columns in the grid. Default: 3.
         **plot_kwargs
             Forwarded to line/scatter calls.
 
@@ -815,11 +829,13 @@ class SIMPL:
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: first 120 s.
         neurons : array-like, optional
-            Subset of neuron indices to display.  Default: all neurons.
-        sort_by_spatial_information : bool
+            Subset of neuron indices to display. Neurons retain the supplied order
+            and are indexed from zero on the displayed y-axis. Default: all neurons.
+        sort_by_spatial_information : bool, optional
             If ``True``, reorder neurons so that the most spatially informative
             appear at the top of the heatmap (uses the last training iteration).
-        cmap : str
+            Default: ``False``.
+        cmap : str, optional
             Colormap for ``imshow``.  Default: ``"Greys"``.
         **plot_kwargs
             Forwarded to ``ax.imshow``.
@@ -853,8 +869,10 @@ class SIMPL:
         ----------
         Xb : np.ndarray, optional
             Behavioral positions for the prediction window, shape ``(T, D)``.
+            Default: ``None``.
         Xt : np.ndarray, optional
             Ground truth positions for the prediction window, shape ``(T, D)``.
+            Default: ``None``.
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: full prediction range.
         **plot_kwargs

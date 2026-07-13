@@ -549,6 +549,22 @@ class TestSIMPLAddBaselines:
         assert model._Xt_raw is not None
 
 
+class TestSIMPLAnalysePlaceFields:
+    def test_negative_iteration_selects_last_training_iteration(self, demo_data):
+        N = 200
+        model = SIMPL()
+        model.fit(
+            Y=demo_data["Y"][:N, :5],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=0,
+            verbose=False,
+        )
+        model.analyse_place_fields(iterations=-1)
+
+        assert 0 in model.results_["place_field_count"].iteration.values
+
+
 class TestSIMPLManifoldAlignment:
     def _make_model(self, demo_data, align_to_behavior=True):
         N = 1000
