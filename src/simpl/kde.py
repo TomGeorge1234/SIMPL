@@ -20,6 +20,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from jax import vmap
+from jax.scipy.special import gammaln 
 
 from simpl.utils import _bin_indices_minuspi_pi, _circular_conv_fft_1d
 
@@ -34,10 +35,9 @@ __all__ = [
 ]
 
 
-def _log_factorial_stirling(spikes: jax.Array) -> jax.Array:
-    """Stirling's approximation of log(spikes!), with manual correction for 0! = 1."""
-    spikes_ = jnp.where(spikes == 0, 1, spikes)
-    return jnp.log(jnp.sqrt(2 * jnp.pi)) + (spikes_ + 0.5) * jnp.log(spikes_) - spikes_
+def _log_factorial_gamma(spikes: jax.Array) -> jax.Array:
+    """Compute log(X!) via the gamma function, which is faster and more accurate than Stirling's approximation."""
+    return gammaln(spikes+1)
 
 
 def gaussian_kernel(
@@ -228,7 +228,7 @@ def poisson_log_likelihood(
     """
     assert spikes.shape == rates.shape, f"spikes {spikes.shape} and rates {rates.shape} must have the same shape"
 
-    log_spikecount_factorial = _log_factorial_stirling(spikes)
+    log_spikecount_factorial = _log_factorial_gamma(spikes)
 
     return (spikes * jnp.log(rates + 1e-3)) - rates - log_spikecount_factorial
 
@@ -262,7 +262,7 @@ def poisson_log_likelihood_maps(
     if mask is None:
         mask = jnp.ones_like(spikes, dtype=bool)
 
-    log_spikecount_factorial = _log_factorial_stirling(spikes)
+    log_spikecount_factorial = _log_factorial_gamma(spikes)
 
     return (
         (mask * spikes) @ jnp.log(mean_rate + 1e-3)
@@ -314,7 +314,7 @@ def get_ll_and_bps_splits(
     @jax.jit
     def _batch_sums(Y_b, FX_b, mask_b):
         """Per-batch partial sums for both splits (suffix 0 = train, 1 = val)."""
-        log_fact = _log_factorial_stirling(Y_b)
+        log_fact = _log_factorial_gamma(Y_b)
         ll = poisson_log_likelihood(Y_b, FX_b)  # model per-bin log-likelihood
         out = {}
         for s, m in (("0", mask_b), ("1", ~mask_b)):
