@@ -20,7 +20,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 from jax import vmap
-from jax.scipy.special import gammaln 
+from jax.scipy.special import gammaln
 
 from simpl.utils import _bin_indices_minuspi_pi, _circular_conv_fft_1d
 
@@ -37,7 +37,7 @@ __all__ = [
 
 def _log_factorial_gamma(spikes: jax.Array) -> jax.Array:
     """Compute log(X!) via the gamma function, which is faster and more accurate than Stirling's approximation."""
-    return gammaln(spikes+1)
+    return gammaln(spikes + 1)
 
 
 def gaussian_kernel(
