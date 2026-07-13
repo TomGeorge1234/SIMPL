@@ -252,7 +252,7 @@ class KalmanFilter:
         Parameters
         ----------
         Y : jax.Array, shape (T, dim_Y)
-            The observation means.
+            The observation
         U : jax.Array, shape (T, dim_U), optional
             The control inputs (defaults to zeros if not provided).
         mu0 : jax.Array, shape (dim_Z,), optional
@@ -500,7 +500,7 @@ class KalmanFilter:
         Parameters
         ----------
         Y : jax.Array, shape (T, dim_Y)
-            The observation means
+            The observation
         mu : jax.Array, shape (T, dim_Z)
             The posterior state means
         sigma : jax.Array, shape (T, dim_Z, dim_Z)
@@ -582,7 +582,7 @@ def _kalman_filter(
     Parameters
     ----------
     Y : jax.Array, shape (T, dim_Y)
-        The observation means
+        The observation
     U : jax.Array, shape (T, dim_U)
         The control inputs
     mu0 : jax.Array, shape (dim_Z,)
