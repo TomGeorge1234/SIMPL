@@ -150,21 +150,9 @@ def plot_fitting_summary(
     show_neurons: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Two-panel summary: bits per spike (left) and mutual information (right).
+    """Plot a fitting summary directly from an xarray results Dataset.
 
-    Parameters
-    ----------
-    results : xr.Dataset
-        The ``results_`` Dataset from a fitted SIMPL model.
-    show_neurons : bool, optional
-        Show individual neuron dots for per-neuron metrics (mutual information).
-        Default: ``True``.
-    **plot_kwargs
-        Forwarded to the main scatter calls.
-
-    Returns
-    -------
-    axes : np.ndarray of Axes, shape (2,)
+    See :meth:`simpl.SIMPL.plot_fitting_summary` for the user-facing API.
     """
     iterations = _non_negative_iterations(results)
     last_iteration = int(iterations[-1])
@@ -386,26 +374,9 @@ def plot_latent_trajectory(
     include_ground_truth: bool = True,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Plot decoded latent trajectory (one subplot per spatial dimension).
+    """Plot latent trajectories directly from an xarray results Dataset.
 
-    Parameters
-    ----------
-    results : xr.Dataset
-    time_range : float or tuple, optional
-        A float plots that many seconds from the start time. A tuple specifies
-        ``(t_start, t_end)`` in seconds. Default: first 120 s.
-    iterations : int or tuple of ints, optional
-        Which iteration(s) to show.  Negative values index from the end of the
-        non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
-        (behavior and final iteration).
-    include_ground_truth : bool, optional
-        Show ``Xt`` as ``"k--"`` if present. Default: ``True``.
-    **plot_kwargs
-        Forwarded to ``ax.plot``.
-
-    Returns
-    -------
-    axes : np.ndarray of Axes, shape (D,)
+    See :meth:`simpl.SIMPL.plot_latent_trajectory` for the user-facing API.
     """
     iterations_to_plot = _resolve_iterations(iterations, results)
 
@@ -460,24 +431,9 @@ def plot_prediction(
     time_range: tuple[float, float] | None = None,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Plot predicted trajectory from ``predict()``.
+    """Plot predictions directly from an xarray prediction-results Dataset.
 
-    Parameters
-    ----------
-    prediction_results : xr.Dataset
-        The ``prediction_results_`` Dataset from ``SIMPL.predict``.
-    Xb : np.ndarray, optional
-        Behavioral positions for the prediction window, shape ``(T, D)``.
-    Xt : np.ndarray, optional
-        Ground truth positions for the prediction window, shape ``(T, D)``.
-    time_range : tuple, optional
-        ``(t_start, t_end)`` in seconds.  Default: full prediction range.
-    **plot_kwargs
-        Forwarded to ``ax.plot``.
-
-    Returns
-    -------
-    axes : np.ndarray of Axes, shape (D,)
+    See :meth:`simpl.SIMPL.plot_prediction` for the user-facing API.
     """
     dim_names = list(prediction_results.dim.values)
 
@@ -560,39 +516,9 @@ def plot_receptive_fields(
     threshold: float = 0,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Plot receptive fields for selected neurons.
+    """Plot receptive fields directly from an xarray results Dataset.
 
-    Parameters
-    ----------
-    results : xr.Dataset
-    extent : tuple, optional
-        Matplotlib extent ``(xmin, xmax, ymin, ymax, ...)``. Used for 2-D
-        ``imshow``. Default: ``None``.
-    iterations : int or tuple of int, optional
-        Which iteration(s) to show.  Negative values index from the end of the
-        non-negative iterations (``-1`` = last iteration).  Default: ``(0, -1)``
-        (behavior and final iteration).
-    neurons : array-like, optional
-        Subset of neuron indices.  Default: all neurons.
-    include_baselines : bool, optional
-        Show ground-truth fields (``Ft``) if present. Default: ``False``.
-    sort_by_spatial_information : bool, optional
-        If ``True``, reorder neurons so that the most spatially informative
-        appear first (uses the last training iteration). Default: ``False``.
-    max_neurons : int, optional
-        If set, plot at most this many neurons.  Combine with
-        ``sort_by_spatial_information=True`` to plot only the top-N most
-        spatially informative neurons. Default: ``None``.
-    ncols : int, optional
-        Maximum number of neuron-columns in the grid. Default: 4.
-    threshold : float, optional
-        Values below this threshold are masked. Default: 0.
-    **plot_kwargs
-        Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
-
-    Returns
-    -------
-    axes : np.ndarray of Axes
+    See :meth:`simpl.SIMPL.plot_receptive_fields` for the user-facing API.
     """
     dim_names = list(results.dim.values)
     D = len(dim_names)
@@ -955,28 +881,9 @@ def plot_spikes(
     cmap: str = "Greys",
     **plot_kwargs,
 ) -> matplotlib.axes.Axes:
-    """Visualise spike counts as a heatmap (time × neurons).
+    """Plot spike counts directly from an xarray results Dataset.
 
-    Parameters
-    ----------
-    results : xr.Dataset
-        The ``results_`` Dataset from a fitted SIMPL model.
-    time_range : tuple, optional
-        ``(t_start, t_end)`` in seconds.  Default: first 120 s.
-    neurons : array-like, optional
-        Subset of neuron indices to display. Neurons retain the supplied order
-        and are indexed from zero on the displayed y-axis. Default: all neurons.
-    sort_by_spatial_information : bool
-        If ``True``, reorder neurons so that the most spatially informative
-        appear at the top of the heatmap (uses the last training iteration).
-    cmap : str
-        Colormap for ``imshow``.  Default: ``"Greys"``.
-    **plot_kwargs
-        Forwarded to ``ax.imshow``.
-
-    Returns
-    -------
-    ax : matplotlib Axes
+    See :meth:`simpl.SIMPL.plot_spikes` for the user-facing API.
     """
     if "Y" not in results:
         raise ValueError("results Dataset does not contain 'Y' (spike counts).")
@@ -1155,21 +1062,9 @@ def plot_all_metrics(
     ncols: int = 3,
     **plot_kwargs,
 ) -> np.ndarray:
-    """Auto-discover and plot all per-iteration metrics.
+    """Plot all metrics directly from an xarray results Dataset.
 
-    Parameters
-    ----------
-    results : xr.Dataset
-    show_neurons : bool
-        Show individual neuron dots for per-neuron metrics.
-    ncols : int
-        Number of columns in the grid.
-    **plot_kwargs
-        Forwarded to line/scatter calls.
-
-    Returns
-    -------
-    axes : np.ndarray of Axes
+    See :meth:`simpl.SIMPL.plot_all_metrics` for the user-facing API.
     """
 
     # discover metric variables: anything with iteration dim and only neuron/place_field remaining

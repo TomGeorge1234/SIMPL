@@ -672,7 +672,7 @@ class SIMPL:
         show_neurons: bool = True,
         **plot_kwargs,
     ) -> np.ndarray:
-        """Two-panel summary: log-likelihood (left) and spatial information (right).
+        """Two-panel summary: bits per spike (left) and mutual information (right).
 
         Parameters
         ----------
@@ -736,6 +736,7 @@ class SIMPL:
         sort_by_spatial_information: bool = False,
         max_neurons: int | None = None,
         ncols: int = 4,
+        threshold: float = 0,
         **plot_kwargs,
     ) -> np.ndarray:
         """Plot receptive fields for selected neurons.
@@ -759,6 +760,8 @@ class SIMPL:
             spatially informative neurons. Default: ``None``.
         ncols : int, optional
             Maximum number of neuron-columns in the grid. Default: 4.
+        threshold : float, optional
+            Mask receptive-field values below this threshold. Default: 0.
         **plot_kwargs
             Forwarded to ``imshow`` (2-D) or ``plot`` (1-D).
 
@@ -781,6 +784,7 @@ class SIMPL:
             sort_by_spatial_information=sort_by_spatial_information,
             max_neurons=max_neurons,
             ncols=ncols,
+            threshold=threshold,
             **plot_kwargs,
         )
 
@@ -794,10 +798,10 @@ class SIMPL:
 
         Parameters
         ----------
-        show_neurons : bool
-            Show individual neuron dots for per-neuron metrics.
-        ncols : int
-            Number of columns in the grid.
+        show_neurons : bool, optional
+            Show individual neuron dots for per-neuron metrics. Default: ``True``.
+        ncols : int, optional
+            Number of columns in the grid. Default: 3.
         **plot_kwargs
             Forwarded to line/scatter calls.
 
@@ -827,10 +831,11 @@ class SIMPL:
         neurons : array-like, optional
             Subset of neuron indices to display. Neurons retain the supplied order
             and are indexed from zero on the displayed y-axis. Default: all neurons.
-        sort_by_spatial_information : bool
+        sort_by_spatial_information : bool, optional
             If ``True``, reorder neurons so that the most spatially informative
             appear at the top of the heatmap (uses the last training iteration).
-        cmap : str
+            Default: ``False``.
+        cmap : str, optional
             Colormap for ``imshow``.  Default: ``"Greys"``.
         **plot_kwargs
             Forwarded to ``ax.imshow``.
@@ -864,8 +869,10 @@ class SIMPL:
         ----------
         Xb : np.ndarray, optional
             Behavioral positions for the prediction window, shape ``(T, D)``.
+            Default: ``None``.
         Xt : np.ndarray, optional
             Ground truth positions for the prediction window, shape ``(T, D)``.
+            Default: ``None``.
         time_range : tuple, optional
             ``(t_start, t_end)`` in seconds.  Default: full prediction range.
         **plot_kwargs
