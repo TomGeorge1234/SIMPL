@@ -685,7 +685,7 @@ def load_demo_data(
 
     1. **User-specified directory** — if *directory* is given, look for
        ``<directory>/<name>`` first.
-    2. **Local source tree** — ``examples/data/`` relative to the package root
+    2. **Local source tree** — ``data/`` relative to the package root
        (available in editable / development installs).
     3. **User cache** — ``~/.simpl/data/``.
     4. **Download** — fetched from the latest GitHub release and saved to the
@@ -722,7 +722,7 @@ def load_demo_data(
 
     # 2. Check local source tree (editable installs)
     if not force_download:
-        local_path = Path(__file__).resolve().parent.parent.parent / "examples" / "data" / name
+        local_path = Path(__file__).resolve().parent.parent.parent / "data" / name
         if local_path.is_file():
             print(f"Loaded {name} from local source tree: {local_path}")
             return np.load(local_path)
