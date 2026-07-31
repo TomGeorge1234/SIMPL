@@ -34,12 +34,12 @@ class SIMPL:
     def __init__(
         self,
         # Model hyperparameters
-        kernel_bandwidth: float = 0.02,
-        speed_prior: float | None = 0.1,
+        kernel_bandwidth: float = 0.04,
+        speed_prior: float | None = 1.0,
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
-        bin_size: float = 0.02,
+        bin_size: float = 0.04,
         env_pad: float = 0.0,
         env_lims: tuple | None = None,
         env: environment.Environment | None = None,
@@ -90,14 +90,14 @@ class SIMPL:
         kernel_bandwidth : float, optional
             The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
             meters) used for KDE when fitting receptive fields. Smaller values give sharper
-            fields but are noisier; larger values smooth more. By default 0.02.
+            fields but are noisier; larger values smooth more. By default 0.04.
         speed_prior : float or None, optional
             Prior on agent speed in units of meters per second. This controls the strength of
             the Kalman smoother: a low speed prior constrains the decoded trajectory to be
             smooth, while a high value lets the trajectory follow the spike likelihood more
             closely. Set to None to disable Kalman smoothing and let the trajectory follow
             the per-bin maximum-likelihood estimate independently in each time bin. By default
-            0.1 m/s.
+            1.0 m/s.
         behavior_prior : float or None, optional
             Prior on how far the latent positions can deviate from the behavioral positions,
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
@@ -113,7 +113,7 @@ class SIMPL:
         bin_size : float, optional
             Spatial bin size for discretising the environment, in the same units as the latent
             space. Controls the resolution of the receptive field grid. Smaller bins give
-            higher resolution but increase computation and memory. By default 0.02.
+            higher resolution but increase computation and memory. By default 0.04.
         env_pad : float, optional
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
