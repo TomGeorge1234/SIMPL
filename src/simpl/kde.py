@@ -19,6 +19,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import vmap
 from jax.scipy.special import gammaln
 
@@ -149,15 +150,12 @@ def kde(
     kernel_fn = partial(kernel, bandwidth=kernel_bandwidth)
     vmapped_kernel = vmap(vmap(kernel_fn, in_axes=(0, None)), in_axes=(None, 0))
 
-    spike_density = jnp.zeros((N_bins, N_neurons))
-    position_density_internal = jnp.zeros(
-        (N_bins, N_neurons)
-    )  # Seperate position density for neuron-specific masks, used to calculate KDE estimates
-    position_density = jnp.zeros(
-        (N_bins,)
-    )  # Mask agnostic density, just "where has the animal been", optionally returned for downstream calculations.
+    device = bins.device
+    spike_density = jax.device_put(np.zeros((N_bins, N_neurons), dtype=np.float32), device)
+    position_density_internal = jax.device_put(np.zeros((N_bins, N_neurons), dtype=np.float32), device)
+    position_density = jax.device_put(np.zeros(N_bins, dtype=np.float32), device)
 
-    N_batchs = int(jnp.ceil(T / batch_size))
+    N_batchs = (T + batch_size - 1) // batch_size
     for i in range(N_batchs):
         start = i * batch_size
         end = min((i + 1) * batch_size, T)
