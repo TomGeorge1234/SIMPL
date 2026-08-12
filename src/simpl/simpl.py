@@ -404,7 +404,7 @@ class SIMPL:
         if Y.shape[1] != self.N_neurons_:
             raise ValueError(f"Y has {Y.shape[1]} neurons but model was fitted with {self.N_neurons_}")
 
-        Y_jax = jax.device_put(jnp.array(Y), self._jax_device())
+        Y_jax = jax.device_put(np.asarray(Y, dtype=np.float32), self._jax_device())
         T_new = Y_jax.shape[0]
 
         trial_boundaries_validated, trial_slices, _, _ = self._validate_trial_boundaries(trial_boundaries, T_new)
@@ -643,9 +643,9 @@ class SIMPL:
 
         # Restore final F and X
         iteration = self.iteration_
-        F_reshaped = jnp.array(results["F"].sel(iteration=iteration).values)
+        F_reshaped = jax.device_put(np.asarray(results["F"].sel(iteration=iteration).values), device)
         self.F_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, *self.xF_shape_), device)
-        self.X_ = jax.device_put(jnp.array(results["X"].sel(iteration=iteration).values), device)
+        self.X_ = jax.device_put(np.asarray(results["X"].sel(iteration=iteration).values), device)
         self.lastF_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, -1), device)
         self.lastX_ = self.X_
 
@@ -654,7 +654,7 @@ class SIMPL:
         self.M_ = utils.restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
 
         if "FX_first_iteration" in results:
-            self.FX_first_iteration_ = jax.device_put(jnp.array(results["FX_first_iteration"].values), device)
+            self.FX_first_iteration_ = jax.device_put(np.asarray(results["FX_first_iteration"].values), device)
 
         print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
         return self
@@ -1373,15 +1373,16 @@ class SIMPL:
         # ── Convert data to JAX arrays (on the chosen device) ──
         neurons = np.arange(self.N_neurons_)
         device = self._jax_device()
-        # device_put a float32 view directly: np.asarray is a no-op when Y is already
-        # float32, avoiding an extra full (T, N) host copy from jnp.array(Y).
+        # Keep inputs as host NumPy arrays until device_put selects the target.
+        # Constructing them with jnp.array first would use JAX's default device,
+        # which may differ from ``device`` (notably when use_gpu=False on Metal).
         self.Y_ = jax.device_put(np.asarray(Y, dtype=np.float32), device)
-        self.Xb_ = jax.device_put(jnp.array(Xb), device)
-        self.time_ = jax.device_put(jnp.array(time), device)
-        self.neuron_ = jax.device_put(jnp.array(neurons), device)
+        self.Xb_ = jax.device_put(np.asarray(Xb, dtype=np.float32), device)
+        self.time_ = jax.device_put(np.asarray(time, dtype=np.float32), device)
+        self.neuron_ = jax.device_put(neurons, device)
         self.dt_ = float(dt_median)
 
-        self.xF_ = jnp.array(self.environment_.flattened_discretised_coords)
+        self.xF_ = jax.device_put(np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device)
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
 
@@ -1404,14 +1405,14 @@ class SIMPL:
         self._init_infrastructure(trial_boundaries, align_to_behavior)
 
         # ── Initialise empty results datasets ──
-        self.results_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+        self.results_ = xr.Dataset(coords={"iteration": np.array([], dtype=int)})
         self.results_.attrs = self._build_dataset_attrs(trial_boundaries=self.trial_boundaries_)
         data_dict = {"Xb": self.Xb_, "Y": self.Y_, "spike_mask": self.spike_mask_}
         self.results_ = xr.merge(
             [self.results_, _dict_to_dataset(data_dict, self.variable_info_dict_, self.coordinates_dict_)],
             compat="override",
         )
-        self.loglikelihoods_ = xr.Dataset(coords={"iteration": jnp.array([], dtype=int)})
+        self.loglikelihoods_ = xr.Dataset(coords={"iteration": np.array([], dtype=int)})
 
         # Preserve ground truth if add_baselines was called before fit
         if not getattr(self, "ground_truth_available_", False):
@@ -1420,7 +1421,7 @@ class SIMPL:
             self.ground_truth_available_ = False
         else:
             # Xt_ will be set from raw data in _apply_baselines_to_results after fit
-            self.Xt_ = jnp.array(self._Xt_raw)
+            self.Xt_ = jax.device_put(np.asarray(self._Xt_raw, dtype=np.float32), device)
             self.Ft_ = None  # Ft needs environment grid, processed in _apply_baselines_to_results
 
         # Data summary is printed after iteration 0 (when spatial info is available)

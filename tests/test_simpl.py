@@ -872,6 +872,21 @@ class TestSetupDevice:
         assert model.use_gpu_ is False
         assert model._device_str == "CPU"
 
+    def test_use_gpu_false_places_initial_data_on_cpu(self, demo_data):
+        """Input conversion must not touch the default GPU before CPU placement."""
+        n_samples = 500
+        n_neurons = 5
+        model = SIMPL(use_gpu=False)
+        model.fit(
+            Y=demo_data["Y"][:n_samples, :n_neurons],
+            Xb=demo_data["Xb"][:n_samples],
+            time=demo_data["time"][:n_samples],
+            n_iterations=0,
+        )
+
+        for array in (model.Y_, model.Xb_, model.time_, model.neuron_, model.xF_):
+            assert array.device.platform == "cpu"
+
     def test_use_gpu_if_available_cpu(self):
         """On a CPU-only machine, 'if_available' should resolve to False."""
         import jax

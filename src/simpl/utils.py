@@ -871,7 +871,6 @@ def loglikelihoods_from_results(results: xr.Dataset) -> xr.Dataset:
 def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D: int) -> dict:
     """Restore E-step state dict from *results* at the given iteration."""
     import jax
-    import jax.numpy as jnp
 
     e_state = {}
     for var in ("X", "mu_l", "mode_l", "sigma_l", "mu_f", "sigma_f", "mu_s", "sigma_s", "coef", "intercept"):
@@ -882,14 +881,13 @@ def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D:
         )
         if np.all(np.isnan(values)):
             continue
-        e_state[var] = jax.device_put(jnp.array(values), device)
+        e_state[var] = jax.device_put(np.asarray(values), device)
     return e_state
 
 
 def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_bins: int, device) -> dict:
     """Restore M-step state dict from *results* at the given iteration."""
     import jax
-    import jax.numpy as jnp
 
     m_state = {}
     for var in ("F", "F_odd_minutes", "F_even_minutes", "PX"):
@@ -900,11 +898,11 @@ def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_
         )
         if var.startswith("F"):
             values = np.asarray(values).reshape(n_neurons, -1)
-        m_state[var] = jax.device_put(jnp.array(values), device)
+        m_state[var] = jax.device_put(np.asarray(values), device)
     if "FX" in results:
-        m_state["FX"] = jax.device_put(jnp.array(results["FX"].sel(iteration=iteration).values), device)
+        m_state["FX"] = jax.device_put(np.asarray(results["FX"].sel(iteration=iteration).values), device)
     elif "FX_last_iteration" in results:
-        m_state["FX"] = jax.device_put(jnp.array(results["FX_last_iteration"].values), device)
+        m_state["FX"] = jax.device_put(np.asarray(results["FX_last_iteration"].values), device)
     return m_state
 
 
