@@ -407,7 +407,9 @@ class SIMPL:
         Y_jax = jax.device_put(np.asarray(Y, dtype=np.float32), self._jax_device())
         T_new = Y_jax.shape[0]
 
-        trial_boundaries_validated, trial_slices, _, _ = self._validate_trial_boundaries(trial_boundaries, T_new)
+        trial_boundaries_validated, trial_slices, _, _ = self._validate_trial_boundaries(
+            trial_boundaries, T_new, self._jax_device()
+        )
 
         # Decode using fitted receptive fields, no behavior input (mask=None → all spikes)
         E = self._decode(
@@ -643,9 +645,7 @@ class SIMPL:
 
         # Restore final F and X
         iteration = self.iteration_
-        F_reshaped = jax.device_put(
-            np.asarray(results["F"].sel(iteration=iteration).values), device
-        )
+        F_reshaped = jax.device_put(np.asarray(results["F"].sel(iteration=iteration).values), device)
         self.F_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, *self.xF_shape_), device)
         self.X_ = jax.device_put(np.asarray(results["X"].sel(iteration=iteration).values), device)
         self.lastF_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, -1), device)
@@ -656,9 +656,7 @@ class SIMPL:
         self.M_ = utils.restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
 
         if "FX_first_iteration" in results:
-            self.FX_first_iteration_ = jax.device_put(
-                np.asarray(results["FX_first_iteration"].values), device
-            )
+            self.FX_first_iteration_ = jax.device_put(np.asarray(results["FX_first_iteration"].values), device)
 
         print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
         return self
@@ -981,7 +979,7 @@ class SIMPL:
         self._substatus("E✓·M  tuning curves")
         if self.compute_stability:
             # Fit fields on the train mask plus the odd/even-minute splits in one vmap.
-            stacked_masks = jnp.array([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
+            stacked_masks = jnp.stack([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
             all_F, all_PX = vmap(kde_func)(stacked_masks)
             F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
             PX = all_PX[0]
@@ -1028,12 +1026,13 @@ class SIMPL:
             and optionally logPYXF_maps.
         """
         T = Y.shape[0]
+        device = Y.device
         if mask is None:
-            mask = jnp.ones(Y.shape, dtype=bool)
+            mask = jnp.ones_like(Y, dtype=bool)
         if U is None:
-            U = jnp.zeros((T, self.D_))
+            U = jax.device_put(np.zeros((T, self.D_), dtype=np.float32), device)
 
-        _, trial_slices, is_boundary, is_trial_end = self._validate_trial_boundaries(trial_boundaries, T)
+        _, trial_slices, is_boundary, is_trial_end = self._validate_trial_boundaries(trial_boundaries, T, device)
         store_log_maps = getattr(self, "save_full_history_", False)
 
         # Likelihood maps and Gaussian observation fits (batched internally)
@@ -1386,9 +1385,7 @@ class SIMPL:
         self.neuron_ = jax.device_put(neurons, device)
         self.dt_ = float(dt_median)
 
-        self.xF_ = jax.device_put(
-            np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device
-        )
+        self.xF_ = jax.device_put(np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device)
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
 
@@ -1454,12 +1451,15 @@ class SIMPL:
             If provided, use this mask instead of generating a fresh speckled mask.
             Used when loading from saved results.
         """
-        self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(trial_boundaries, self.T_)
+        device = self._jax_device()
+        self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(
+            trial_boundaries, self.T_, device
+        )
         self._init_kalman_filter()
 
         self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
         if spike_mask is not None:
-            self.spike_mask_ = spike_mask
+            self.spike_mask_ = jax.device_put(np.asarray(spike_mask, dtype=bool), device)
         else:
             if self.block_size_ >= self.T_:
                 raise ValueError(
@@ -1471,6 +1471,7 @@ class SIMPL:
                 sparsity=self.val_frac,
                 block_size=self.block_size_,
                 random_seed=self.random_seed,
+                device=device,
             )
             n_train = int(jnp.sum(self.spike_mask_))
             if n_train == 0:
@@ -1528,10 +1529,11 @@ class SIMPL:
         lam = behavior_sigma**2 / (speed_sigma**2 + behavior_sigma**2)
         sigma_eff_square = speed_sigma**2 * behavior_sigma**2 / (speed_sigma**2 + behavior_sigma**2)
 
-        F = lam * jnp.eye(self.D_)
-        B = (1 - lam) * jnp.eye(self.D_)
-        Q = sigma_eff_square * jnp.eye(self.D_)
-        H = jnp.eye(self.D_)
+        identity = jax.device_put(np.eye(self.D_, dtype=np.float32), self._jax_device())
+        F = lam * identity
+        B = (1 - lam) * identity
+        Q = sigma_eff_square * identity
+        H = identity
 
         self.kalman_filter_ = kalman.KalmanFilter(
             dim_Z=self.D_,
@@ -1655,8 +1657,19 @@ class SIMPL:
 
     def _setup_device(self, use_gpu):
         """Resolve the ``use_gpu`` parameter and set ``self.use_gpu_`` / ``self._device_str``."""
-        gpu_available = jax.default_backend() in ("gpu", "METAL")
-        metal_backend = jax.default_backend() == "METAL"
+        if use_gpu is False:
+            # Do not probe the default backend: doing so initialises optional
+            # accelerators and emits Metal diagnostics even for CPU-only models.
+            self.use_gpu_ = False
+            self._device_str = "CPU"
+            return
+        if use_gpu not in (True, "if_available"):
+            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
+
+        backend = jax.default_backend()
+        self._validate_metal_install(backend, jax.__version__, jax.lib.__version__)
+        gpu_available = backend in ("gpu", "METAL")
+        metal_backend = backend == "METAL"
         if metal_backend and self.is_1D_angular and use_gpu is True:
             warnings.warn(
                 "Angular mode (self.is_1D_angular=True) requires FFT which is not supported "
@@ -1673,17 +1686,25 @@ class SIMPL:
                     "Install a GPU-enabled JAX build or use use_gpu='if_available'."
                 )
             self.use_gpu_ = True
-        elif use_gpu is False:
-            self.use_gpu_ = False
         elif use_gpu == "if_available":
             self.use_gpu_ = gpu_available
-        else:
-            raise ValueError(f"use_gpu must be True, False, or 'if_available', got {use_gpu!r}")
 
         if self.use_gpu_:
             self._device_str = f"GPU ({self._jax_device().device_kind})"
         else:
             self._device_str = "CPU"
+
+    @staticmethod
+    def _validate_metal_install(backend: str, jax_version: str, jaxlib_version: str) -> None:
+        """Fail early when Metal is active with a JAX version unsupported by SIMPL."""
+        supported = jax_version.startswith("0.4.35") and jaxlib_version.startswith("0.4.35")
+        if backend == "METAL" and not supported:
+            raise RuntimeError(
+                "Incompatible JAX Metal installation: found "
+                f"jax=={jax_version} and jaxlib=={jaxlib_version}, but SIMPL's Metal extra requires "
+                "jax==0.4.35 and jaxlib==0.4.35. Reinstall with "
+                "`pip install --force-reinstall 'simpl-neuro[metal]'`."
+            )
 
     def _jax_device(self):
         """Return the JAX device to place arrays on."""
@@ -1798,7 +1819,7 @@ class SIMPL:
         self.results_ = xr.concat([self.results_, results], dim="iteration", data_vars="minimal", join="outer")
 
     @staticmethod
-    def _validate_trial_boundaries(trial_boundaries, T):
+    def _validate_trial_boundaries(trial_boundaries, T, device=None):
         """Validate trial boundaries and build boolean masks for the Kalman filter.
 
         Parameters
@@ -1843,7 +1864,12 @@ class SIMPL:
         is_trial_end = np.zeros(T, dtype=bool)
         trial_ends = np.append(trial_boundaries[1:] - 1, T - 1)
         is_trial_end[trial_ends] = True
-        return trial_boundaries, trial_slices, jnp.array(is_boundary), jnp.array(is_trial_end)
+        return (
+            trial_boundaries,
+            trial_slices,
+            jax.device_put(is_boundary, device),
+            jax.device_put(is_trial_end, device),
+        )
 
     @staticmethod
     def _per_trial_initial_states(mode_l, trial_slices):
@@ -1877,7 +1903,7 @@ class SIMPL:
             sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
             mu0_all[trial_slice.start] = mu
             sigma0_all[trial_slice.start] = sigma
-        return jnp.array(mu0_all), jnp.array(sigma0_all)
+        return jax.device_put(mu0_all, mode_l.device), jax.device_put(sigma0_all, mode_l.device)
 
     def _build_dataset_attrs(self, trial_boundaries) -> dict:
         """Build the standard attrs dict for results datasets."""
