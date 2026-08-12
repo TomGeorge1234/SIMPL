@@ -643,9 +643,7 @@ class SIMPL:
 
         # Restore final F and X
         iteration = self.iteration_
-        F_reshaped = jax.device_put(
-            np.asarray(results["F"].sel(iteration=iteration).values), device
-        )
+        F_reshaped = jax.device_put(np.asarray(results["F"].sel(iteration=iteration).values), device)
         self.F_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, *self.xF_shape_), device)
         self.X_ = jax.device_put(np.asarray(results["X"].sel(iteration=iteration).values), device)
         self.lastF_ = jax.device_put(F_reshaped.reshape(self.N_neurons_, -1), device)
@@ -656,9 +654,7 @@ class SIMPL:
         self.M_ = utils.restore_M_step_state(results, iteration, self.N_neurons_, self.N_bins_, device)
 
         if "FX_first_iteration" in results:
-            self.FX_first_iteration_ = jax.device_put(
-                np.asarray(results["FX_first_iteration"].values), device
-            )
+            self.FX_first_iteration_ = jax.device_put(np.asarray(results["FX_first_iteration"].values), device)
 
         print(f"Loaded results from {path} (iteration {iteration}). Use fit(..., resume=True) to continue training.")
         return self
@@ -1386,9 +1382,7 @@ class SIMPL:
         self.neuron_ = jax.device_put(neurons, device)
         self.dt_ = float(dt_median)
 
-        self.xF_ = jax.device_put(
-            np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device
-        )
+        self.xF_ = jax.device_put(np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device)
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
 
