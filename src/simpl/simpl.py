@@ -1066,6 +1066,7 @@ class SIMPL:
         mu_s, sigma_s = self.kalman_filter_.smooth(
             mus_f=mu_f,
             sigmas_f=sigma_f,
+            U=U,
             is_trial_end=is_trial_end,
         )
 
