@@ -497,16 +497,18 @@ def accumulate_spikes(
     trim_incomplete : bool, optional
         If True, remove the first ``window - 1`` bins of every trial, where a
         complete backward-looking window is unavailable. Since accumulation is
-        causal, no bins need to be removed from trial ends. This changes the
-        return value to ``(Y_accumulated, keep_mask, trial_boundaries)``. Use
-        ``keep_mask`` to trim aligned arrays such as ``Xb`` and ``time``. By
-        default False.
+        causal, no bins need to be removed from trial ends. Trials shorter than
+        ``window`` are removed entirely because they contain no complete
+        accumulation window. This changes the return value to
+        ``(Y_accumulated, keep_mask, trial_boundaries)``. Use ``keep_mask`` to
+        trim aligned arrays such as ``Xb`` and ``time``. By default False.
 
     Returns
     -------
     Y_accumulated : np.ndarray, shape (T, N_neurons)
         Spike counts after causal rolling sum. If ``trim_incomplete=True``, its
-        first dimension is shortened by ``window - 1`` bins per trial.
+        first dimension contains only bins backed by a complete accumulation
+        window; trials shorter than ``window`` contribute no bins.
     keep_mask : np.ndarray, shape (T,), optional
         Boolean mask selecting retained input bins. Returned only when
         ``trim_incomplete=True``.
@@ -554,19 +556,19 @@ def accumulate_spikes(
     if not trim_incomplete:
         return Y_out
 
-    trimmed_trial_lengths = trial_ends - boundaries - (window - 1)
-    if np.any(trimmed_trial_lengths <= 0):
-        short_trials = np.flatnonzero(trimmed_trial_lengths <= 0)
+    trimmed_trial_lengths = np.maximum(trial_ends - boundaries - (window - 1), 0)
+    retained_trial_lengths = trimmed_trial_lengths[trimmed_trial_lengths > 0]
+    if retained_trial_lengths.size == 0:
         raise ValueError(
-            f"Every trial must contain at least window={window} bins when trim_incomplete=True; "
-            f"trials {short_trials.tolist()} are too short"
+            f"No trial contains at least window={window} bins, so no complete "
+            "accumulation window can be retained"
         )
 
     keep_mask = np.zeros(T, dtype=bool)
     for trial_start, trial_end in zip(boundaries, trial_ends):
         keep_mask[trial_start + window - 1 : trial_end] = True
 
-    updated_boundaries = np.concatenate(([0], np.cumsum(trimmed_trial_lengths)[:-1])).astype(int)
+    updated_boundaries = np.concatenate(([0], np.cumsum(retained_trial_lengths)[:-1])).astype(int)
     return Y_out[keep_mask], keep_mask, updated_boundaries
 
 
