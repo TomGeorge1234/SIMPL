@@ -449,6 +449,12 @@ class KalmanFilter:
             src_device = None
             is_1D_angular = self.is_1D_angular
 
+        # Smoothing state t predicts t+1, whose transition parameters are indexed at t+1.
+        U = jnp.concatenate((U[1:], U[-1:]))
+        F = jnp.concatenate((F[1:], F[-1:]))
+        B = jnp.concatenate((B[1:], B[-1:]))
+        Q = jnp.concatenate((Q[1:], Q[-1:]))
+
         mus_s, sigmas_s = [], []
 
         for i in range(math.ceil(T / self.batch_size)):
