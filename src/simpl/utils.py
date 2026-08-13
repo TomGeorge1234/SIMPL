@@ -460,12 +460,20 @@ def correlation_at_lag(X1: jax.Array, X2: jax.Array, lag: int) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
+def accumulate_spikes(
+    Y: np.ndarray,
+    window: int,
+    trial_boundaries: np.ndarray | None = None,
+    *,
+    trim_incomplete: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Causal rolling sum of spikes over a backward-looking window.
 
     Each time bin accumulates spikes from the current and previous
     ``window - 1`` bins. This is equivalent to smoothing the spikes with
-    a causal rectangular kernel.
+    a causal rectangular kernel. When ``trial_boundaries`` is provided, the
+    rolling window is reset at every trial start so spikes cannot leak between
+    trials.
 
     !!! warning
 
@@ -483,17 +491,84 @@ def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
     window : int
         Number of bins to sum over (looking backwards). For example,
         ``window=5`` sums the current bin and the 4 preceding bins.
+    trial_boundaries : np.ndarray or None, optional
+        Indices where trials start, e.g. ``[0, 1000, 2000]``. The first
+        boundary must be 0. If None, all bins are treated as one trial.
+    trim_incomplete : bool, optional
+        If True, remove the first ``window - 1`` bins of every trial, where a
+        complete backward-looking window is unavailable. Since accumulation is
+        causal, no bins need to be removed from trial ends. This changes the
+        return value to ``(Y_accumulated, keep_mask, trial_boundaries)``. Use
+        ``keep_mask`` to trim aligned arrays such as ``Xb`` and ``time``. By
+        default False.
 
     Returns
     -------
     Y_accumulated : np.ndarray, shape (T, N_neurons)
-        Spike counts after causal rolling sum.
+        Spike counts after causal rolling sum. If ``trim_incomplete=True``, its
+        first dimension is shortened by ``window - 1`` bins per trial.
+    keep_mask : np.ndarray, shape (T,), optional
+        Boolean mask selecting retained input bins. Returned only when
+        ``trim_incomplete=True``.
+    trial_boundaries : np.ndarray, optional
+        Trial starts recalculated for the trimmed concatenated data. Returned
+        only when ``trim_incomplete=True``.
+
+    Examples
+    --------
+    Accumulate independently within trials and trim all aligned arrays:
+
+    >>> Y_accum, keep, boundaries = accumulate_spikes(
+    ...     Y, window=3, trial_boundaries=boundaries, trim_incomplete=True
+    ... )
+    >>> Xb, time = Xb[keep], time[keep]
     """
+    if isinstance(window, (bool, np.bool_)) or not isinstance(window, (int, np.integer)) or window < 1:
+        raise ValueError(f"window must be a positive integer, got {window!r}")
+
+    T = Y.shape[0]
+    if T == 0:
+        raise ValueError("Y must contain at least one time bin")
+
+    if trial_boundaries is None:
+        boundaries = np.array([0], dtype=int)
+    else:
+        boundaries = np.atleast_1d(np.asarray(trial_boundaries, dtype=int))
+
+    if boundaries.size == 0:
+        raise ValueError("trial_boundaries must contain at least one boundary (starting at 0)")
+    if boundaries[0] != 0:
+        raise ValueError("First trial boundary must be 0")
+    if boundaries[-1] >= T:
+        raise ValueError(f"Last trial boundary must be < len(Y) (got {boundaries[-1]} with len(Y)={T})")
+    if len(boundaries) > 1 and not np.all(np.diff(boundaries) > 0):
+        raise ValueError("Trial boundaries must be strictly increasing")
+
+    trial_ends = np.append(boundaries[1:], T)
     Y_out = np.zeros_like(Y)
-    for i in range(Y.shape[0]):
-        start = max(0, i - window + 1)
-        Y_out[i] = Y[start : i + 1].sum(axis=0)
-    return Y_out
+    for trial_start, trial_end in zip(boundaries, trial_ends):
+        for i in range(trial_start, trial_end):
+            window_start = max(trial_start, i - window + 1)
+            Y_out[i] = Y[window_start : i + 1].sum(axis=0)
+
+    if not trim_incomplete:
+        return Y_out
+
+    trimmed_trial_lengths = trial_ends - boundaries - (window - 1)
+    if np.any(trimmed_trial_lengths <= 0):
+        short_trials = np.flatnonzero(trimmed_trial_lengths <= 0)
+        raise ValueError(
+            f"Every trial must contain at least window={window} bins when trim_incomplete=True; "
+            f"trials {short_trials.tolist()} are too short"
+        )
+
+    keep_mask = np.zeros(T, dtype=bool)
+    for trial_start, trial_end in zip(boundaries, trial_ends):
+        keep_mask[trial_start + window - 1 : trial_end] = True
+
+    updated_boundaries = np.concatenate(([0], np.cumsum(trimmed_trial_lengths)[:-1])).astype(int)
+    return Y_out[keep_mask], keep_mask, updated_boundaries
+
 
 
 def coarsen_dt(
