@@ -1077,7 +1077,11 @@ class SIMPL:
         )
 
         # Per-trial initial states (mean and covariance of likelihood modes over each trial)
-        mu0_all, sigma0_all = self._per_trial_initial_states(mode_l, trial_slices)
+        mu0_all, sigma0_all = self._per_trial_initial_states(
+            mode_l,
+            trial_slices,
+            is_1D_angular=self.is_1D_angular,
+        )
 
         # Single-pass filter and smooth
         self._substatus("E···  kalman filter")
@@ -1868,11 +1872,13 @@ class SIMPL:
         return trial_boundaries, trial_slices, jnp.array(is_boundary), jnp.array(is_trial_end)
 
     @staticmethod
-    def _per_trial_initial_states(mode_l, trial_slices):
+    def _per_trial_initial_states(mode_l, trial_slices, is_1D_angular=False):
         """Compute per-trial initial states from likelihood modes.
 
-        For each trial, the initial mean is the average of the likelihood modes
-        over the trial, and the initial covariance is the sample covariance.
+        For linear data, the initial mean and covariance are ordinary Euclidean
+        moments of the likelihood modes in each trial. For 1-D angular data,
+        the mean is circular and the covariance is the mean squared wrapped
+        residual around that mean, expressed in radians squared.
 
         Parameters
         ----------
@@ -1880,6 +1886,9 @@ class SIMPL:
             Likelihood modes at each timestep.
         trial_slices : list[slice]
             Trial boundaries as slices.
+        is_1D_angular : bool, optional
+            Whether to use circular statistics. Circular initialization
+            requires one-dimensional modes. By default False.
 
         Returns
         -------
@@ -1889,14 +1898,35 @@ class SIMPL:
             Per-timestep initial covariances (meaningful only at trial starts).
         """
         T, D = mode_l.shape
+        if is_1D_angular and D != 1:
+            raise ValueError(f"Circular trial initialization requires one-dimensional modes, got D={D}")
+
         # Convert to numpy for the loop to avoid JAX tracing overhead
         mode_np = np.array(mode_l)
         mu0_all = np.zeros((T, D))
         sigma0_all = np.zeros((T, D, D))
         for trial_slice in trial_slices:
             modes = mode_np[trial_slice]
-            mu = modes.mean(axis=0)
-            sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
+            if is_1D_angular:
+                angles = modes[:, 0]
+                sin_mean = np.sin(angles).mean()
+                cos_mean = np.cos(angles).mean()
+
+                # The circular mean is undefined for zero resultant length.
+                # Use the first mode as a deterministic centre; the wrapped
+                # variance remains broad and therefore downweights this prior.
+                if sin_mean**2 + cos_mean**2 > 1e-12:
+                    mean_angle = np.arctan2(sin_mean, cos_mean)
+                else:
+                    mean_angle = angles[0]
+                mean_angle = (mean_angle + np.pi) % (2 * np.pi) - np.pi
+
+                residuals = (angles - mean_angle + np.pi) % (2 * np.pi) - np.pi
+                mu = np.array([mean_angle])
+                sigma = np.array([[(residuals**2).mean()]])
+            else:
+                mu = modes.mean(axis=0)
+                sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
             mu0_all[trial_slice.start] = mu
             sigma0_all[trial_slice.start] = sigma
         return jnp.array(mu0_all), jnp.array(sigma0_all)
