@@ -139,11 +139,62 @@ def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
 
 
 @jax.jit
-def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """Fits a multivariate-Gaussian to each of T likelihood distributions over spatial bins.
+def _fit_gaussian_linear(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fit Euclidean Gaussian moments to likelihood distributions."""
+    sums = likelihoods.sum(axis=1)  # (T,)
 
-    For each timestep, computes the weighted mean, mode, and covariance of the
-    spatial bin coordinates ``x`` under the likelihood weights:
+    # Mean: weighted average via matmul
+    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
+
+    # Mode: position of max likelihood
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
+
+    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
+    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
+    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
+    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
+
+    return mu, mode, cov
+
+
+@jax.jit
+def _fit_gaussian_circular(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fit circular mean and wrapped residual variance to 1-D angular likelihoods."""
+    sums = likelihoods.sum(axis=1)  # (T,)
+    angles = x[:, 0]  # (N_bins,)
+
+    sin_mean = (likelihoods @ jnp.sin(angles)) / sums
+    cos_mean = (likelihoods @ jnp.cos(angles)) / sums
+    mu_angle = _wrap_minuspi_pi(jnp.arctan2(sin_mean, cos_mean))
+
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, 1)
+
+    # A circular mean is undefined for a distribution with zero resultant
+    # length. Use the likelihood mode as a deterministic centre in that case;
+    # the wrapped variance remains broad, so the Kalman update downweights it.
+    resultant_squared = sin_mean**2 + cos_mean**2
+    mu_angle = jnp.where(resultant_squared > 1e-12, mu_angle, mode[:, 0])
+
+    residuals = _wrap_minuspi_pi(angles[None, :] - mu_angle[:, None])
+    variance = jnp.sum(likelihoods * residuals**2, axis=1) / sums
+
+    return mu_angle[:, None], mode, variance[:, None, None]
+
+
+def fit_gaussian(
+    x: jax.Array,
+    likelihoods: jax.Array,
+    mode: str = "linear",
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fits Gaussian moments to each of T likelihood distributions over spatial bins.
+
+    ``mode="linear"`` computes ordinary Euclidean weighted moments. For 1-D
+    angles in radians, ``mode="circular"`` computes the circular mean and the
+    variance of wrapped residuals around that mean. The circular variance is in
+    radians squared, making it suitable as observation noise for the wrapped
+    Kalman filter.
+
+    The linear mean and covariance are:
 
     $$\\mu_t = \\frac{\\sum_i x_i \\, p_{t,i}}{\\sum_i p_{t,i}}, \\qquad
     \\Sigma_t = \\mathbb{E}_t[x x^\\top] - \\mu_t \\mu_t^\\top$$
@@ -162,6 +213,9 @@ def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.A
         The position bins (shared across all time steps).
     likelihoods : jnp.ndarray, shape (T, N_bins)
         Likelihood values (not log) at each bin for each time step.
+    mode : {"linear", "circular"}, optional
+        Moment-fitting method. Circular mode only supports a one-dimensional
+        angular grid. By default ``"linear"`` for backwards compatibility.
 
     Returns
     -------
@@ -172,20 +226,13 @@ def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.A
     covariances : jnp.ndarray, shape (T, D, D)
         The weighted covariance at each time step.
     """
-    sums = likelihoods.sum(axis=1)  # (T,)
-
-    # Mean: weighted average via matmul
-    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
-
-    # Mode: position of max likelihood
-    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
-
-    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
-    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
-    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
-    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
-
-    return mu, mode, cov
+    if mode not in ("linear", "circular"):
+        raise ValueError(f"mode must be 'linear' or 'circular', got {mode!r}")
+    if mode == "circular":
+        if x.ndim != 2 or x.shape[1] != 1:
+            raise ValueError(f"Circular Gaussian fitting requires x with shape (N_bins, 1), got {x.shape}")
+        return _fit_gaussian_circular(x, likelihoods)
+    return _fit_gaussian_linear(x, likelihoods)
 
 
 def gaussian_sample(key: jax.Array, mu: jax.Array, sigma: jax.Array) -> jax.Array:

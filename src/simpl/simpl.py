@@ -39,6 +39,7 @@ class SIMPL:
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
+        gaussian_fit_mode: str = "auto",
         bin_size: float = 0.02,
         env_pad: float = 0.0,
         env_lims: tuple | None = None,
@@ -110,6 +111,14 @@ class SIMPL:
             to [-pi, pi). The wrapped Kalman approximation assumes a tight posterior
             (sigma << 2*pi); results may degrade when posterior uncertainty is large relative
             to the circular domain. By default False.
+        gaussian_fit_mode : {"auto", "linear", "circular"}, optional
+            How likelihood maps are reduced to Gaussian observations for Kalman decoding.
+            ``"linear"`` uses ordinary Euclidean mean and covariance. ``"circular"`` uses
+            a circular mean and wrapped residual variance and requires
+            ``is_1D_angular=True``. ``"auto"`` selects circular fitting for angular models
+            and linear fitting otherwise. The resolved runtime switch is stored in
+            ``self._gaussian_fit_mode`` and can be manually changed before ``fit()`` or
+            ``predict()`` to compare the two methods. By default ``"auto"``.
         bin_size : float, optional
             Spatial bin size for discretising the environment, in the same units as the latent
             space. Controls the resolution of the receptive field grid. Smaller bins give
@@ -164,6 +173,15 @@ class SIMPL:
         self.speed_prior = speed_prior
         self.behavior_prior = behavior_prior
         self.is_1D_angular = is_1D_angular
+        self.gaussian_fit_mode = gaussian_fit_mode
+        if gaussian_fit_mode not in ("auto", "linear", "circular"):
+            raise ValueError(f"gaussian_fit_mode must be 'auto', 'linear', or 'circular', got {gaussian_fit_mode!r}")
+        if gaussian_fit_mode == "auto":
+            self._gaussian_fit_mode = "circular" if is_1D_angular else "linear"
+        else:
+            self._gaussian_fit_mode = gaussian_fit_mode
+        if self._gaussian_fit_mode == "circular" and not is_1D_angular:
+            raise ValueError("gaussian_fit_mode='circular' requires is_1D_angular=True")
 
         # Environment config
         self.bin_size = bin_size
@@ -599,7 +617,7 @@ class SIMPL:
             original training run.** This method does NOT read or override
             hyperparameters from the saved file — it trusts whatever was passed to
             ``__init__``. If any parameter differs (``speed_prior``,
-            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``val_frac``,
+            ``kernel_bandwidth``, ``gaussian_fit_mode``, ``bin_size``, ``env_pad``, ``val_frac``,
             ``random_seed``, etc.), the internal state (Kalman filter, spike mask,
             environment grid) will be inconsistent with the saved results, leading
             to silently incorrect behaviour on resume, predict, or further fitting.
@@ -1034,7 +1052,18 @@ class SIMPL:
 
         # Likelihood maps and Gaussian observation fits (batched internally)
         self._substatus("E···  likelihood")
-        obs = kde.decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
+        if self._gaussian_fit_mode not in ("linear", "circular"):
+            raise ValueError(f"_gaussian_fit_mode must be 'linear' or 'circular', got {self._gaussian_fit_mode!r}")
+        if self._gaussian_fit_mode == "circular" and not self.is_1D_angular:
+            raise ValueError("_gaussian_fit_mode='circular' requires is_1D_angular=True")
+        obs = kde.decode_observations(
+            self.xF_,
+            Y,
+            F,
+            mask,
+            return_log_maps=store_log_maps,
+            gaussian_fit_mode=self._gaussian_fit_mode,
+        )
         if store_log_maps:
             mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
         else:
@@ -1066,6 +1095,7 @@ class SIMPL:
         mu_s, sigma_s = self.kalman_filter_.smooth(
             mus_f=mu_f,
             sigmas_f=sigma_f,
+            U=U,
             is_trial_end=is_trial_end,
         )
 
@@ -1884,6 +1914,7 @@ class SIMPL:
             "speed_prior": np.nan if self.speed_prior is None or not self.is_temporal_ else self.speed_prior,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
+            "gaussian_fit_mode": self._gaussian_fit_mode,
             "align_mode": self.align_mode_ or "none",
             "environment_provided": int(self._environment_override is not None),
             "val_frac": self.val_frac,

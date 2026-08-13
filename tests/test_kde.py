@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from simpl.kde import (
+    decode_observations,
     gaussian_kernel,
     kde,
     kde_angular,
@@ -106,6 +107,37 @@ class TestKDEAngular:
         # The peak should be near the pi/-pi boundary
         assert result.shape == (1, n_bins)
         assert jnp.all(jnp.isfinite(result))
+
+
+@pytest.mark.cpu_only
+class TestDecodeObservationsGaussianFitMode:
+    def test_linear_and_circular_modes_are_selectable(self):
+        n_bins = 64
+        xF = jnp.linspace(-jnp.pi, jnp.pi, n_bins, endpoint=False)[:, None]
+        angular_distance = jnp.angle(jnp.exp(1j * (xF[:, 0] - (jnp.pi - 0.02))))
+        mean_rate = (0.01 + 2.0 * jnp.exp(-0.5 * (angular_distance / 0.2) ** 2))[None, :]
+        spikes = jnp.array([[2.0]])
+        mask = jnp.ones_like(spikes, dtype=bool)
+
+        mu_linear, _, sigma_linear, _ = decode_observations(xF, spikes, mean_rate, mask, gaussian_fit_mode="linear")
+        mu_circular, _, sigma_circular, _ = decode_observations(
+            xF, spikes, mean_rate, mask, gaussian_fit_mode="circular"
+        )
+
+        assert jnp.abs(mu_linear[0, 0]) < 1.0
+        assert jnp.abs(mu_circular[0, 0]) > 2.5
+        assert sigma_circular[0, 0, 0] < sigma_linear[0, 0, 0]
+
+    def test_invalid_mode_raises(self):
+        xF = jnp.linspace(-1.0, 1.0, 10)[:, None]
+        with pytest.raises(ValueError, match="gaussian_fit_mode"):
+            decode_observations(
+                xF,
+                jnp.ones((1, 1)),
+                jnp.ones((1, 10)),
+                jnp.ones((1, 1), dtype=bool),
+                gaussian_fit_mode="invalid",
+            )
 
 
 class TestPoissonLogLikelihoodMaps:
