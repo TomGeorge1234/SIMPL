@@ -58,7 +58,7 @@ To run the demo notebook locally (or else [![](https://colab.research.google.com
 pip install "simpl-neuro[demos]"
 simpl demo                # downloads demo notebook into the cwd
 ```
-If you need GPU, see the Advanced Usage section.
+If you need GPU, use the platform-specific instructions in [GPU Acceleration](#gpu-acceleration).
 <!-- docs-install-end -->
 
 <!-- docs-intro-end -->
@@ -406,20 +406,42 @@ If your timestamps have gaps (e.g. concatenated sessions), SIMPL will warn you a
 <!-- docs-gpu-start -->
 ### GPU Acceleration
 
-SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Typical neural recordings (< 2 hrs) fit in under 60 s on CPU alone, so a GPU is rarely needed.
+SIMPL auto-detects and offloads compute-heavy steps to GPU when available. Most typical neural recordings fit in under 60 s on CPU alone, so a GPU is rarely needed.
 
 <img src="assets/scaling_benchmark.png" width=500>
 
 *200 neurons, dt=0.02s (50Hz), dx=2cm (2,500 bins), 5 iterations, includes JIT overheads*
 
+Choose exactly one installation path:
+
 ```bash
-pip install -U "jax[cuda12]"   # NVIDIA GPU (CUDA)
-pip install ".[metal]"           # Apple Silicon GPU (experimental and not recommended, pins JAX to 0.4.35)
+# CPU (recommended; macOS, Linux, or Windows)
+pip install simpl-neuro
+
+# NVIDIA CUDA 12 (Linux/Windows only)
+pip install -U "jax[cuda12]"
+pip install simpl-neuro
+
+# Apple Silicon Metal (experimental)
+pip install "simpl-neuro[metal]"
+```
+
+Do not install the CUDA extra on macOS.
+
+```bash
+pip install --force-reinstall "simpl-neuro[metal]"
+# Local editable checkout:
+pip install --force-reinstall -e ".[metal]"
 ```
 
 ```python
-model = SIMPL(use_gpu=False)   # force CPU
+model = SIMPL()               # use a GPU when available (default)
+model = SIMPL(use_gpu=False)  # force CPU
+model = SIMPL(use_gpu=True)   # require a GPU
 ```
+
+With `use_gpu=False`, SIMPL selects CPU directly without initialising installed
+GPU or Metal backends.
 <!-- docs-gpu-end -->
 
 

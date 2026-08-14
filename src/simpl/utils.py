@@ -676,6 +676,7 @@ def create_speckled_mask(
     sparsity: float = 0.1,
     block_size: int = 10,
     random_seed: int = 0,
+    device=None,
 ) -> jax.Array:
     """
     Creates a boolean mask of size `size`. This mask is all True except along each column randomly
@@ -700,7 +701,7 @@ def create_speckled_mask(
     Returns
     -------
     mask : jax.Array
-        A boolean mask with the specified properties, built on the default JAX device.
+        A boolean mask with the specified properties, placed on ``device``.
 
     Notes
     -----
@@ -720,7 +721,7 @@ def create_speckled_mask(
     if block_size < 0:
         raise ValueError(f"block_size cannot be negative, got {block_size}")
     if block_size == 0:
-        return jnp.ones(size, dtype=bool)
+        return jax.device_put(np.ones(size, dtype=bool), device)
     if block_size >= size[0]:
         raise ValueError(
             f"block_size must be smaller than the time dimension so the mask leaves training data, got {block_size}"
@@ -731,11 +732,12 @@ def create_speckled_mask(
     T, N = size
     num_blocks_per_row = int(sparsity * T / block_size)
     if num_blocks_per_row == 0:
-        return jnp.ones(size, dtype=bool)
+        return jax.device_put(np.ones(size, dtype=bool), device)
 
     # One random start index per (column, block); start in [0, T - block_size) so each
     # block of length block_size fits within the time axis.
-    starts = random.randint(random.PRNGKey(random_seed), (N, num_blocks_per_row), 0, T - block_size)
+    rng = np.random.default_rng(random_seed)
+    starts = rng.integers(0, T - block_size, size=(N, num_blocks_per_row))
 
     # Process columns in chunks so the transient integer delta array stays bounded. Each
     # chunk is written straight into one pre-allocated boolean array (no host+device
@@ -745,12 +747,14 @@ def create_speckled_mask(
     for c0 in range(0, N, col_chunk):
         s = starts[c0 : c0 + col_chunk]  # (c, num_blocks)
         c = s.shape[0]
-        col_ix = jnp.broadcast_to(jnp.arange(c)[:, None], (c, num_blocks_per_row))
+        col_ix = np.broadcast_to(np.arange(c)[:, None], (c, num_blocks_per_row))
         # +1 at each block start, -1 one past each block end; cumsum gives the per-bin
         # count of overlapping held-out blocks.
-        delta = jnp.zeros((T + 1, c), dtype=jnp.int32).at[s, col_ix].add(1).at[s + block_size, col_ix].add(-1)
-        mask[:, c0 : c0 + c] = np.asarray(jnp.cumsum(delta[:-1], axis=0) <= 0)
-    return jax.device_put(mask)
+        delta = np.zeros((T + 1, c), dtype=np.int32)
+        np.add.at(delta, (s, col_ix), 1)
+        np.add.at(delta, (s + block_size, col_ix), -1)
+        mask[:, c0 : c0 + c] = np.cumsum(delta[:-1], axis=0) <= 0
+    return jax.device_put(mask, device)
 
 
 def find_time_jumps(
@@ -991,7 +995,6 @@ def loglikelihoods_from_results(results: xr.Dataset) -> xr.Dataset:
 def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D: int) -> dict:
     """Restore E-step state dict from *results* at the given iteration."""
     import jax
-    import jax.numpy as jnp
 
     e_state = {}
     for var in ("X", "mu_l", "mode_l", "sigma_l", "mu_f", "sigma_f", "mu_s", "sigma_s", "coef", "intercept"):
@@ -1002,14 +1005,13 @@ def restore_E_step_state(results: xr.Dataset, iteration: int, device, T: int, D:
         )
         if np.all(np.isnan(values)):
             continue
-        e_state[var] = jax.device_put(jnp.array(values), device)
+        e_state[var] = jax.device_put(np.asarray(values), device)
     return e_state
 
 
 def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_bins: int, device) -> dict:
     """Restore M-step state dict from *results* at the given iteration."""
     import jax
-    import jax.numpy as jnp
 
     m_state = {}
     for var in ("F", "F_odd_minutes", "F_even_minutes", "PX"):
@@ -1020,11 +1022,11 @@ def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_
         )
         if var.startswith("F"):
             values = np.asarray(values).reshape(n_neurons, -1)
-        m_state[var] = jax.device_put(jnp.array(values), device)
+        m_state[var] = jax.device_put(np.asarray(values), device)
     if "FX" in results:
-        m_state["FX"] = jax.device_put(jnp.array(results["FX"].sel(iteration=iteration).values), device)
+        m_state["FX"] = jax.device_put(np.asarray(results["FX"].sel(iteration=iteration).values), device)
     elif "FX_last_iteration" in results:
-        m_state["FX"] = jax.device_put(jnp.array(results["FX_last_iteration"].values), device)
+        m_state["FX"] = jax.device_put(np.asarray(results["FX_last_iteration"].values), device)
     return m_state
 
 

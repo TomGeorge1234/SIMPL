@@ -82,6 +82,12 @@ class TestKDE:
         assert pos_density.shape == (bins.shape[0],)
         assert jnp.allclose(pos_density.sum(), 1.0, atol=1e-3)
 
+    def test_result_stays_on_input_device(self, simple_data):
+        T, _, N_neurons, trajectory, bins = simple_data
+        spikes = jnp.ones((T, N_neurons))
+        result = kde(bins, trajectory, spikes, kernel_bandwidth=0.3)
+        assert result.device == bins.device
+
 
 @pytest.mark.cpu_only
 class TestKDEAngular:

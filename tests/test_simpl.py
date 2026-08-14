@@ -868,11 +868,50 @@ class TestSIMPLConvenienceAttrs:
 class TestSetupDevice:
     """Tests for SIMPL._setup_device()."""
 
-    def test_use_gpu_false(self):
+    def test_use_gpu_false_does_not_probe_accelerators(self, monkeypatch):
+        import jax
+
+        def fail_if_called():
+            raise AssertionError("CPU selection must not initialise the default accelerator")
+
+        monkeypatch.setattr(jax, "default_backend", fail_if_called)
         model = SIMPL(use_gpu=False)
-        model._setup_device(use_gpu=False)
         assert model.use_gpu_ is False
         assert model._device_str == "CPU"
+
+    def test_use_gpu_false_places_initial_data_on_cpu(self, demo_data):
+        """Input conversion must not touch the default GPU before CPU placement."""
+        n_samples = 500
+        n_neurons = 5
+        model = SIMPL(use_gpu=False)
+        model.fit(
+            Y=demo_data["Y"][:n_samples, :n_neurons],
+            Xb=demo_data["Xb"][:n_samples],
+            time=demo_data["time"][:n_samples],
+            n_iterations=0,
+        )
+
+        arrays = (
+            model.Y_,
+            model.Xb_,
+            model.time_,
+            model.neuron_,
+            model.xF_,
+            model.spike_mask_,
+            model.kalman_filter_.F,
+        )
+        for array in arrays:
+            assert array.device.platform == "cpu"
+
+    def test_incompatible_metal_install_raises_clear_error(self):
+        with pytest.raises(RuntimeError, match=r"jax==0\.4\.35"):
+            SIMPL._validate_metal_install("METAL", "0.9.2", "0.9.2")
+        with pytest.raises(RuntimeError, match=r"jaxlib==0\.4\.35"):
+            SIMPL._validate_metal_install("METAL", "0.4.35", "0.9.2")
+
+    def test_supported_metal_install_passes(self):
+        SIMPL._validate_metal_install("METAL", "0.4.35", "0.4.35")
+        SIMPL._validate_metal_install("cpu", "0.9.2", "0.9.2")
 
     def test_use_gpu_if_available_cpu(self):
         """On a CPU-only machine, 'if_available' should resolve to False."""
