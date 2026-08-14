@@ -110,8 +110,8 @@ class TestKDEAngular:
 
 
 @pytest.mark.cpu_only
-class TestDecodeObservationsGaussianFitMode:
-    def test_linear_and_circular_modes_are_selectable(self):
+class TestDecodeObservationsAngularFit:
+    def test_angular_flag_forces_circular_fit(self):
         n_bins = 64
         xF = jnp.linspace(-jnp.pi, jnp.pi, n_bins, endpoint=False)[:, None]
         angular_distance = jnp.angle(jnp.exp(1j * (xF[:, 0] - (jnp.pi - 0.02))))
@@ -119,24 +119,22 @@ class TestDecodeObservationsGaussianFitMode:
         spikes = jnp.array([[2.0]])
         mask = jnp.ones_like(spikes, dtype=bool)
 
-        mu_linear, _, sigma_linear, _ = decode_observations(xF, spikes, mean_rate, mask, gaussian_fit_mode="linear")
-        mu_circular, _, sigma_circular, _ = decode_observations(
-            xF, spikes, mean_rate, mask, gaussian_fit_mode="circular"
-        )
+        mu_linear, _, sigma_linear, _ = decode_observations(xF, spikes, mean_rate, mask)
+        mu_circular, _, sigma_circular, _ = decode_observations(xF, spikes, mean_rate, mask, is_1D_angular=True)
 
         assert jnp.abs(mu_linear[0, 0]) < 1.0
         assert jnp.abs(mu_circular[0, 0]) > 2.5
         assert sigma_circular[0, 0, 0] < sigma_linear[0, 0, 0]
 
-    def test_invalid_mode_raises(self):
-        xF = jnp.linspace(-1.0, 1.0, 10)[:, None]
-        with pytest.raises(ValueError, match="gaussian_fit_mode"):
+    def test_angular_fit_requires_one_dimensional_grid(self):
+        xF = jnp.ones((10, 2))
+        with pytest.raises(ValueError, match="shape"):
             decode_observations(
                 xF,
                 jnp.ones((1, 1)),
                 jnp.ones((1, 10)),
                 jnp.ones((1, 1), dtype=bool),
-                gaussian_fit_mode="invalid",
+                is_1D_angular=True,
             )
 
 

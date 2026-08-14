@@ -356,7 +356,7 @@ def decode_observations(
     mask: jax.Array,
     batch_size: int | None = None,
     return_log_maps: bool = False,
-    gaussian_fit_mode: str = "linear",
+    is_1D_angular: bool = False,
 ) -> tuple:
     """Compute Poisson likelihood maps, fit Gaussian observations, and flag silent bins.
 
@@ -379,10 +379,10 @@ def decode_observations(
         to target ~64 MB peak memory for the likelihood tensor.
     return_log_maps : bool
         If True, also return the full ``(T, N_bins)`` log-likelihood maps.
-    gaussian_fit_mode : {"linear", "circular"}, optional
-        How to reduce each likelihood map to Gaussian observation moments.
-        Circular mode uses a circular mean and wrapped residual variance and
-        requires a 1-D angular grid. By default ``"linear"``.
+    is_1D_angular : bool, optional
+        Whether ``xF`` is a one-dimensional angular grid. Angular likelihood
+        maps always use a circular mean and wrapped residual variance. By
+        default False.
 
     Returns
     -------
@@ -395,9 +395,7 @@ def decode_observations(
     """
     from simpl.utils import fit_gaussian  # local to avoid circular import
 
-    if gaussian_fit_mode not in ("linear", "circular"):
-        raise ValueError(f"gaussian_fit_mode must be 'linear' or 'circular', got {gaussian_fit_mode!r}")
-    if gaussian_fit_mode == "circular" and (xF.ndim != 2 or xF.shape[1] != 1):
+    if is_1D_angular and (xF.ndim != 2 or xF.shape[1] != 1):
         raise ValueError(f"Circular Gaussian fitting requires xF with shape (N_bins, 1), got {xF.shape}")
 
     T = spikes.shape[0]
@@ -412,7 +410,7 @@ def decode_observations(
     def _process_batch(xF, spikes_batch, mean_rate, mask_batch, _return_log_maps=False):
         log_maps = poisson_log_likelihood_maps(spikes_batch, mean_rate, mask=mask_batch)
         log_maps = log_maps - jnp.max(log_maps, axis=1)[:, None]  # shift max to 0 to avoid NaNs in exp
-        mu, mode, sigma = fit_gaussian(xF, jnp.exp(log_maps), mode=gaussian_fit_mode)
+        mu, mode, sigma = fit_gaussian(xF, jnp.exp(log_maps), is_1D_angular=is_1D_angular)
         no_spk = jnp.sum(spikes_batch * mask_batch, axis=1) == 0
         if _return_log_maps:
             return mu, mode, sigma, no_spk, log_maps

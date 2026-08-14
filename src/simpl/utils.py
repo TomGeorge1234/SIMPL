@@ -184,12 +184,12 @@ def _fit_gaussian_circular(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Ar
 def fit_gaussian(
     x: jax.Array,
     likelihoods: jax.Array,
-    mode: str = "linear",
+    is_1D_angular: bool = False,
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Fits Gaussian moments to each of T likelihood distributions over spatial bins.
 
-    ``mode="linear"`` computes ordinary Euclidean weighted moments. For 1-D
-    angles in radians, ``mode="circular"`` computes the circular mean and the
+    Ordinary Euclidean weighted moments are used by default. When
+    ``is_1D_angular=True``, the function instead computes the circular mean and
     variance of wrapped residuals around that mean. The circular variance is in
     radians squared, making it suitable as observation noise for the wrapped
     Kalman filter.
@@ -213,9 +213,9 @@ def fit_gaussian(
         The position bins (shared across all time steps).
     likelihoods : jnp.ndarray, shape (T, N_bins)
         Likelihood values (not log) at each bin for each time step.
-    mode : {"linear", "circular"}, optional
-        Moment-fitting method. Circular mode only supports a one-dimensional
-        angular grid. By default ``"linear"`` for backwards compatibility.
+    is_1D_angular : bool, optional
+        Whether ``x`` is a one-dimensional angular grid. Angular data always
+        use circular moments. By default False.
 
     Returns
     -------
@@ -226,9 +226,7 @@ def fit_gaussian(
     covariances : jnp.ndarray, shape (T, D, D)
         The weighted covariance at each time step.
     """
-    if mode not in ("linear", "circular"):
-        raise ValueError(f"mode must be 'linear' or 'circular', got {mode!r}")
-    if mode == "circular":
+    if is_1D_angular:
         if x.ndim != 2 or x.shape[1] != 1:
             raise ValueError(f"Circular Gaussian fitting requires x with shape (N_bins, 1), got {x.shape}")
         return _fit_gaussian_circular(x, likelihoods)

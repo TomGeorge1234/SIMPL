@@ -20,6 +20,8 @@ class TestSIMPLInit:
         assert model.is_fitted_ is False
         assert not hasattr(model, "Y_")
         assert not hasattr(model, "results_")
+        assert not hasattr(model, "gaussian_fit_mode")
+        assert not hasattr(model, "_gaussian_fit_mode")
 
     def test_speed_prior_none_disables_kalman_smoothing(self, demo_data):
         N = 500
