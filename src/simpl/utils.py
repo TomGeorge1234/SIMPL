@@ -558,8 +558,7 @@ def accumulate_spikes(
     retained_trial_lengths = trimmed_trial_lengths[trimmed_trial_lengths > 0]
     if retained_trial_lengths.size == 0:
         raise ValueError(
-            f"No trial contains at least window={window} bins, so no complete "
-            "accumulation window can be retained"
+            f"No trial contains at least window={window} bins, so no complete accumulation window can be retained"
         )
 
     keep_mask = np.zeros(T, dtype=bool)
@@ -568,7 +567,6 @@ def accumulate_spikes(
 
     updated_boundaries = np.concatenate(([0], np.cumsum(retained_trial_lengths)[:-1])).astype(int)
     return Y_out[keep_mask], keep_mask, updated_boundaries
-
 
 
 def coarsen_dt(
