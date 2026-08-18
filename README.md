@@ -374,7 +374,7 @@ When `time=None`, SIMPL treats the data as non-temporal, replaces the missing ti
 <!-- docs-angular-start -->
 ### 1D angular / circular data
 
-SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, likelihood maps are summarized using circular Gaussian moments, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step.
+SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step.
 
 ```python
 model = SIMPL(
@@ -454,16 +454,8 @@ from simpl import accumulate_spikes, coarsen_dt
 # Roll up spikes into wider time bins (e.g. sum every 2 bins)
 Y_coarse, Xb_coarse, time_coarse = coarsen_dt(Y, Xb, time, dt_multiplier=2)
 
-# Accumulate spikes independently within each trial. Trimming discards the
-# first window - 1 bins of every trial, where the causal window is incomplete.
-Y_accum, keep, trial_boundaries_accum = accumulate_spikes(
-    Y,
-    window=3,
-    trial_boundaries=trial_boundaries,
-    trim_incomplete=True,
-)
-Xb_accum = Xb[keep]
-time_accum = time[keep]
+# Accumulate spikes with a causal sliding window
+Y_accum = accumulate_spikes(Y, window=3)
 ```
 <!-- docs-preprocessing-end -->
 
