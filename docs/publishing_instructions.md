@@ -34,29 +34,13 @@ release:
 rm -rf dist
 uv run python -m build
 uv run twine check dist/*
-ls -lh dist/
 ```
 
-This should create one wheel and one source distribution for `X.Y.Z`:
 
-```text
-dist/simpl_neuro-X.Y.Z-py3-none-any.whl
-dist/simpl_neuro-X.Y.Z.tar.gz
-```
 
 Check that both filenames contain the intended stable version before uploading.
 
-## 4. Optionally test on TestPyPI
-
-```bash
-uv run twine upload --repository testpypi dist/*
-```
-
-Twine will prompt for credentials. Use `__token__` as the username and a
-TestPyPI API token as the password. TestPyPI and production PyPI use different
-accounts and tokens.
-
-## 5. Push the release and publish to PyPI
+## 4. Push the release and publish to PyPI
 
 ```bash
 git push origin main
