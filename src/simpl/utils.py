@@ -139,11 +139,53 @@ def gaussian_norm_const(sigma: jax.Array) -> jax.Array:
 
 
 @jax.jit
-def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """Fits a multivariate-Gaussian to each of T likelihood distributions over spatial bins.
+def _fit_gaussian_linear(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fit Euclidean Gaussian moments to likelihood distributions."""
+    sums = likelihoods.sum(axis=1)  # (T,)
 
-    For each timestep, computes the weighted mean, mode, and covariance of the
-    spatial bin coordinates ``x`` under the likelihood weights:
+    # Mean: weighted average via matmul
+    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
+
+    # Mode: position of max likelihood
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
+
+    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
+    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
+    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
+    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
+
+    return mu, mode, cov
+
+
+@jax.jit
+def _fit_gaussian_circular(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fit circular mean and wrapped residual variance to 1-D angular likelihoods.
+
+    x : jnp.ndarray, shape (N_bins, 1)
+    likelihoods : jnp.ndarray, shape (T, N_bins)
+    """
+    angles = x[:, 0]  # (N_bins,)
+    mu_angle, variance = _circular_mean_and_variance(angles=angles, weights=likelihoods)
+
+    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, 1)
+
+    return mu_angle[:, None], mode, variance[:, None, None]
+
+
+def fit_gaussian(
+    x: jax.Array,
+    likelihoods: jax.Array,
+    is_1D_angular: bool = False,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+    """Fits Gaussian moments to each of T likelihood distributions over spatial bins.
+
+    Ordinary Euclidean weighted moments are used by default. When
+    ``is_1D_angular=True``, the function instead computes the circular mean and
+    variance of wrapped residuals around that mean. The circular variance is in
+    radians squared, making it suitable as observation noise for the wrapped
+    Kalman filter.
+
+    The linear mean and covariance are:
 
     $$\\mu_t = \\frac{\\sum_i x_i \\, p_{t,i}}{\\sum_i p_{t,i}}, \\qquad
     \\Sigma_t = \\mathbb{E}_t[x x^\\top] - \\mu_t \\mu_t^\\top$$
@@ -162,6 +204,9 @@ def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.A
         The position bins (shared across all time steps).
     likelihoods : jnp.ndarray, shape (T, N_bins)
         Likelihood values (not log) at each bin for each time step.
+    is_1D_angular : bool, optional
+        Whether ``x`` is a one-dimensional angular grid. Angular data always
+        use circular moments. By default False.
 
     Returns
     -------
@@ -172,20 +217,11 @@ def fit_gaussian(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.A
     covariances : jnp.ndarray, shape (T, D, D)
         The weighted covariance at each time step.
     """
-    sums = likelihoods.sum(axis=1)  # (T,)
-
-    # Mean: weighted average via matmul
-    mu = (likelihoods @ x) / sums[:, None]  # (T, D)
-
-    # Mode: position of max likelihood
-    mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, D)
-
-    # Covariance: E[xx^T] - mu mu^T (avoids (T, N_bins, D) intermediate)
-    x_outer = x[:, :, None] * x[:, None, :]  # (N_bins, D, D)
-    E_xxT = jnp.einsum("tb,bij->tij", likelihoods, x_outer) / sums[:, None, None]  # (T, D, D)
-    cov = E_xxT - mu[:, :, None] * mu[:, None, :]  # (T, D, D)
-
-    return mu, mode, cov
+    if is_1D_angular:
+        if x.ndim != 2 or x.shape[1] != 1:
+            raise ValueError(f"Circular Gaussian fitting requires x with shape (N_bins, 1), got {x.shape}")
+        return _fit_gaussian_circular(x, likelihoods)
+    return _fit_gaussian_linear(x, likelihoods)
 
 
 def gaussian_sample(key: jax.Array, mu: jax.Array, sigma: jax.Array) -> jax.Array:
@@ -230,6 +266,53 @@ def _wrap_minuspi_pi(theta: jax.Array) -> jax.Array:
         Angles wrapped to [-pi, pi)
     """
     return jnp.mod(theta + jnp.pi, _TAU) - jnp.pi
+
+
+def _circular_mean_and_variance(
+    angles: jax.Array,
+    weights: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
+    """Compute a circular mean and mean squared wrapped residual.
+
+    Statistics are computed along the final axis. ``angles`` and ``weights``
+    are broadcast together, allowing a shared angular grid to be paired with a
+    batch of weight vectors. If the resultant length is effectively zero, the
+    angle with the greatest weight is used as a deterministic centre (the
+    first angle for unweighted samples).
+
+    Parameters
+    ----------
+    angles : jnp.ndarray, shape (N, )
+        Angular samples in radians. This could be the angular bins, or a batch of angular samples.
+    weights : jnp.ndarray, shape (..., N), optional
+        Non-negative sample weights. If omitted, all samples receive equal
+        weight.
+
+    Returns
+    -------
+    mean : jnp.ndarray, shape (...,)
+        Circular mean wrapped to ``[-pi, pi)``.
+    variance : jnp.ndarray, shape (...,)
+        Mean squared residual after wrapping residuals to ``[-pi, pi)``.
+    """
+    angles = jnp.asarray(angles)
+    if weights is None:
+        weights = jnp.ones_like(angles)
+    angles, weights = jnp.broadcast_arrays(angles, jnp.asarray(weights))
+
+    sums = weights.sum(axis=-1)
+    sin_mean = jnp.sum(weights * jnp.sin(angles), axis=-1) / sums
+    cos_mean = jnp.sum(weights * jnp.cos(angles), axis=-1) / sums
+    mean = _wrap_minuspi_pi(jnp.arctan2(sin_mean, cos_mean))
+
+    fallback_indices = jnp.argmax(weights, axis=-1)
+    fallback = jnp.take_along_axis(angles, fallback_indices[..., None], axis=-1)[..., 0]
+    resultant_squared = sin_mean**2 + cos_mean**2
+    mean = jnp.where(resultant_squared > 1e-12, mean, _wrap_minuspi_pi(fallback))
+
+    residuals = _wrap_minuspi_pi(angles - mean[..., None])
+    variance = jnp.sum(weights * residuals**2, axis=-1) / sums
+    return mean, variance
 
 
 def _bin_indices_minuspi_pi(theta: jax.Array, n_bins: int) -> jax.Array:

@@ -106,10 +106,11 @@ class SIMPL:
         is_1D_angular : bool, optional
             Whether the latent space is 1D angular/circular (e.g. head direction data in
             radians). If True, angular KDE is used, the Kalman filter wraps its state to
-            [-pi, pi) after every predict/update/smooth step, and the environment is fixed
-            to [-pi, pi). The wrapped Kalman approximation assumes a tight posterior
-            (sigma << 2*pi); results may degrade when posterior uncertainty is large relative
-            to the circular domain. By default False.
+            [-pi, pi) after every predict/update/smooth step, likelihood maps are reduced
+            using circular Gaussian moments, and the environment is fixed to [-pi, pi).
+            The wrapped Kalman approximation assumes a tight posterior (sigma << 2*pi);
+            results may degrade when posterior uncertainty is large relative to the circular
+            domain. By default False.
         bin_size : float, optional
             Spatial bin size for discretising the environment, in the same units as the latent
             space. Controls the resolution of the receptive field grid. Smaller bins give
@@ -1037,7 +1038,14 @@ class SIMPL:
 
         # Likelihood maps and Gaussian observation fits (batched internally)
         self._substatus("E···  likelihood")
-        obs = kde.decode_observations(self.xF_, Y, F, mask, return_log_maps=store_log_maps)
+        obs = kde.decode_observations(
+            self.xF_,
+            Y,
+            F,
+            mask,
+            return_log_maps=store_log_maps,
+            is_1D_angular=self.is_1D_angular,
+        )
         if store_log_maps:
             mu_l, mode_l, sigma_l, no_spikes, logPYXF_maps = obs
         else:
@@ -1051,7 +1059,11 @@ class SIMPL:
         )
 
         # Per-trial initial states (mean and covariance of likelihood modes over each trial)
-        mu0_all, sigma0_all = self._per_trial_initial_states(mode_l, trial_slices)
+        mu0_all, sigma0_all = self._per_trial_initial_states(
+            mode_l,
+            trial_slices,
+            is_1D_angular=self.is_1D_angular,
+        )
 
         # Single-pass filter and smooth
         self._substatus("E···  kalman filter")
@@ -1872,11 +1884,13 @@ class SIMPL:
         )
 
     @staticmethod
-    def _per_trial_initial_states(mode_l, trial_slices):
+    def _per_trial_initial_states(mode_l, trial_slices, is_1D_angular=False):
         """Compute per-trial initial states from likelihood modes.
 
-        For each trial, the initial mean is the average of the likelihood modes
-        over the trial, and the initial covariance is the sample covariance.
+        For linear data, the initial mean and covariance are ordinary Euclidean
+        moments of the likelihood modes in each trial. For 1-D angular data,
+        the mean is circular and the covariance is the mean squared wrapped
+        residual around that mean, expressed in radians squared.
 
         Parameters
         ----------
@@ -1884,6 +1898,9 @@ class SIMPL:
             Likelihood modes at each timestep.
         trial_slices : list[slice]
             Trial boundaries as slices.
+        is_1D_angular : bool, optional
+            Whether to use circular statistics. Circular initialization
+            requires one-dimensional modes. By default False.
 
         Returns
         -------
@@ -1893,14 +1910,22 @@ class SIMPL:
             Per-timestep initial covariances (meaningful only at trial starts).
         """
         T, D = mode_l.shape
-        # Convert to numpy for the loop to avoid JAX tracing overhead
+        if is_1D_angular and D != 1:
+            raise ValueError(f"Circular trial initialization requires one-dimensional modes, got D={D}")
+
         mode_np = np.array(mode_l)
         mu0_all = np.zeros((T, D))
         sigma0_all = np.zeros((T, D, D))
         for trial_slice in trial_slices:
             modes = mode_np[trial_slice]
-            mu = modes.mean(axis=0)
-            sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
+            if is_1D_angular:
+                angles = modes[:, 0]
+                mean_angle, variance = utils._circular_mean_and_variance(angles=angles, weights=None)
+                mu = np.asarray(mean_angle)[None]
+                sigma = np.asarray(variance)[None, None]
+            else:
+                mu = modes.mean(axis=0)
+                sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))
             mu0_all[trial_slice.start] = mu
             sigma0_all[trial_slice.start] = sigma
         return jax.device_put(mu0_all, mode_l.device), jax.device_put(sigma0_all, mode_l.device)

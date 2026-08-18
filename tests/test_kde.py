@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from simpl.kde import (
+    decode_observations,
     gaussian_kernel,
     kde,
     kde_angular,
@@ -112,6 +113,35 @@ class TestKDEAngular:
         # The peak should be near the pi/-pi boundary
         assert result.shape == (1, n_bins)
         assert jnp.all(jnp.isfinite(result))
+
+
+@pytest.mark.cpu_only
+class TestDecodeObservationsAngularFit:
+    def test_angular_flag_forces_circular_fit(self):
+        n_bins = 64
+        xF = jnp.linspace(-jnp.pi, jnp.pi, n_bins, endpoint=False)[:, None]
+        angular_distance = jnp.angle(jnp.exp(1j * (xF[:, 0] - (jnp.pi - 0.02))))
+        mean_rate = (0.01 + 2.0 * jnp.exp(-0.5 * (angular_distance / 0.2) ** 2))[None, :]
+        spikes = jnp.array([[2.0]])
+        mask = jnp.ones_like(spikes, dtype=bool)
+
+        mu_linear, _, sigma_linear, _ = decode_observations(xF, spikes, mean_rate, mask)
+        mu_circular, _, sigma_circular, _ = decode_observations(xF, spikes, mean_rate, mask, is_1D_angular=True)
+
+        assert jnp.abs(mu_linear[0, 0]) < 1.0
+        assert jnp.abs(mu_circular[0, 0]) > 2.5
+        assert sigma_circular[0, 0, 0] < sigma_linear[0, 0, 0]
+
+    def test_angular_fit_requires_one_dimensional_grid(self):
+        xF = jnp.ones((10, 2))
+        with pytest.raises(ValueError, match="shape"):
+            decode_observations(
+                xF,
+                jnp.ones((1, 1)),
+                jnp.ones((1, 10)),
+                jnp.ones((1, 1), dtype=bool),
+                is_1D_angular=True,
+            )
 
 
 class TestPoissonLogLikelihoodMaps:
