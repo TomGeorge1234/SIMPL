@@ -10,6 +10,7 @@ from simpl.utils import (
     _AVAILABLE_DEMO_DATA,
     _bin_indices_minuspi_pi,
     _circular_conv_fft_1d,
+    _circular_mean_and_variance,
     _wrap_minuspi_pi,
     accumulate_spikes,
     analyse_place_fields,
@@ -115,6 +116,33 @@ class TestFitGaussian:
         assert mus.shape == (2, 1)
         assert jnp.allclose(mus[0], jnp.array([0.0]), atol=0.1)
         assert jnp.allclose(mus[1], jnp.array([1.0]), atol=0.1)
+
+
+class TestCircularMeanAndVariance:
+    def test_unweighted_samples_wrap_across_boundary(self):
+        angles = jnp.array([jnp.pi - 0.1, -jnp.pi + 0.1])
+
+        mean, variance = _circular_mean_and_variance(angles)
+
+        assert jnp.allclose(_wrap_minuspi_pi(mean - jnp.pi), 0.0, atol=1e-6)
+        assert jnp.allclose(variance, 0.01, atol=1e-6)
+
+    def test_zero_resultant_uses_first_angle_as_fallback(self):
+        mean, variance = _circular_mean_and_variance(jnp.array([0.0, jnp.pi]))
+
+        assert jnp.allclose(mean, 0.0, atol=1e-6)
+        assert jnp.allclose(variance, jnp.pi**2 / 2, atol=1e-6)
+
+    def test_broadcasts_shared_angles_over_weight_batches(self):
+        angles = jnp.array([jnp.pi - 0.1, -jnp.pi + 0.1, 0.0])
+        weights = jnp.array([[1.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+
+        means, variances = _circular_mean_and_variance(angles, weights)
+
+        assert means.shape == (2,)
+        assert variances.shape == (2,)
+        assert jnp.allclose(_wrap_minuspi_pi(means[0] - jnp.pi), 0.0, atol=1e-6)
+        assert jnp.allclose(variances, jnp.array([0.01, 0.0]), atol=1e-6)
 
 
 @pytest.mark.cpu_only

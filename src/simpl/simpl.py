@@ -1913,7 +1913,6 @@ class SIMPL:
         if is_1D_angular and D != 1:
             raise ValueError(f"Circular trial initialization requires one-dimensional modes, got D={D}")
 
-        # Convert to numpy for the loop to avoid JAX tracing overhead
         mode_np = np.array(mode_l)
         mu0_all = np.zeros((T, D))
         sigma0_all = np.zeros((T, D, D))
@@ -1921,21 +1920,9 @@ class SIMPL:
             modes = mode_np[trial_slice]
             if is_1D_angular:
                 angles = modes[:, 0]
-                sin_mean = np.sin(angles).mean()
-                cos_mean = np.cos(angles).mean()
-
-                # The circular mean is undefined for zero resultant length.
-                # Use the first mode as a deterministic centre; the wrapped
-                # variance remains broad and therefore downweights this prior.
-                if sin_mean**2 + cos_mean**2 > 1e-12:
-                    mean_angle = np.arctan2(sin_mean, cos_mean)
-                else:
-                    mean_angle = angles[0]
-                mean_angle = (mean_angle + np.pi) % (2 * np.pi) - np.pi
-
-                residuals = (angles - mean_angle + np.pi) % (2 * np.pi) - np.pi
-                mu = np.array([mean_angle])
-                sigma = np.array([[(residuals**2).mean()]])
+                mean_angle, variance = utils._circular_mean_and_variance(angles=angles, weights=None)
+                mu = np.asarray(mean_angle)[None]
+                sigma = np.asarray(variance)[None, None]
             else:
                 mu = modes.mean(axis=0)
                 sigma = (1 / len(modes)) * ((modes - mu).T @ (modes - mu))

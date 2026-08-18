@@ -159,24 +159,15 @@ def _fit_gaussian_linear(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Arra
 
 @jax.jit
 def _fit_gaussian_circular(x: jax.Array, likelihoods: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """Fit circular mean and wrapped residual variance to 1-D angular likelihoods."""
-    sums = likelihoods.sum(axis=1)  # (T,)
-    angles = x[:, 0]  # (N_bins,)
+    """Fit circular mean and wrapped residual variance to 1-D angular likelihoods.
 
-    sin_mean = (likelihoods @ jnp.sin(angles)) / sums
-    cos_mean = (likelihoods @ jnp.cos(angles)) / sums
-    mu_angle = _wrap_minuspi_pi(jnp.arctan2(sin_mean, cos_mean))
+    x : jnp.ndarray, shape (N_bins, 1)
+    likelihoods : jnp.ndarray, shape (T, N_bins)
+    """
+    angles = x[:, 0]  # (N_bins,)
+    mu_angle, variance = _circular_mean_and_variance(angles=angles, weights=likelihoods)
 
     mode = x[jnp.argmax(likelihoods, axis=1)]  # (T, 1)
-
-    # A circular mean is undefined for a distribution with zero resultant
-    # length. Use the likelihood mode as a deterministic centre in that case;
-    # the wrapped variance remains broad, so the Kalman update downweights it.
-    resultant_squared = sin_mean**2 + cos_mean**2
-    mu_angle = jnp.where(resultant_squared > 1e-12, mu_angle, mode[:, 0])
-
-    residuals = _wrap_minuspi_pi(angles[None, :] - mu_angle[:, None])
-    variance = jnp.sum(likelihoods * residuals**2, axis=1) / sums
 
     return mu_angle[:, None], mode, variance[:, None, None]
 
@@ -275,6 +266,53 @@ def _wrap_minuspi_pi(theta: jax.Array) -> jax.Array:
         Angles wrapped to [-pi, pi)
     """
     return jnp.mod(theta + jnp.pi, _TAU) - jnp.pi
+
+
+def _circular_mean_and_variance(
+    angles: jax.Array,
+    weights: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
+    """Compute a circular mean and mean squared wrapped residual.
+
+    Statistics are computed along the final axis. ``angles`` and ``weights``
+    are broadcast together, allowing a shared angular grid to be paired with a
+    batch of weight vectors. If the resultant length is effectively zero, the
+    angle with the greatest weight is used as a deterministic centre (the
+    first angle for unweighted samples).
+
+    Parameters
+    ----------
+    angles : jnp.ndarray, shape (N, )
+        Angular samples in radians. This could be the angular bins, or a batch of angular samples.
+    weights : jnp.ndarray, shape (..., N), optional
+        Non-negative sample weights. If omitted, all samples receive equal
+        weight.
+
+    Returns
+    -------
+    mean : jnp.ndarray, shape (...,)
+        Circular mean wrapped to ``[-pi, pi)``.
+    variance : jnp.ndarray, shape (...,)
+        Mean squared residual after wrapping residuals to ``[-pi, pi)``.
+    """
+    angles = jnp.asarray(angles)
+    if weights is None:
+        weights = jnp.ones_like(angles)
+    angles, weights = jnp.broadcast_arrays(angles, jnp.asarray(weights))
+
+    sums = weights.sum(axis=-1)
+    sin_mean = jnp.sum(weights * jnp.sin(angles), axis=-1) / sums
+    cos_mean = jnp.sum(weights * jnp.cos(angles), axis=-1) / sums
+    mean = _wrap_minuspi_pi(jnp.arctan2(sin_mean, cos_mean))
+
+    fallback_indices = jnp.argmax(weights, axis=-1)
+    fallback = jnp.take_along_axis(angles, fallback_indices[..., None], axis=-1)[..., 0]
+    resultant_squared = sin_mean**2 + cos_mean**2
+    mean = jnp.where(resultant_squared > 1e-12, mean, _wrap_minuspi_pi(fallback))
+
+    residuals = _wrap_minuspi_pi(angles - mean[..., None])
+    variance = jnp.sum(weights * residuals**2, axis=-1) / sums
+    return mean, variance
 
 
 def _bin_indices_minuspi_pi(theta: jax.Array, n_bins: int) -> jax.Array:
