@@ -1,7 +1,9 @@
 """Tests for simpl.environment."""
 
 import numpy as np
+import pytest
 
+import simpl.environment as environment_module
 from simpl.environment import Environment
 
 
@@ -56,6 +58,18 @@ class TestEnvironmentBinSize:
         n_bins = env.discrete_env_shape[0]
         expected = int(np.ceil((1.0 - 0.0) / 0.1))
         assert abs(n_bins - expected) <= 1
+
+    def test_auto_bin_size(self):
+        X = np.array([[0.0], [1.0]])
+        env = Environment(X, pad=0.0, bin_size="auto")
+        assert env.bin_size == pytest.approx(0.04)
+        assert env.discrete_env_shape == (25,)
+
+    def test_large_grid_warns(self, monkeypatch):
+        monkeypatch.setattr(environment_module, "LARGE_GRID_WARNING_BINS", 10)
+        X = np.array([[0.0], [1.0]])
+        with pytest.warns(UserWarning, match="environment grid contains 25 bins"):
+            Environment(X, pad=0.0, bin_size="auto")
 
 
 class TestEnvironmentForceLims:

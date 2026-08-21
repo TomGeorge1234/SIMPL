@@ -123,7 +123,31 @@ class TestSIMPLFit:
             n_iterations=0,
         )
         assert model.environment_.bin_size == 0.03
+        assert model.bin_size_ == 0.03
         assert model.env_pad == 0.05
+
+    def test_auto_bin_size_uses_largest_final_environment_span(self):
+        Xb = np.column_stack([np.linspace(0.0, 1.0, 200), np.linspace(0.2, 0.7, 200)])
+        model = SIMPL(speed_prior=None, speckle_block_size_seconds=0.1)
+        model.fit(np.zeros((200, 3)), Xb, np.arange(200) * 0.02, n_iterations=0)
+
+        assert model.bin_size == "auto"
+        assert model.bin_size_ == pytest.approx(0.04)
+        assert model.environment_.bin_size == pytest.approx(0.04)
+        assert model.environment_.discrete_env_shape == (25, 12)
+
+    def test_fit_with_custom_environment(self, demo_data):
+        N = 500
+        N_neurons = min(5, demo_data["Y"].shape[1])
+        env = Environment(demo_data["Xb"][:N], bin_size=0.04)
+        model = SIMPL(env=env)
+        model.fit(
+            Y=demo_data["Y"][:N, :N_neurons],
+            Xb=demo_data["Xb"][:N],
+            time=demo_data["time"][:N],
+            n_iterations=0,
+        )
+        assert model.environment_ is env
 
     def test_fit_validates_shapes(self):
         model = SIMPL()
@@ -177,7 +201,7 @@ class TestSIMPLFit:
             )
 
     def test_fit_validates_speckle_block_size_duration(self):
-        model = SIMPL(speckle_block_size_seconds=1.0)
+        model = SIMPL(bin_size=0.04, speckle_block_size_seconds=1.0)
         with pytest.raises(ValueError, match="shorter than the recording duration"):
             model.fit(
                 Y=np.zeros((10, 5)),
@@ -645,12 +669,15 @@ class TestSIMPLCircularEnvironment:
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speckle_block_size_seconds=0.1)
+        model = SIMPL(is_1D_angular=True, env_pad=0.5, speckle_block_size_seconds=0.1)
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             model.fit(Y, Xb, time, n_iterations=0)
 
+        assert any("env_pad is ignored" in str(w.message) for w in caught)
+        assert model.bin_size_ == pytest.approx(2 * np.pi / 25)
+        assert model.environment_.discrete_env_shape == (25,)
         assert np.allclose(model.environment_.lims[0], (-np.pi,))
         assert np.allclose(model.environment_.lims[1], (np.pi,))
 

@@ -17,9 +17,14 @@ accept a pre-built environment. This class remains available directly for
 inspecting or plotting regular spatial grids.
 """
 
+import warnings
+
 import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
+
+AUTO_BINS_PER_LARGEST_DIM = 25
+LARGE_GRID_WARNING_BINS = 100_000
 
 
 class Environment:
@@ -57,7 +62,7 @@ class Environment:
         self,
         X: np.ndarray,
         pad: float = 0.1,
-        bin_size: float = 0.02,
+        bin_size: float | str = 0.02,
         force_lims: tuple | None = None,
         verbose: bool = True,
     ) -> None:
@@ -81,6 +86,8 @@ class Environment:
             for i in range(2):
                 self.extent += (self.lims[i][d],)
 
+        if bin_size == "auto":
+            bin_size = np.max(np.subtract(self.lims[1], self.lims[0])) / AUTO_BINS_PER_LARGEST_DIM
         self.bin_size = bin_size
 
         # create dim names
@@ -106,6 +113,14 @@ class Environment:
         )  # (D, N_xbins, N_ybins, ...)
         self.discrete_env_shape = self.discretised_coords.shape[1:]
         self.flattened_discretised_coords = self.discretised_coords.reshape(self.D, -1).T
+
+        n_bins = self.flattened_discretised_coords.shape[0]
+        if n_bins > LARGE_GRID_WARNING_BINS:
+            warnings.warn(
+                f"The environment grid contains {n_bins:,} bins, which may require substantial compute and memory. "
+                "Consider using a larger bin_size.",
+                stacklevel=2,
+            )
 
         if verbose:
             print(

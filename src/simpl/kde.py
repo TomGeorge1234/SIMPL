@@ -518,7 +518,6 @@ def kde_angular(
     spikes = jnp.asarray(spikes)
 
     n_bins = bins.shape[0]
-    assert n_bins % 2 == 0, "n_bins should be even for FFT-based circular convolution."
     T = trajectory.shape[0]
     n_neurons = spikes.shape[1]
 
@@ -529,17 +528,14 @@ def kde_angular(
     # 1) bin indices consistent with [-pi, pi)
     idx = _bin_indices_minuspi_pi(trajectory, n_bins)  # (T,)
 
-    # 2) von Mises kernel over offsets in [-pi, pi)
-    # Build on symmetric grid => delta_theta=0 sits at index n_bins//2
-    dtheta = jnp.linspace(-jnp.pi, jnp.pi, n_bins, endpoint=False)
+    # 2) von Mises kernel over FFT-ordered circular offsets. This supports both
+    # odd and even bin counts, with zero displacement at index 0.
+    dtheta = 2 * jnp.pi * jnp.fft.fftfreq(n_bins)
     # Convert bandwidth (std in radians) to von Mises concentration.
     # kappa ~ 1/sigma^2 is a good approximation for kappa > 2 (sigma < ~0.7 rad).
     kappa = 1.0 / (kernel_bandwidth**2)
     vm = jnp.exp(kappa * jnp.cos(dtheta))
     vm = vm / jnp.sum(vm)
-
-    # Align for FFT: put delta_theta=0 at index 0
-    vm = jnp.roll(vm, -n_bins // 2)
 
     # 3) histogram per neuron using bincount (vmap over neurons)
     def hist_for_neuron(weights_t: jax.Array) -> jax.Array:

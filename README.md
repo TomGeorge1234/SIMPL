@@ -212,7 +212,7 @@ $K$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corr
 <!-- docs-model-units-start -->
 ### Units and Discretisation
 
-All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size` etc.) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on _your_ data of course), not arbitrary time/spatial-bin units. 
+All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size`) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on _your_ data of course), not arbitrary time/spatial-bin units. 
 <!-- docs-model-units-end -->
 
 <!-- docs-model-body-end -->
