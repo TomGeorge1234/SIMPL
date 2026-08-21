@@ -258,7 +258,6 @@ Other metrics available in `model.results_` include:
 - `mutual_information` — the exact finite-time-bin analog of spatial information, $I(X;Y)$, in bits/s. It is the same idea as Skaggs spatial information, but computed from the full spike-count distribution rather than the small-bin approximation.
 - `X_R2`, `X_err` — latent-position agreement with ground truth, when `Xt` is registered with `add_baselines`.
 - `F_err` — receptive-field error against ground-truth fields, when `Ft` is registered.
-- `stability` — correlation between fields estimated from odd and even minutes.
 - `field_change`, `trajectory_change` — per-iteration changes in tuning curves and decoded trajectory.
 - `negative_entropy`, `sparsity` — compactness/sparsity summaries of the fitted tuning curves.
 

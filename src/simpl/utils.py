@@ -977,7 +977,7 @@ def restore_M_step_state(results: xr.Dataset, iteration: int, n_neurons: int, n_
     import jax
 
     m_state = {}
-    for var in ("F", "F_odd_minutes", "F_even_minutes", "PX"):
+    for var in ("F", "PX"):
         if var not in results:
             continue
         values = (
@@ -1139,8 +1139,6 @@ def get_iteration_metrics(
     F: jax.Array | None = None,
     Y: jax.Array | None = None,
     FX: jax.Array | None = None,
-    F_odd_mins: jax.Array | None = None,
-    F_even_mins: jax.Array | None = None,
     X_prev: jax.Array | None = None,
     F_prev: jax.Array | None = None,
     Xt: jax.Array | None = None,
@@ -1158,7 +1156,7 @@ def get_iteration_metrics(
         Boolean training mask. True = train, False = validation.
     dt : float
         Time bin size in seconds.
-    X, F, Y, FX, F_odd_mins, F_even_mins, X_prev, F_prev, Xt, Ft, PX
+    X, F, Y, FX, X_prev, F_prev, Xt, Ft, PX
         Optional arrays — see ``SIMPL._get_metrics`` for shapes.
 
     Returns
@@ -1184,13 +1182,6 @@ def get_iteration_metrics(
         F_pdf = (F + 1e-6) / jnp.sum(F, axis=1)[:, None]
         metrics["negative_entropy"] = jnp.sum(F_pdf * jnp.log(F_pdf), axis=1)
         metrics["sparsity"] = jnp.mean(F < 1.0 * dt, axis=1)
-
-    if F_odd_mins is not None and F_even_mins is not None:
-        odd_c = F_odd_mins - jnp.mean(F_odd_mins, axis=1, keepdims=True)
-        even_c = F_even_mins - jnp.mean(F_even_mins, axis=1, keepdims=True)
-        num = jnp.sum(odd_c * even_c, axis=1)
-        denom = jnp.sqrt(jnp.sum(odd_c**2, axis=1) * jnp.sum(even_c**2, axis=1))
-        metrics["stability"] = num / (denom + 1e-12)
 
     if F_prev is not None and F is not None:
         metrics["field_change"] = jnp.linalg.norm(F - F_prev, axis=1)
