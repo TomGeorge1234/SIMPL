@@ -91,10 +91,10 @@ class TestKDE:
 
 @pytest.mark.cpu_only
 class TestKDEAngular:
-    def test_smooth_output(self):
+    @pytest.mark.parametrize("n_bins", [20, 25])
+    def test_smooth_output(self, n_bins):
         np.random.seed(42)
         T = 500
-        n_bins = 20
         bins = jnp.linspace(-jnp.pi, jnp.pi, n_bins, endpoint=False)
         trajectory = jnp.array(np.random.uniform(-np.pi, np.pi, T))
         spikes = jnp.ones((T, 2))

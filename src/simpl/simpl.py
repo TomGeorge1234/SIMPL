@@ -19,6 +19,7 @@ Each EM iteration proceeds as:
 import os
 import shutil
 import warnings
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -38,7 +39,7 @@ class SIMPL:
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
-        bin_size: float = 0.04,
+        bin_size: float | Literal["auto"] = "auto",
         env_pad: float = 0.0,
         env_lims: tuple | None = None,
         # Mask and analysis parameters
@@ -108,10 +109,12 @@ class SIMPL:
             The wrapped Kalman approximation assumes a tight posterior (sigma << 2*pi);
             results may degrade when posterior uncertainty is large relative to the circular
             domain. By default False.
-        bin_size : float, optional
-            Spatial bin size for discretising the environment, in the same units as the latent
-            space. Controls the resolution of the receptive field grid. Smaller bins give
-            higher resolution but increase computation and memory. By default 0.04.
+        bin_size : float or "auto", optional
+            Spatial bin size for discretising the environment. A positive float is interpreted
+            in the same units as the latent space. ``"auto"`` uses 1/25 of the largest final
+            environment span, giving approximately 25 bins along its longest dimension. Smaller
+            bins give higher resolution but increase computation and memory. By default
+            ``"auto"``.
         env_pad : float, optional
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
@@ -1330,6 +1333,8 @@ class SIMPL:
             self.environment_ = environment.Environment(
                 Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
             )
+
+        self.bin_size_ = self.environment_.bin_size
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
