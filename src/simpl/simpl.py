@@ -41,7 +41,6 @@ class SIMPL:
         bin_size: float = 0.04,
         env_pad: float = 0.0,
         env_lims: tuple | None = None,
-        env: environment.Environment | None = None,
         # Mask and analysis parameters
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
@@ -116,18 +115,14 @@ class SIMPL:
         env_pad : float, optional
             Padding added outside the data bounds when constructing the environment grid. This
             ensures that receptive fields near the boundary of the explored space are not
-            clipped. In the same units as the latent space. Ignored when
-            ``is_1D_angular=True`` because the circular domain is fixed to ``[-pi, pi)``.
-            By default 0.0.
+            clipped. In the same units as the latent space. Must be zero when ``env_lims`` is
+            supplied or ``is_1D_angular=True``. By default 0.0.
         env_lims : tuple or None, optional
             Force the environment limits to specific values instead of inferring them from the
             data. Format: ``((min_dim1, min_dim2, ...), (max_dim1, max_dim2, ...))``.
-            By default None (auto-inferred from ``Xb``). When ``is_1D_angular=True``, the
-            domain is fixed to ``[-pi, pi)`` and incompatible limits raise an error.
-        env : Environment or None, optional
-            A pre-built ``Environment`` instance for power users. If provided, ``bin_size``,
-            ``env_pad``, and ``env_lims`` are all ignored. In circular mode the provided
-            environment must also represent the full ``[-pi, pi)`` domain. By default None.
+            By default None (auto-inferred from ``Xb``). Mutually exclusive with nonzero
+            ``env_pad`` and unavailable when ``is_1D_angular=True``, whose domain is fixed to
+            ``[-pi, pi)``.
         val_frac : float, optional
             Fraction of spike observations held out for validation, implemented via a speckled
             (block-structured) mask. Used to compute held-out log-likelihood for monitoring
@@ -146,7 +141,7 @@ class SIMPL:
 
         Examples
         --------
-        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02, env_pad=0.0)
+        >>> model = SIMPL(speed_prior=0.4, kernel_bandwidth=0.02, bin_size=0.02)
         >>> model.fit(Y, Xb, time, n_iterations=5)
         >>> print(model.X_.shape)  # decoded latent positions
         >>> print(model.F_.shape)  # fitted receptive fields
@@ -161,7 +156,6 @@ class SIMPL:
         self.bin_size = bin_size
         self.env_pad = env_pad
         self.env_lims = env_lims
-        self._environment_override = env  # power-user pre-built Environment
 
         # Mask and analysis parameters
         self.val_frac = val_frac
@@ -592,7 +586,7 @@ class SIMPL:
             original training run.** This method does NOT read or override
             hyperparameters from the saved file — it trusts whatever was passed to
             ``__init__``. If any parameter differs (``speed_prior``,
-            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``val_frac``,
+            ``kernel_bandwidth``, ``bin_size``, ``env_pad``, ``env_lims``, ``val_frac``,
             ``random_seed``, etc.), the internal state (Kalman filter, spike mask,
             environment grid) will be inconsistent with the saved results, leading
             to silently incorrect behaviour on resume, predict, or further fitting.
@@ -1321,31 +1315,21 @@ class SIMPL:
         if self.is_1D_angular:
             if self.D_ != 1:
                 raise ValueError("Circular mode currently supports only 1D latent variables")
+            if self.env_lims is not None:
+                raise ValueError("env_lims cannot be set when is_1D_angular=True; the domain is fixed to [-pi, pi)")
+            if self.env_pad != 0:
+                raise ValueError("env_pad must be 0 when is_1D_angular=True; the domain is fixed to [-pi, pi)")
 
             circular_lims = ((-np.pi,), (np.pi,))
-            if self._environment_override is not None:
-                self.environment_ = self._environment_override
-            else:
-                if self.env_lims is not None:
-                    env_lims_array = np.asarray(self.env_lims, dtype=float)
-                    if not np.allclose(env_lims_array, circular_lims, atol=1e-6):
-                        raise ValueError("Circular mode requires env_lims to span the full [-pi, pi) domain")
-                if self.env_pad != 0:
-                    warnings.warn("env_pad is ignored when is_1D_angular=True; using the full [-pi, pi) domain.")
-                self.environment_ = environment.Environment(
-                    Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
-                )
-
-            environment_lims = np.asarray(self.environment_.lims, dtype=float)
-            if self.environment_.D != 1 or not np.allclose(environment_lims, np.asarray(circular_lims), atol=1e-6):
-                raise ValueError("Circular mode requires an Environment spanning the full [-pi, pi) domain")
+            self.environment_ = environment.Environment(
+                Xb, pad=0.0, bin_size=self.bin_size, force_lims=circular_lims, verbose=False
+            )
         else:
-            if self._environment_override is not None:
-                self.environment_ = self._environment_override
-            else:
-                self.environment_ = environment.Environment(
-                    Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
-                )
+            if self.env_lims is not None and self.env_pad != 0:
+                raise ValueError("env_pad must be 0 when env_lims is set; fixed limits already define the domain")
+            self.environment_ = environment.Environment(
+                Xb, pad=self.env_pad, bin_size=self.bin_size, force_lims=self.env_lims, verbose=False
+            )
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
@@ -1910,7 +1894,6 @@ class SIMPL:
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",
-            "environment_provided": int(self._environment_override is not None),
             "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),

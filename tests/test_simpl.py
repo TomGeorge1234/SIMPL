@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from simpl.environment import Environment
 from simpl.simpl import SIMPL
 from simpl.utils import load_results
 
@@ -125,19 +124,6 @@ class TestSIMPLFit:
         )
         assert model.environment_.bin_size == 0.03
         assert model.env_pad == 0.05
-
-    def test_fit_with_custom_environment(self, demo_data):
-        N = 500
-        N_neurons = min(5, demo_data["Y"].shape[1])
-        env = Environment(demo_data["Xb"][:N], bin_size=0.04)
-        model = SIMPL(env=env)
-        model.fit(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            n_iterations=0,
-        )
-        assert model.environment_ is env
 
     def test_fit_validates_shapes(self):
         model = SIMPL()
@@ -358,7 +344,6 @@ class TestSIMPLSaveLoadResults:
         assert model.results_.attrs["bin_size"] == 0.05
         assert model.results_.attrs["env_pad"] == 0.0
         np.testing.assert_allclose(model.results_.attrs["env_extent"], np.array([0.0, 1.0, 0.0, 1.0]))
-        assert model.results_.attrs["environment_provided"] == 0
         assert model.results_.attrs["val_frac"] == 0.2
         assert model.results_.attrs["speckle_block_size_seconds"] == 2.0
         assert model.results_.attrs["random_seed"] == 7
@@ -629,7 +614,7 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_iterations=1, align_to_behavior="fields")
         assert model.align_mode_ == "fields"
         assert "intercept" in model.E_
@@ -647,7 +632,7 @@ class TestSIMPLManifoldAlignment:
         rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
         Y = rng.poisson(rates * 0.02)
 
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.0, speed_prior=0.1, kernel_bandwidth=0.3)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speed_prior=0.1, kernel_bandwidth=0.3)
         model.fit(Y, Xb, time, n_iterations=1, align_to_behavior="trajectory")
         assert model.align_mode_ == "trajectory"
         assert "intercept" in model.E_
@@ -660,25 +645,36 @@ class TestSIMPLCircularEnvironment:
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_pad=0.5, speckle_block_size_seconds=0.1)
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speckle_block_size_seconds=0.1)
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             model.fit(Y, Xb, time, n_iterations=0)
 
-        assert any("env_pad is ignored" in str(w.message) for w in caught)
         assert np.allclose(model.environment_.lims[0], (-np.pi,))
         assert np.allclose(model.environment_.lims[1], (np.pi,))
 
-    def test_circular_fit_rejects_incompatible_env_lims(self):
+    @pytest.mark.parametrize("kwargs", [{"env_pad": 0.5}, {"env_lims": ((-np.pi,), (np.pi,))}])
+    def test_circular_fit_rejects_environment_overrides(self, kwargs):
         T, N_neurons = 200, 4
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, env_lims=((-1.0,), (1.0,)))
+        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, **kwargs)
 
-        with pytest.raises(ValueError, match=r"full \[-pi, pi\) domain"):
+        with pytest.raises(ValueError, match=r"domain is fixed to \[-pi, pi\)"):
             model.fit(Y, Xb, time, n_iterations=0)
+
+    def test_fixed_environment_limits_reject_padding(self, demo_data):
+        model = SIMPL(env_lims=((0.0, 0.0), (1.0, 1.0)), env_pad=0.1)
+
+        with pytest.raises(ValueError, match="env_pad must be 0 when env_lims is set"):
+            model.fit(
+                Y=demo_data["Y"][:200, :5],
+                Xb=demo_data["Xb"][:200],
+                time=demo_data["time"][:200],
+                n_iterations=0,
+            )
 
 
 class TestSIMPLPredict:

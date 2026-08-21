@@ -79,33 +79,33 @@ SIMPL follows sklearn conventions: configure hyperparameters at init, pass data 
 from simpl import SIMPL
 
 # 1. Load your data
-Y = ...     # spike counts (T, N_neurons)
-Xb = ...    # behavioural initialisation positions (T, D)
+Y = ...  # spike counts (T, N_neurons)
+Xb = ...  # behavioural initialisation positions (T, D)
 time = ...  # timestamps (T,) or use time = np.linspace(0, T_end, len(Y)) if length is known but timestamps aren't
 
 # 2. Configure the model (no data, no computation)
 model = SIMPL(
-    speed_prior=0.4,        # "0.4m/s" prior on latent speed
-    behavior_prior=None,    # (optional) soft tether to the initial behaviour/stimulus
+    speed_prior=0.4,  # "0.4m/s" prior on latent speed
+    behavior_prior=None,  # (optional) soft tether to the initial behaviour/stimulus
     kernel_bandwidth=0.02,  # "2 cm" kernel bandwidth for KDE spike smoothing
-    bin_size=0.02,          # "2 cm" spatial bin size for environment discretisation
+    bin_size=0.02,  # "2 cm" spatial bin size for environment discretisation
 )
 
 # 3. Fit
 model.fit(
-    Y,                      # spike counts
-    Xb,                     # behavioural initialisation positions
-    time,                   # timestamps
+    Y,  # spike counts
+    Xb,  # behavioural initialisation positions
+    time,  # timestamps
     n_iterations=5,
-    )
+)
 
 # 4. Access results
-model.X_           # final decoded latent positions, shape (T, D)
-model.F_           # final receptive fields, shape (N_neurons, *env_dims)
-model.results_     # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
+model.X_  # final decoded latent positions, shape (T, D)
+model.F_  # final receptive fields, shape (N_neurons, *env_dims)
+model.results_  # full xarray.Dataset with metrics, likelihoods, and baselines, across iterations.
 
 # 5. Plot results
-model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mutual information. 
+model.plot_fitting_summary()  # Shows bits-per-spike metric and spike-latent mutual information.
 
 # (optional) Resume training if not yet converged
 model.fit(Y, Xb, time, n_iterations=5, resume=True)
@@ -293,9 +293,9 @@ model.analyse_place_fields()
 # Prediction on held-out data
 model.predict(Y_test)
 model.plot_prediction(
-  Xb=Xb_test, 
-  Xt=Xt_test, # Xt_test is optional ground truth for the prediction data
-  )
+    Xb=Xb_test,
+    Xt=Xt_test,  # Xt_test is optional ground truth for the prediction data
+)
 ```
 
 <p align="center">
@@ -332,6 +332,7 @@ model.save_results("results.nc")
 
 # Load results as an xr.Dataset for custom analysis
 from simpl import load_results
+
 results = load_results("results.nc")
 
 # Or rehydrate a full model for plotting, prediction, or resumed training
@@ -373,13 +374,12 @@ When `time=None`, SIMPL treats the data as non-temporal, replaces the missing ti
 <!-- docs-angular-start -->
 ### 1D angular / circular data
 
-SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step.
+SIMPL supports 1D circular latent variables (e.g. head direction) via the `is_1D_angular` flag. When enabled, the environment is fixed to [-π, π), angular KDE is used for receptive fields, and the Kalman filter wraps its state to [-π, π) after every predict, update, and smooth step. Do not set `env_lims` or a nonzero `env_pad` in angular mode.
 
 ```python
 model = SIMPL(
     is_1D_angular=True,
     bin_size=np.pi / 32,
-    env_pad=0.0,
     speed_prior=0.1,
     kernel_bandwidth=0.3,
 )
@@ -434,9 +434,9 @@ pip install --force-reinstall -e ".[metal]"
 ```
 
 ```python
-model = SIMPL()               # use a GPU when available (default)
+model = SIMPL()  # use a GPU when available (default)
 model = SIMPL(use_gpu=False)  # force CPU
-model = SIMPL(use_gpu=True)   # require a GPU
+model = SIMPL(use_gpu=True)  # require a GPU
 ```
 
 With `use_gpu=False`, SIMPL selects CPU directly without initialising installed
