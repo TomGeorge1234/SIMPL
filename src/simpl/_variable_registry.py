@@ -123,32 +123,6 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "reshape": True,
             "formula": r"$F_n(x)$",
         },
-        "F_odd_minutes": {
-            "name": "Model (odd minutes)",
-            "description": (
-                "The receptive fields of the neurons "
-                "(expected spike count for each neuron at each "
-                "latent position in one time step) calculated from "
-                "the odd minutes of the data."
-            ),
-            "dims": ["neuron", *dim],
-            "axis_title": "Receptive field (odd mins)",
-            "formula": r"$F_{n,\textrm{odd}}(x)$",
-            "reshape": True,
-        },
-        "F_even_minutes": {
-            "name": "Model (even minutes)",
-            "description": (
-                "The receptive fields of the neurons "
-                "(expected spike count for each neuron at each "
-                "latent position in one time step) calculated from "
-                "the even minutes of the data."
-            ),
-            "dims": ["neuron", *dim],
-            "axis_title": "Receptive field (even mins)",
-            "formula": r"$F_{n,\textrm{even}}(x)$",
-            "reshape": True,
-        },
         "FX": {
             "name": "Receptive fields along trajectory",
             "description": (
@@ -533,15 +507,6 @@ def _build_variable_info_dict(dim: list[str]) -> dict:
             "dims": ["neuron"],
             "axis title": "Spatial sparsity",
             "formula": r"$\rho(F_n(x))$",
-        },
-        "stability": {
-            "name": "Stability",
-            "description": (
-                "The correlation between receptive fields estimated separately using spikes from odd and even minutes."
-            ),
-            "dims": ["neuron"],
-            "axis title": "Field stability",
-            "formula": r"$\textrm{Corr}(F_{n,\textrm{odd}}(x), F_{n,\textrm{even}}(x))$",
         },
         "field_count": {
             "name": "Number of fields",

@@ -11,8 +11,8 @@ Each EM iteration proceeds as:
    observations.
 2. **M-step** — Kernel density estimation re-estimates receptive fields from
    the decoded positions.
-3. **Evaluate** — Metrics (log-likelihood, spatial information, stability,
-   etc.) are computed and stored in an ``xarray.Dataset``.
+3. **Evaluate** — Metrics such as log-likelihood and spatial information are
+   computed and stored in an ``xarray.Dataset``.
 """
 
 # Jax, for the majority of the calculations
@@ -24,7 +24,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import xarray as xr
-from jax import vmap
 
 from simpl import environment, kalman, kde, utils
 from simpl._variable_registry import _build_variable_info_dict, _dict_to_dataset
@@ -47,7 +46,6 @@ class SIMPL:
         val_frac: float = 0.1,
         speckle_block_size_seconds: float = 1,
         random_seed: int = 0,
-        compute_stability: bool = False,
         # Device
         use_gpu: bool | str = "if_available",
     ) -> None:
@@ -140,13 +138,6 @@ class SIMPL:
         random_seed : int, optional
             Random seed for reproducibility (controls the spike mask generation).
             By default 0.
-        compute_stability : bool, optional
-            Whether to compute the split-half ``stability`` metric (correlation between
-            receptive fields fitted on odd- vs even-minute data). This requires fitting two
-            extra sets of receptive fields per iteration and materialising two additional
-            ``(T, N_neurons)`` boolean masks, so it is disabled by default to save time and
-            memory on large datasets. When False, the ``stability`` metric is absent from
-            ``results_``. By default False.
         use_gpu : bool or str, optional
             Controls GPU usage. ``True`` forces GPU and raises an error if none is
             available. ``False`` forces CPU even when a GPU is present.
@@ -176,7 +167,6 @@ class SIMPL:
         self.val_frac = val_frac
         self.speckle_block_size_seconds = speckle_block_size_seconds
         self.random_seed = random_seed
-        self.compute_stability = compute_stability
 
         # Fitted flag
         self.is_fitted_ = False
@@ -219,7 +209,7 @@ class SIMPL:
         - ``self.F_`` — the final receptive fields, shape (N_neurons, *env_dims).
         - ``self.results_`` — full ``xarray.Dataset`` with all iterations, metrics, and
           intermediates (receptive fields, trajectories, log-likelihoods, spatial information,
-          stability, etc.).
+          etc.).
         - ``self.loglikelihoods_`` — per-iteration train/validation log-likelihoods.
 
         Parameters
@@ -963,7 +953,7 @@ class SIMPL:
         Returns
         -------
         dict
-            M-step results: F, F_odd_minutes, F_even_minutes, FX, PX.
+            M-step results: F, FX, PX.
         """
 
         def kde_func(mask):
@@ -978,20 +968,9 @@ class SIMPL:
             )
 
         self._substatus("E✓·M  tuning curves")
-        if self.compute_stability:
-            # Fit fields on the train mask plus the odd/even-minute splits in one vmap.
-            stacked_masks = jnp.stack([self.spike_mask_, self.odd_minute_mask_, self.even_minute_mask_])
-            all_F, all_PX = vmap(kde_func)(stacked_masks)
-            F, F_odd_minutes, F_even_minutes = all_F[0], all_F[1], all_F[2]
-            PX = all_PX[0]
-        else:
-            F, PX = kde_func(self.spike_mask_)
+        F, PX = kde_func(self.spike_mask_)
         FX = self._interpolate_firing_rates(X, F)
-        M = {"F": F, "FX": FX, "PX": PX}
-        if self.compute_stability:
-            M["F_odd_minutes"] = F_odd_minutes
-            M["F_even_minutes"] = F_even_minutes
-        return M
+        return {"F": F, "FX": FX, "PX": PX}
 
     def _decode(
         self,
@@ -1169,7 +1148,7 @@ class SIMPL:
     def _evaluate_iteration(self, ll_data: dict) -> None:
         """Evaluate the current iteration's metrics and append to the results Dataset.
 
-        Computes log-likelihoods, spatial information, stability, place field analysis,
+        Computes log-likelihoods, spatial information, place field analysis,
         and (if ground truth is available) R², trajectory error, and field error. The
         results are stored under the current iteration in ``self.results_``.
 
@@ -1185,8 +1164,6 @@ class SIMPL:
             F=self.M_["F"],
             Y=None,  # log-likelihoods are supplied via ll_data; skip the recompute in _get_metrics
             FX=None,
-            F_odd_mins=self.M_.get("F_odd_minutes"),
-            F_even_mins=self.M_.get("F_even_minutes"),
             X_prev=self.lastX_,
             F_prev=self.lastF_,
             Xt=self.Xt_,
@@ -1491,15 +1468,6 @@ class SIMPL:
                     "The held-out mask produced an empty train split (no spikes are used for fitting). "
                     "Adjust val_frac or speckle_block_size_seconds."
                 )
-
-        # Odd/even-minute masks are only needed for the split-half stability metric.
-        if self.compute_stability:
-            odd = (self.time_ // 60 % 2 == 0)[:, None]
-            self.odd_minute_mask_ = jnp.broadcast_to(odd, (self.T_, self.N_neurons_))
-            self.even_minute_mask_ = ~self.odd_minute_mask_
-        else:
-            self.odd_minute_mask_ = None
-            self.even_minute_mask_ = None
 
         if align_to_behavior is True:
             align_to_behavior = "trajectory"
@@ -1813,8 +1781,6 @@ class SIMPL:
             F=M["F"],
             Y=self.Y_,
             FX=M["FX"],
-            F_odd_mins=M.get("F_odd_minutes"),
-            F_even_mins=M.get("F_even_minutes"),
             X_prev=None,
             F_prev=None,
             Xt=self.Xt_,
@@ -1949,7 +1915,6 @@ class SIMPL:
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),
             "random_seed": self.random_seed,
-            "compute_stability": int(self.compute_stability),
             "use_gpu": int(self.use_gpu_),
         }
 
