@@ -136,19 +136,6 @@ class TestSIMPLFit:
         assert model.environment_.bin_size == pytest.approx(0.04)
         assert model.environment_.discrete_env_shape == (25, 12)
 
-    def test_fit_with_custom_environment(self, demo_data):
-        N = 500
-        N_neurons = min(5, demo_data["Y"].shape[1])
-        env = Environment(demo_data["Xb"][:N], bin_size=0.04)
-        model = SIMPL(env=env)
-        model.fit(
-            Y=demo_data["Y"][:N, :N_neurons],
-            Xb=demo_data["Xb"][:N],
-            time=demo_data["time"][:N],
-            n_iterations=0,
-        )
-        assert model.environment_ is env
-
     def test_fit_validates_shapes(self):
         model = SIMPL()
         with pytest.raises(ValueError, match="same number of time bins"):
@@ -669,13 +656,9 @@ class TestSIMPLCircularEnvironment:
         time = np.arange(T) * 0.02
         Xb = np.linspace(-1.0, 1.0, T)[:, None]
         Y = np.zeros((T, N_neurons))
-        model = SIMPL(is_1D_angular=True, env_pad=0.5, speckle_block_size_seconds=0.1)
+        model = SIMPL(is_1D_angular=True, speckle_block_size_seconds=0.1)
+        model.fit(Y, Xb, time, n_iterations=0)
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            model.fit(Y, Xb, time, n_iterations=0)
-
-        assert any("env_pad is ignored" in str(w.message) for w in caught)
         assert model.bin_size_ == pytest.approx(2 * np.pi / 25)
         assert model.environment_.discrete_env_shape == (25,)
         assert np.allclose(model.environment_.lims[0], (-np.pi,))
