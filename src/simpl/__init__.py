@@ -20,6 +20,7 @@ import os as _os
 _os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 _os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "2")
 
+from ._version import __version__
 from .simpl import SIMPL
 from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, train_test_split
 
@@ -28,4 +29,12 @@ from .utils import accumulate_spikes, coarsen_dt, load_demo_data, load_results, 
 #: Default 64_000_000 ≈ 256 MB peak memory (64M × 4 bytes).
 MAX_BATCH_ELEMENTS = 64_000_000
 
-__all__ = ["SIMPL", "accumulate_spikes", "coarsen_dt", "load_demo_data", "load_results", "train_test_split"]
+__all__ = [
+    "__version__",
+    "SIMPL",
+    "accumulate_spikes",
+    "coarsen_dt",
+    "load_demo_data",
+    "load_results",
+    "train_test_split",
+]
