@@ -11,10 +11,10 @@ Dimension naming convention:
 * 3-D: ``['x', 'y', 'z']``
 * Higher: ``['x1', 'x2', ..., 'xD']``
 
-Typically users do **not** create an ``Environment`` directly — ``SIMPL.fit()``
-builds one automatically from the data and the ``bin_size`` / ``env_pad``
-hyperparameters.  Power users may pass a pre-built ``Environment`` to
-``SIMPL.__init__`` for full control over the spatial grid.
+``SIMPL.fit()`` builds an ``Environment`` automatically from the data and the
+``bin_size``, ``env_pad``, and ``env_lims`` hyperparameters. ``SIMPL`` does not
+accept a pre-built environment. This class remains available directly for
+inspecting or plotting regular spatial grids.
 """
 
 import matplotlib.axes
@@ -23,66 +23,35 @@ import numpy as np
 
 
 class Environment:
-    """Basic environment class.
+    """Regular rectilinear grid used internally by SIMPL.
 
-    Key attributes are
-    - lims: the limits of the environment, a tuple of two tuples ((min_dim1, ..., min_dimD),(max_dim1, ..., max_dimD))
-    - extent : like lims but more matplotlib friendly, (min_dim1, max_dim1, min_dim2, max_dim2, ...)
-    - pad : how much the environment is padded, in m, outside the bounds of the behavior
-    - bin_size: the size of the bins in the environment
-    - D: the dimensionality of the environment
-    - dim : the names of the dimensions of the environment. Originating from the
-            spatial-maps origins of this code we use the following dimension
-            naming convention:
-            1D: ['x']
-            2D: ['x', 'y']
-            3D: ['x', 'y', 'z']
-            ...
-            DD: ['x1', 'x2', 'x3', ..., 'xD']
-    - coords_dict: a dictionary mapping the coordinate names to the coordinate
-            arrays in the environment. These a strictly increasing arrays of
-            the form ``np.linspace(lims[0][i], lims[1][i], N_bins)`` for each
-            dimension ``i``.
-    - dicretised_coords: an array of coordinates discretising the env,
-            flattened into shape (N_bins x D) where
-            (N_bins = N_xbins, x N_ybins x ...)
-    - discrete_env_shape: the shape of the discretised environment.
-            Specifically, _any_ array of shape (..., N_bins, ...) can be
-            reshaped to (..., N_xbins, N_ybins, N_zbins, ...). We always
-            recommend the following:
-        ```python
-        array = np.moveaxis(array, axis_of_size_N_bins, -1)
-        array = array.reshape(array.shape[:-1] + discrete_env_shape)
-        ```
-
-    A note on visualising environment variables: A 2D tensor reshaped to
-    discrete_env_shape and visualise (e.g. using matplotlib.imshow()) will
-    have x going down the rows and y going across the columns which is not
-    conventional. Instead you should swap the x and y dimensions then
-    reverse the y. Instead of plt.imshow(array) you should use
-    plt.imshow(array.T[::-1, :]). A BETTER way to do this is to try and
-    always store the array as a xarray with names dimensions and
-    coordinates.
-
-    Environments can optionally have a "plot_environment()" - this should
-    return an single matplotlib.Axes object with the environment (and
-    anything important) plotted on it. This is useful for visualising the
-    environment and used by the plotting module.
-
+    The grid covers either the data range plus ``pad`` or the explicit
+    ``force_lims``. Coordinates are bin centres spaced by ``bin_size``. SIMPL
+    constructs this class during ``SIMPL.fit``; an ``Environment`` instance
+    is not accepted by the ``SIMPL`` constructor.
 
     Parameters
     ----------
-    X : np.ndarray (T, D)
-        A sample of the latent variable, used to scale how big the environment is so it fits the data.
+    X : np.ndarray, shape (T, D)
+        Latent positions used to infer the grid limits when ``force_lims`` is None.
     pad : float, optional
-        How much the environment is padded outside the bounds of the behavior. Default is 0.1 m.
+        Padding outside the data bounds, in the same units as ``X``. Ignored
+        when ``force_lims`` is provided. By default 0.1.
     bin_size : float, optional
-        The size of the bins in the environment. Default is 0.02 m.
-    force_lims : tuple, optional
-        The limits of the environment, this will override those calculated
-        from Z and pad Z. Should be a two-tuple like
-        ((min_dim1, ..., min_dimD),(max_dim1, ..., max_dimD)).
-        Default is None."""
+        Grid spacing in the same units as ``X``. By default 0.02.
+    force_lims : tuple or None, optional
+        Explicit lower and upper limits formatted as
+        ``((min_dim1, ..., min_dimD), (max_dim1, ..., max_dimD))``. These
+        replace limits inferred from ``X``. By default None.
+    verbose : bool, optional
+        Whether to print a grid summary. By default True.
+
+    Notes
+    -----
+    ``discrete_env_shape`` gives the per-dimension grid shape,
+    ``flattened_discretised_coords`` has shape ``(N_bins, D)``, and
+    ``coords_dict`` maps dimension names to their one-dimensional coordinates.
+    """
 
     def __init__(
         self,
