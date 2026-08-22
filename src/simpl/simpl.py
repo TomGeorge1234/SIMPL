@@ -85,11 +85,12 @@ class SIMPL:
 
         Parameters
         ----------
-        kernel_bandwidth : float, optional
+        kernel_bandwidth : float or "auto", optional
             The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
             meters) used for KDE when fitting receptive fields. Smaller values give sharper
-            fields but are noisier; larger values smooth more. By default 0.04.
-        speed_prior : float or None, optional
+            fields but are noisier; larger values smooth more. ``"auto"`` defaults to using the multivariate Scott bandwidth estimated from ``Xb``, bounded below by the resolved
+            ``bin_size``. By default ``"auto"``.
+        speed_prior : float, "auto", or None, optional
             Prior on agent speed in units of meters per second. This controls the strength of
             the Kalman smoother: a low speed prior constrains the decoded trajectory to be
             smooth, while a high value lets the trajectory follow the spike likelihood more
@@ -959,7 +960,7 @@ class SIMPL:
                 trajectory=X,
                 spikes=Y,
                 kernel=kde.gaussian_kernel,
-                kernel_bandwidth=self.kernel_bandwidth,
+                kernel_bandwidth=self.kernel_bandwidth_,
                 mask=mask,
                 return_position_density=True,
             )
@@ -1042,7 +1043,7 @@ class SIMPL:
         )
 
         # Single-pass filter and smooth
-        self._substatus("E···  kalman filter")
+        self._substatus("decode···  kalman filter")
         mu_f, sigma_f = self.kalman_filter_.filter(
             mu0=mu0_all[0],
             sigma0=sigma0_all[0],
@@ -1335,6 +1336,18 @@ class SIMPL:
             )
 
         self.bin_size_ = self.environment_.bin_size
+        if isinstance(self.kernel_bandwidth, str):
+            if self.kernel_bandwidth != "auto":
+                raise ValueError("kernel_bandwidth must be 'auto' or a positive finite number")
+            self.kernel_bandwidth_ = max(utils._estimate_kernel_bandwidth(Xb), self.bin_size_)
+        else:
+            self.kernel_bandwidth_ = self.kernel_bandwidth
+        if (
+            not np.isscalar(self.kernel_bandwidth_)
+            or not np.isfinite(self.kernel_bandwidth_)
+            or self.kernel_bandwidth_ <= 0
+        ):
+            raise ValueError("kernel_bandwidth must be 'auto' or a positive finite number")
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
@@ -1911,8 +1924,8 @@ class SIMPL:
             "dt": self.dt_,
             "is_temporal": int(self.is_temporal_),
             "trial_boundaries": trial_boundaries,
-            "kernel_bandwidth": self.kernel_bandwidth,
-            "speed_prior": np.nan if self.speed_prior is None or not self.is_temporal_ else self.speed_prior,
+            "kernel_bandwidth": self.kernel_bandwidth_,
+            "speed_prior": np.nan if self.speed_prior_ is None else self.speed_prior_,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",
