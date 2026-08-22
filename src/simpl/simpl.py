@@ -34,8 +34,8 @@ class SIMPL:
     def __init__(
         self,
         # Model hyperparameters
-        kernel_bandwidth: float = 0.04,
-        speed_prior: float | None = 1.0,
+        kernel_bandwidth: float | Literal["auto"] = "auto",
+        speed_prior: float | Literal["auto"] | None = "auto",
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
@@ -94,9 +94,15 @@ class SIMPL:
             Prior on agent speed in units of meters per second. This controls the strength of
             the Kalman smoother: a low speed prior constrains the decoded trajectory to be
             smooth, while a high value lets the trajectory follow the spike likelihood more
-            closely. Set to None to disable Kalman smoothing and let the trajectory follow
-            the per-bin maximum-likelihood estimate independently in each time bin. By default
-            1.0 m/s.
+            closely. ``"auto"`` uses the mean speed of the behavioral trajectory.
+
+            .. warning::
+                For many neural datasets with high-speed dynamics (grid cells, head direction cells, place cells), this automatically inferred
+                value WILL be too slow. Set an explicit, larger ``speed_prior`` when the latent
+                dynamics are expected to evolve faster than measured behavior.
+
+            Set to None to disable Kalman smoothing and let the trajectory follow the per-bin
+            maximum-likelihood estimate independently in each time bin. By default ``"auto"``.
         behavior_prior : float or None, optional
             Prior on how far the latent positions can deviate from the behavioral positions,
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
@@ -1267,7 +1273,7 @@ class SIMPL:
         if self.is_temporal_:
             time = np.asarray(time, dtype=float)
         else:
-            if self.speed_prior is not None:
+            if self.speed_prior not in (None, "auto"):
                 warnings.warn(
                     "time=None was passed, so SIMPL is treating the data as non-temporal. "
                     "Kalman smoothing is disabled and speed_prior is ignored. "
@@ -1446,17 +1452,37 @@ class SIMPL:
         self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(
             trial_boundaries, self.T_, device
         )
+        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
+        if spike_mask is None and self.block_size_ >= self.T_:
+            raise ValueError(
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and "
+                f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+            )
+
+        if isinstance(self.speed_prior, str) and self.speed_prior != "auto":
+            raise ValueError("speed_prior must be 'auto', None, or a positive finite number")
+        if not self.is_temporal_:
+            self.speed_prior_ = None
+        elif self.speed_prior == "auto":
+            # Compute the average speed from the behavioral trajectory (Xb) and time vector
+            behavior = np.asarray(jax.device_get(self.Xb_))
+            displacement = np.diff(behavior, axis=0)
+            if self.is_1D_angular:
+                displacement = (displacement + np.pi) % (2 * np.pi) - np.pi
+            self.speed_prior_ = float(
+                np.mean(np.linalg.norm(displacement, axis=1) / np.diff(np.asarray(jax.device_get(self.time_))))
+            )
+        else:
+            self.speed_prior_ = self.speed_prior
+        if self.speed_prior_ is not None and (
+            not np.isscalar(self.speed_prior_) or not np.isfinite(self.speed_prior_) or self.speed_prior_ <= 0
+        ):
+            raise ValueError("speed_prior must be 'auto', None, or a positive finite number")
         self._init_kalman_filter()
 
-        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
         if spike_mask is not None:
             self.spike_mask_ = jax.device_put(np.asarray(spike_mask, dtype=bool), device)
         else:
-            if self.block_size_ >= self.T_:
-                raise ValueError(
-                    "speckle_block_size_seconds must be shorter than the recording duration so both train and "
-                    f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
-                )
             self.spike_mask_ = utils.create_speckled_mask(
                 size=(self.T_, self.N_neurons_),
                 sparsity=self.val_frac,
