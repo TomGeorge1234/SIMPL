@@ -73,7 +73,9 @@ If you need GPU, use the platform-specific instructions in [GPU Acceleration](#g
 ## Quickstart
 
 <!-- docs-quickstart-body-start -->
-SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`. For hyperparameter units, see the Model / Maths section.
+SIMPL follows sklearn conventions: configure hyperparameters at init, pass data to `fit()`.
+Init parameters (`kernel_bandwidth` etc.) can also be left as `"auto"` and SIMPL will infer sensible values from the data. Typically this is not recommended. See
+[Automatic parameter inference](#automatic-parameter-inference).
 
 ```python
 from simpl import SIMPL
@@ -213,6 +215,24 @@ $K$ is a Gaussian kernel with bandwidth `kernel_bandwidth`. The denominator corr
 ### Units and Discretisation
 
 All hyperparameters (e.g. `speed_prior`, `kernel_bandwidth`, `bin_size`) are defined in _data units_ (e.g. typically [m/s], [m], [m] but these depend on _your_ data of course), not arbitrary time/spatial-bin units. 
+
+#### Automatic parameter inference
+
+Scale-dependent parameters default to `"auto"` and are inferred from `Xb` during `fit()`:
+
+- `bin_size = "auto"`: 1/25 of the largest environment span.
+- `kernel_bandwidth = "auto"`: the multivariate Scott bandwidth, no smaller than `bin_size`.
+- `speed_prior = "auto"`: the mean behavioral speed.
+
+A maximally minimal usage now becomes:
+```python
+model = SIMPL()
+model.fit(Y, Xb, time)
+```
+
+> **Warning:** If neural dynamics are faster than measured behavior, set a larger explicit
+> `speed_prior`. 
+> In general we recommend putting thought into these parameter choices and not just blindly using `"auto"`.
 <!-- docs-model-units-end -->
 
 <!-- docs-model-body-end -->
