@@ -88,7 +88,8 @@ class SIMPL:
         kernel_bandwidth : float or "auto", optional
             The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
             meters) used for KDE when fitting receptive fields. Smaller values give sharper
-            fields but are noisier; larger values smooth more. ``"auto"`` defaults to using the multivariate Scott bandwidth estimated from ``Xb``, bounded below by the resolved
+            fields but are noisier; larger values smooth more. ``"auto"`` defaults to the
+            multivariate Scott bandwidth estimated from ``Xb``, bounded below by the resolved
             ``bin_size``. By default ``"auto"``.
         speed_prior : float, "auto", or None, optional
             Prior on agent speed in units of meters per second. This controls the strength of
@@ -97,8 +98,8 @@ class SIMPL:
             closely. ``"auto"`` uses the mean speed of the behavioral trajectory.
 
             .. warning::
-                For many neural datasets with high-speed dynamics (grid cells, head direction cells, place cells), this automatically inferred
-                value WILL be too slow. Set an explicit, larger ``speed_prior`` when the latent
+                For many neural datasets with high-speed dynamics, this automatically inferred
+                value will be too slow. Set an explicit, larger ``speed_prior`` when the latent
                 dynamics are expected to evolve faster than measured behavior.
 
             Set to None to disable Kalman smoothing and let the trajectory follow the per-bin
@@ -1449,7 +1450,6 @@ class SIMPL:
         if not self.is_temporal_:
             self.speed_prior_ = None
         elif self.speed_prior == "auto":
-            # Compute the average speed from the behavioral trajectory (Xb) and time vector
             behavior = np.asarray(jax.device_get(self.Xb_))
             displacement = np.diff(behavior, axis=0)
             if self.is_1D_angular:
@@ -1513,7 +1513,7 @@ class SIMPL:
         self.speed_prior_requested_ = self.speed_prior
         self.kalman_off_speed_prior_ = 1e10
         speed_prior_effective = (
-            self.speed_prior if self.is_temporal_ and self.speed_prior is not None else self.kalman_off_speed_prior_
+            self.speed_prior_ if self.is_temporal_ and self.speed_prior_ is not None else self.kalman_off_speed_prior_
         )
         self.speed_prior_effective_ = speed_prior_effective
         speed_sigma = speed_prior_effective * self.dt_
