@@ -38,7 +38,7 @@ class TestEnvironment2D:
 class TestEnvironment3D:
     def test_correct_dimensions(self):
         X = np.random.randn(100, 3)
-        env = Environment(X)
+        env = Environment(X, bin_size="auto")
         assert env.D == 3
         assert env.dim == ["x", "y", "z"]
 
@@ -76,7 +76,7 @@ class TestEnvironmentForceLims:
     def test_overrides_data_limits(self):
         X = np.random.randn(100, 2)
         lims = ((-5.0, -5.0), (5.0, 5.0))
-        env = Environment(X, force_lims=lims)
+        env = Environment(X, force_lims=lims, bin_size=1.0)
         assert env.lims == lims
 
 

@@ -7,7 +7,7 @@ import pytest
 import xarray as xr
 
 from simpl.simpl import SIMPL
-from simpl.utils import load_results
+from simpl.utils import _estimate_kernel_bandwidth, load_results
 
 
 class TestSIMPLInit:
@@ -111,6 +111,30 @@ class TestSIMPLFit:
         assert hasattr(model, "F_")
         assert model.D_ == 2
         assert model.iteration_ == 0
+
+    def test_auto_parameters_are_inferred_saved_and_printed(self, demo_data, capsys):
+        N = 500
+        Xb = demo_data["Xb"][:N]
+        time = demo_data["time"][:N]
+        model = SIMPL(speckle_block_size_seconds=0.1)
+        model.fit(demo_data["Y"][:N, :5], Xb, time, n_iterations=0)
+
+        assert model.kernel_bandwidth == "auto"
+        expected_bandwidth = max(_estimate_kernel_bandwidth(Xb), model.bin_size_)
+        assert model.kernel_bandwidth_ == pytest.approx(expected_bandwidth)
+        assert model.results_.attrs["kernel_bandwidth"] == pytest.approx(model.kernel_bandwidth_)
+
+        expected_speed = np.mean(np.linalg.norm(np.diff(Xb, axis=0), axis=1) / np.diff(time))
+        assert model.speed_prior == "auto"
+        assert model.speed_prior_ == pytest.approx(expected_speed)
+        assert model.speed_prior_effective_ == pytest.approx(expected_speed)
+        assert model.results_.attrs["speed_prior"] == pytest.approx(expected_speed)
+
+        output = capsys.readouterr().out
+        assert f"kernel_bandwidth={model.kernel_bandwidth_:.3f} (auto)" in output
+        assert f"bin_size={model.bin_size_:.3f} (auto)" in output
+        assert f"speed_prior={model.speed_prior_:.3f} (auto)" in output
+        assert "behavior_prior=None" in output
 
     def test_fit_creates_environment_internally(self, demo_data):
         N = 500
@@ -651,6 +675,19 @@ class TestSIMPLManifoldAlignment:
 
 
 class TestSIMPLCircularEnvironment:
+    def test_auto_speed_prior_wraps_boundary_displacements(self):
+        T = 100
+        time = np.arange(T) * 0.02
+        unwrapped = np.linspace(np.pi - 0.2, np.pi + 0.2, T)
+        Xb = ((unwrapped + np.pi) % (2 * np.pi) - np.pi)[:, None]
+        model = SIMPL(is_1D_angular=True, kernel_bandwidth=0.3, speckle_block_size_seconds=0.1)
+
+        model.fit(np.zeros((T, 3)), Xb, time, n_iterations=0, verbose=False)
+
+        wrapped_displacement = (np.diff(Xb, axis=0) + np.pi) % (2 * np.pi) - np.pi
+        expected = np.mean(np.linalg.norm(wrapped_displacement, axis=1) / np.diff(time))
+        assert model.speed_prior_ == pytest.approx(expected)
+
     def test_circular_fit_uses_full_domain_even_with_partial_behavior(self):
         T, N_neurons = 200, 4
         time = np.arange(T) * 0.02
