@@ -1546,10 +1546,11 @@ class SIMPL:
     # ──────────────────────────────────────────────────────────────────────────
 
     _STATUS_WIDTH = 30
-    _METRIC_WIDTH = 20
+    _TRAIN_METRIC_WIDTH = 22
+    _VAL_METRIC_WIDTH = 7
     _TABLE_HEADER = (
         f"  {'iteration':>9}  {'status':<{_STATUS_WIDTH}}  "
-        f"{'train bits per spike':>{_METRIC_WIDTH}}  {'val bits per spike':>{_METRIC_WIDTH}}  "
+        f"{'bits per spike (train)':>{_TRAIN_METRIC_WIDTH}}  {'(val)':>{_VAL_METRIC_WIDTH}}  "
     )
     _TABLE_WIDTH = len(_TABLE_HEADER)
 
@@ -1576,7 +1577,7 @@ class SIMPL:
         bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
 
         arrow = "  "
-        status = "fit✓" if e == 0 else "decode✓ · fit✓"
+        status = f"{'':>{len('decode✓ · ')}}fit✓" if e == 0 else "decode✓ · fit✓"
         if e > 0:
             prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
             arrow = " ↑" if bps_val > prev_bps_val else " ↓"
@@ -1586,7 +1587,7 @@ class SIMPL:
 
         row = (
             f"  {e:>9}  {status + suffix:<{self._STATUS_WIDTH}}  "
-            f"{bps_train:>{self._METRIC_WIDTH}.3f}  {bps_val:>{self._METRIC_WIDTH}.3f}{arrow}"
+            f"{bps_train:>{self._TRAIN_METRIC_WIDTH}.3f}  {bps_val:>{self._VAL_METRIC_WIDTH}.3f}{arrow}"
         )
         line = f"\r{row:<{self._TABLE_WIDTH}}"
         print(line[: self._term_width() + 1], flush=True)  # +1 for \r
