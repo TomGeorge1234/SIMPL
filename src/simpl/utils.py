@@ -512,6 +512,11 @@ def accumulate_spikes(Y: np.ndarray, window: int) -> np.ndarray:
         field *shapes* are unaffected, but their *amplitudes* should not be
         interpreted as physical firing rates.
 
+        Also, spatial information and mutual information will be inflated
+        roughly by a factor of ``window``. To calculate the corrected
+        information, divide F by ``window`` before calling
+        ``calculate_spatial_information`` or ``calculate_mutual_information``.
+
     Parameters
     ----------
     Y : np.ndarray, shape (T, N_neurons)
