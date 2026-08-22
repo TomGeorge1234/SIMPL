@@ -362,6 +362,26 @@ def _circular_conv_fft_1d(x: jax.Array, k: jax.Array) -> jax.Array:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _estimate_kernel_bandwidth(X: np.ndarray) -> float:
+    r"""Estimate an isotropic bandwidth using the multivariate Scott rule.
+
+    $$
+    h = \left(\frac{4}{D + 2}\right)^{\frac{1}{D + 4}}
+        n^{-\frac{1}{D + 4}}
+        \left(\prod_{d=1}^{D}\sigma_d\right)^{\frac{1}{D}},
+    $$
+
+    where $n$ is the number of samples, $D$ is the latent dimensionality,
+    and $\sigma_d$ is the sample standard deviation along dimension $d$.
+    """
+    scales = np.std(X, axis=0, ddof=1)
+    n_samples, n_dimensions = X.shape
+    normal_reference_factor = (4 / (n_dimensions + 2)) ** (1 / (n_dimensions + 4))
+    scott_factor = normal_reference_factor * n_samples ** (-1 / (n_dimensions + 4))
+    isotropic_scale = np.prod(scales) ** (1 / n_dimensions)
+    return float(scott_factor * isotropic_scale)
+
+
 def coefficient_of_determination(
     X: jax.Array,
     Y: jax.Array,
