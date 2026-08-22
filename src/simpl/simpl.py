@@ -34,8 +34,8 @@ class SIMPL:
     def __init__(
         self,
         # Model hyperparameters
-        kernel_bandwidth: float = 0.04,
-        speed_prior: float | None = 1.0,
+        kernel_bandwidth: float | Literal["auto"] = "auto",
+        speed_prior: float | Literal["auto"] | None = "auto",
         behavior_prior: float | None = None,
         # Environment parameters
         is_1D_angular: bool = False,
@@ -85,17 +85,25 @@ class SIMPL:
 
         Parameters
         ----------
-        kernel_bandwidth : float, optional
+        kernel_bandwidth : float or "auto", optional
             The bandwidth of the Gaussian kernel (in the same units as the latent space, e.g.
             meters) used for KDE when fitting receptive fields. Smaller values give sharper
-            fields but are noisier; larger values smooth more. By default 0.04.
-        speed_prior : float or None, optional
+            fields but are noisier; larger values smooth more. ``"auto"`` defaults to the
+            multivariate Scott bandwidth estimated from ``Xb``, bounded below by the resolved
+            ``bin_size``. By default ``"auto"``.
+        speed_prior : float, "auto", or None, optional
             Prior on agent speed in units of meters per second. This controls the strength of
             the Kalman smoother: a low speed prior constrains the decoded trajectory to be
             smooth, while a high value lets the trajectory follow the spike likelihood more
-            closely. Set to None to disable Kalman smoothing and let the trajectory follow
-            the per-bin maximum-likelihood estimate independently in each time bin. By default
-            1.0 m/s.
+            closely. ``"auto"`` uses the mean speed of the behavioral trajectory.
+
+            .. warning::
+                For many neural datasets with high-speed dynamics, this automatically inferred
+                value will be too slow. Set an explicit, larger ``speed_prior`` when the latent
+                dynamics are expected to evolve faster than measured behavior.
+
+            Set to None to disable Kalman smoothing and let the trajectory follow the per-bin
+            maximum-likelihood estimate independently in each time bin. By default ``"auto"``.
         behavior_prior : float or None, optional
             Prior on how far the latent positions can deviate from the behavioral positions,
             in units of meters. This acts as a soft constraint pulling the decoded trajectory
@@ -912,7 +920,7 @@ class SIMPL:
         )
 
         # Manifold alignment (fit-time only)
-        self._substatus("E···  aligning")
+        self._substatus("decode···  aligning")
         align_dict = {}
         if self.align_mode_ == "fields":
             current_peaks = utils.get_field_peaks(F, self.xF_)
@@ -959,12 +967,12 @@ class SIMPL:
                 trajectory=X,
                 spikes=Y,
                 kernel=kde.gaussian_kernel,
-                kernel_bandwidth=self.kernel_bandwidth,
+                kernel_bandwidth=self.kernel_bandwidth_,
                 mask=mask,
                 return_position_density=True,
             )
 
-        self._substatus("E✓·M  tuning curves")
+        self._substatus("decode✓ · fit···  tuning curves")
         F, PX = kde_func(self.spike_mask_)
         FX = self._interpolate_firing_rates(X, F)
         return {"F": F, "FX": FX, "PX": PX}
@@ -1013,7 +1021,7 @@ class SIMPL:
         store_log_maps = getattr(self, "save_full_history_", False)
 
         # Likelihood maps and Gaussian observation fits (batched internally)
-        self._substatus("E···  likelihood")
+        self._substatus("decode···  likelihood")
         obs = kde.decode_observations(
             self.xF_,
             Y,
@@ -1042,7 +1050,7 @@ class SIMPL:
         )
 
         # Single-pass filter and smooth
-        self._substatus("E···  kalman filter")
+        self._substatus("decode···  kalman filter")
         mu_f, sigma_f = self.kalman_filter_.filter(
             mu0=mu0_all[0],
             sigma0=sigma0_all[0],
@@ -1053,7 +1061,7 @@ class SIMPL:
             mu0_all=mu0_all,
             sigma0_all=sigma0_all,
         )
-        self._substatus("E···  kalman smooth")
+        self._substatus("decode···  kalman smooth")
         mu_s, sigma_s = self.kalman_filter_.smooth(
             mus_f=mu_f,
             sigmas_f=sigma_f,
@@ -1266,7 +1274,7 @@ class SIMPL:
         if self.is_temporal_:
             time = np.asarray(time, dtype=float)
         else:
-            if self.speed_prior is not None:
+            if self.speed_prior not in (None, "auto"):
                 warnings.warn(
                     "time=None was passed, so SIMPL is treating the data as non-temporal. "
                     "Kalman smoothing is disabled and speed_prior is ignored. "
@@ -1335,6 +1343,18 @@ class SIMPL:
             )
 
         self.bin_size_ = self.environment_.bin_size
+        if isinstance(self.kernel_bandwidth, str):
+            if self.kernel_bandwidth != "auto":
+                raise ValueError("kernel_bandwidth must be 'auto' or a positive finite number")
+            self.kernel_bandwidth_ = max(utils._estimate_kernel_bandwidth(Xb), self.bin_size_)
+        else:
+            self.kernel_bandwidth_ = self.kernel_bandwidth
+        if (
+            not np.isscalar(self.kernel_bandwidth_)
+            or not np.isfinite(self.kernel_bandwidth_)
+            or self.kernel_bandwidth_ <= 0
+        ):
+            raise ValueError("kernel_bandwidth must be 'auto' or a positive finite number")
 
         if self.D_ != self.environment_.D:
             raise ValueError(f"Data has {self.D_} dimensions but environment has {self.environment_.D}")
@@ -1366,21 +1386,6 @@ class SIMPL:
         self.xF_ = jax.device_put(np.asarray(self.environment_.flattened_discretised_coords, dtype=np.float32), device)
         self.xF_shape_ = self.environment_.discrete_env_shape
         self.N_bins_ = len(self.xF_)
-
-        # ── Check speed prior against data ──
-        displacements = np.sqrt(np.sum(np.diff(Xb, axis=0) ** 2, axis=1))
-        median_speed = float(np.median(displacements / self.dt_))
-        if (
-            self.is_temporal_
-            and self.speed_prior is not None
-            and median_speed > 0
-            and self.speed_prior < 0.2 * median_speed
-        ):
-            warnings.warn(
-                f"speed_prior ({self.speed_prior:.4g}) is much slower than the median behavioural speed "
-                f"({median_speed:.4g}). This may impede the decoded trajectory. "
-                f"Consider increasing speed_prior (e.g. to {median_speed:.2g} or higher)."
-            )
 
         # ── Set up Kalman filter, masks, alignment, coordinates ──
         self._init_infrastructure(trial_boundaries, align_to_behavior)
@@ -1433,17 +1438,36 @@ class SIMPL:
         self.trial_boundaries_, self.trial_slices_, _, _ = self._validate_trial_boundaries(
             trial_boundaries, self.T_, device
         )
+        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
+        if spike_mask is None and self.block_size_ >= self.T_:
+            raise ValueError(
+                "speckle_block_size_seconds must be shorter than the recording duration so both train and "
+                f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
+            )
+
+        if isinstance(self.speed_prior, str) and self.speed_prior != "auto":
+            raise ValueError("speed_prior must be 'auto', None, or a positive finite number")
+        if not self.is_temporal_:
+            self.speed_prior_ = None
+        elif self.speed_prior == "auto":
+            behavior = np.asarray(jax.device_get(self.Xb_))
+            displacement = np.diff(behavior, axis=0)
+            if self.is_1D_angular:
+                displacement = (displacement + np.pi) % (2 * np.pi) - np.pi
+            self.speed_prior_ = float(
+                np.mean(np.linalg.norm(displacement, axis=1) / np.diff(np.asarray(jax.device_get(self.time_))))
+            )
+        else:
+            self.speed_prior_ = self.speed_prior
+        if self.speed_prior_ is not None and (
+            not np.isscalar(self.speed_prior_) or not np.isfinite(self.speed_prior_) or self.speed_prior_ <= 0
+        ):
+            raise ValueError("speed_prior must be 'auto', None, or a positive finite number")
         self._init_kalman_filter()
 
-        self.block_size_ = max(1, int(np.ceil(self.speckle_block_size_seconds / self.dt_)))
         if spike_mask is not None:
             self.spike_mask_ = jax.device_put(np.asarray(spike_mask, dtype=bool), device)
         else:
-            if self.block_size_ >= self.T_:
-                raise ValueError(
-                    "speckle_block_size_seconds must be shorter than the recording duration so both train and "
-                    f"validation observations remain available (got block_size={self.block_size_} bins for T={self.T_})"
-                )
             self.spike_mask_ = utils.create_speckled_mask(
                 size=(self.T_, self.N_neurons_),
                 sparsity=self.val_frac,
@@ -1489,7 +1513,7 @@ class SIMPL:
         self.speed_prior_requested_ = self.speed_prior
         self.kalman_off_speed_prior_ = 1e10
         speed_prior_effective = (
-            self.speed_prior if self.is_temporal_ and self.speed_prior is not None else self.kalman_off_speed_prior_
+            self.speed_prior_ if self.is_temporal_ and self.speed_prior_ is not None else self.kalman_off_speed_prior_
         )
         self.speed_prior_effective_ = speed_prior_effective
         speed_sigma = speed_prior_effective * self.dt_
@@ -1521,7 +1545,12 @@ class SIMPL:
     # Display
     # ──────────────────────────────────────────────────────────────────────────
 
-    _TABLE_HEADER = f"  {'iteration':>9}  {'status':<20}  {'bits-per-spike (train / val)':>36}"
+    _STATUS_WIDTH = 30
+    _METRIC_WIDTH = 20
+    _TABLE_HEADER = (
+        f"  {'iteration':>9}  {'status':<{_STATUS_WIDTH}}  "
+        f"{'train bits per spike':>{_METRIC_WIDTH}}  {'val bits per spike':>{_METRIC_WIDTH}}  "
+    )
     _TABLE_WIDTH = len(_TABLE_HEADER)
 
     @staticmethod
@@ -1547,16 +1576,18 @@ class SIMPL:
         bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e).values)
 
         arrow = "  "
-        status = "   M✓" if e == 0 else "E✓·M✓"
+        status = "fit✓" if e == 0 else "decode✓ · fit✓"
         if e > 0:
             prev_bps_val = float(self.loglikelihoods_.bits_per_spike_val.sel(iteration=e - 1).values)
             arrow = " ↑" if bps_val > prev_bps_val else " ↓"
             val_ll = float(self.loglikelihoods_.logPYXF_val.sel(iteration=e).values)
             if val_ll < float(self.loglikelihoods_.logPYXF_val.sel(iteration=0).values):
-                status = "E✓·M✓ !bps<iter 0"
+                status = "decode✓ · fit✓ !val<iter 0"
 
-        bps_str = f"{bps_train:.3f} / {bps_val:.3f}{arrow}"
-        row = f"  {e:>9}  {status + suffix:<20}  {bps_str:>29}"
+        row = (
+            f"  {e:>9}  {status + suffix:<{self._STATUS_WIDTH}}  "
+            f"{bps_train:>{self._METRIC_WIDTH}.3f}  {bps_val:>{self._METRIC_WIDTH}.3f}{arrow}"
+        )
         line = f"\r{row:<{self._TABLE_WIDTH}}"
         print(line[: self._term_width() + 1], flush=True)  # +1 for \r
 
@@ -1575,7 +1606,6 @@ class SIMPL:
         )
         mean_fr = total_spikes / duration / self.N_neurons_
         empty_frac = float(jnp.mean(jnp.sum(self.Y_, axis=1) == 0)) * 100
-        n_trials = len(self.trial_boundaries_)
         line1 = [
             f"{self.N_neurons_} neurons",
             f"{spike_str} spikes",
@@ -1583,15 +1613,26 @@ class SIMPL:
             f"empty time-bins={empty_frac:.0f}%",
         ]
         line2 = [
-            f"{self.D_}D",
             f"env-grid ({grid_str})",
             f"{duration:.1f}s (dt={self.dt_:.2g}s)",
-            f"n_trials={n_trials}",
+        ]
+
+        def _parameter(name, requested, effective):
+            value = "None" if effective is None else f"{effective:.3f}"
+            suffix = " (auto)" if requested == "auto" else ""
+            return f"{name}={value}{suffix}"
+
+        line2.append(_parameter("bin_size", self.bin_size, self.bin_size_))
+        line3 = [
+            _parameter("kernel_bandwidth", self.kernel_bandwidth, self.kernel_bandwidth_),
+            _parameter("speed_prior", self.speed_prior, self.speed_prior_),
+            _parameter("behavior_prior", self.behavior_prior, self.behavior_prior),
         ]
         title = f"━━ SIMPL ━━━━━ {self._device_str} "
         print(f"{title}{'━' * (self._TABLE_WIDTH - len(title))}")
         print(" · ".join(line1))
-        print(" · ".join(line2), end="", flush=True)
+        print(" · ".join(line2))
+        print(" · ".join(line3), end="", flush=True)
 
     def _print_summary(self) -> None:
         """Print the end-of-fitting summary with percentage changes."""
@@ -1894,8 +1935,8 @@ class SIMPL:
             "dt": self.dt_,
             "is_temporal": int(self.is_temporal_),
             "trial_boundaries": trial_boundaries,
-            "kernel_bandwidth": self.kernel_bandwidth,
-            "speed_prior": np.nan if self.speed_prior is None or not self.is_temporal_ else self.speed_prior,
+            "kernel_bandwidth": self.kernel_bandwidth_,
+            "speed_prior": np.nan if self.speed_prior_ is None else self.speed_prior_,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
             "align_mode": self.align_mode_ or "none",

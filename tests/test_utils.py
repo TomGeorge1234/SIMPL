@@ -11,6 +11,7 @@ from simpl.utils import (
     _bin_indices_minuspi_pi,
     _circular_conv_fft_1d,
     _circular_mean_and_variance,
+    _estimate_kernel_bandwidth,
     _wrap_minuspi_pi,
     accumulate_spikes,
     analyse_place_fields,
@@ -31,6 +32,19 @@ from simpl.utils import (
     log_gaussian_pdf,
     save_results_to_netcdf,
 )
+
+
+class TestEstimateKernelBandwidth:
+    def test_uses_multivariate_scott_rule(self):
+        X = np.column_stack([np.linspace(0, 1, 100), np.linspace(-2, 2, 100)])
+        scales = np.std(X, axis=0, ddof=1)
+        scott_factor = (4 / (2 + 2)) ** (1 / (2 + 4)) * len(X) ** (-1 / (2 + 4))
+        expected = scott_factor * np.sqrt(np.prod(scales))
+
+        assert _estimate_kernel_bandwidth(X) == pytest.approx(expected)
+
+    def test_zero_variance_returns_zero(self):
+        assert _estimate_kernel_bandwidth(np.ones((10, 2))) == 0.0
 
 
 @pytest.mark.cpu_only
