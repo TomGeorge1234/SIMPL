@@ -609,56 +609,26 @@ class TestSIMPLManifoldAlignment:
         assert model.iteration_ >= 1
         assert "X" in model.E_
 
-    def test_align_to_behavior(self, demo_data):
-        model = self._make_model(demo_data, align_to_behavior=True)
-        assert model.Xalign_ is not None
-        assert "X" in model.E_
+    def test_aligns_to_behavior(self, demo_data):
+        model = self._make_model(demo_data)
+        assert model.align_to_behavior_ is True
+        assert "coef" in model.E_
+        assert "intercept" in model.E_
 
-    def test_no_alignment(self, demo_data):
+    def test_alignment_can_be_disabled(self, demo_data):
         model = self._make_model(demo_data, align_to_behavior=False)
-        assert model.Xalign_ is None
-        assert "X" in model.E_
+        assert model.align_to_behavior_ is False
+        assert "coef" not in model.E_
+        assert "intercept" not in model.E_
+        np.testing.assert_array_equal(model.E_["X"], model.E_["mu_s"])
 
-    def test_align_trajectory_mode(self, demo_data):
-        model = self._make_model(demo_data, align_to_behavior="trajectory")
-        assert model.align_mode_ == "trajectory"
-        assert model.Xalign_ is not None
-        assert "coef" in model.E_
-        assert "intercept" in model.E_
-
-    def test_align_fields_mode(self, demo_data):
-        model = self._make_model(demo_data, align_to_behavior="fields")
-        assert model.align_mode_ == "fields"
-        assert hasattr(model, "Falign_peaks_")
-        assert model.Falign_peaks_.shape == (model.N_neurons_, model.D_)
-        assert "coef" in model.E_
-        assert "intercept" in model.E_
-
-    def test_align_invalid_mode_raises(self, demo_data):
-        with pytest.raises(ValueError, match="align_to_behavior"):
-            self._make_model(demo_data, align_to_behavior="invalid")
+    @pytest.mark.parametrize("value", ["trajectory", "fields", 1, None])
+    def test_alignment_rejects_non_boolean_values(self, demo_data, value):
+        with pytest.raises(TypeError, match="align_to_behavior must be a bool"):
+            self._make_model(demo_data, align_to_behavior=value)
 
     def test_align_angular(self):
-        """Field-based angular alignment uses rotation, not CCA."""
-        rng = np.random.default_rng(42)
-        T, N_neurons = 2000, 15
-        time = np.arange(T) * 0.02
-        Xb = np.linspace(-np.pi, np.pi, T, endpoint=False)[:, None]
-        # Simulate spikes with angular tuning
-        preferred = np.linspace(-np.pi, np.pi, N_neurons, endpoint=False)
-        rates = np.exp(3 * np.cos(Xb - preferred[None, :]))
-        Y = rng.poisson(rates * 0.02)
-
-        model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speed_prior=0.1, kernel_bandwidth=0.3)
-        model.fit(Y, Xb, time, n_iterations=1, align_to_behavior="fields")
-        assert model.align_mode_ == "fields"
-        assert "intercept" in model.E_
-        # X should be wrapped to [-pi, pi)
-        assert np.all(model.X_ >= -np.pi)
-        assert np.all(model.X_ < np.pi)
-
-    def test_align_angular_trajectory_mode(self):
-        """Trajectory-based angular alignment also uses rotation."""
+        """Angular alignment uses rotation."""
         rng = np.random.default_rng(42)
         T, N_neurons = 2000, 15
         time = np.arange(T) * 0.02
@@ -668,8 +638,7 @@ class TestSIMPLManifoldAlignment:
         Y = rng.poisson(rates * 0.02)
 
         model = SIMPL(is_1D_angular=True, bin_size=np.pi / 32, speed_prior=0.1, kernel_bandwidth=0.3)
-        model.fit(Y, Xb, time, n_iterations=1, align_to_behavior="trajectory")
-        assert model.align_mode_ == "trajectory"
+        model.fit(Y, Xb, time, n_iterations=1)
         assert "intercept" in model.E_
         assert "coef" not in model.E_
 
