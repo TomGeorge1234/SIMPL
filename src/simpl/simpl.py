@@ -190,7 +190,7 @@ class SIMPL:
         time: np.ndarray | None,
         n_iterations: int = 5,
         trial_boundaries: np.ndarray | None = None,
-        align_to_behavior: bool | str = "trajectory",
+        align_to_behavior: bool = True,
         resume: bool = False,
         save_full_history: bool = False,
         early_stopping: bool = True,
@@ -243,17 +243,9 @@ class SIMPL:
             element must be 0. The Kalman filter runs independently within each trial to
             prevent smoothing across trial boundaries (e.g. between separate recording
             sessions). If None, all data is treated as a single trial. By default None.
-        align_to_behavior : bool or str, optional
-            How to linearly align (via CCA) the decoded latent positions to the behavioral
-            coordinate system after each E-step. Default: ``"trajectory"``. Options:
-
-            - ``"trajectory"`` (default) — align the decoded trajectory ``mu_s`` directly
-              to ``Xb``.
-            - ``"fields"`` — align based on peak positions of receptive fields. CAn be useful
-            in 1D where the latent position distribution can be bimodal. Unstable / not
-            recommended if fields are likely to have multiple peaks
-            - ``True`` — alias for ``"trajectory"``.
-            - ``False`` — no alignment.
+        align_to_behavior : bool, optional
+            If True, linearly align (affine transformation) decoded latent positions to the behavioral
+            coordinate system after each iterations E-step. By default True.
         resume : bool, optional
             If True, continue training from the current state without re-initialising. The
             ``Y``, ``Xb``, and ``time`` arguments are ignored when resuming — training
@@ -897,7 +889,7 @@ class SIMPL:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _E_step(self, Y: jax.Array, F: jax.Array) -> dict:
-        """E-step: decode latent positions and optionally align to behavior.
+        """E-step: decode latent positions and align to behavior.
 
         Parameters
         ----------
@@ -921,26 +913,17 @@ class SIMPL:
 
         # Manifold alignment (fit-time only)
         self._substatus("decode···  aligning")
-        align_dict = {}
-        if self.align_mode_ == "fields":
-            current_peaks = utils.get_field_peaks(F, self.xF_)
-            source, target = current_peaks, self.Falign_peaks_
-        elif self.align_mode_ == "trajectory":
-            source, target = E["mu_s"], self.Xalign_
-        else:
-            source, target = None, None
-
-        if source is not None:
-            if self.is_1D_angular:
-                angle, _ = utils.cca_angular(source, target)
-                E["X"] = utils._wrap_minuspi_pi(E["mu_s"] + angle)
-                align_dict = {"intercept": jnp.atleast_1d(angle)}
-            else:
-                coef, intercept = utils.cca(source, target)
-                E["X"] = E["mu_s"] @ coef.T + intercept
-                align_dict = {"coef": coef, "intercept": intercept}
-        else:
+        if not self.align_to_behavior_:
             E["X"] = E["mu_s"]
+            align_dict = {}
+        elif self.is_1D_angular:
+            angle, _ = utils.cca_angular(E["mu_s"], self.Xb_)
+            E["X"] = utils._wrap_minuspi_pi(E["mu_s"] + angle)
+            align_dict = {"intercept": jnp.atleast_1d(angle)}
+        else:
+            coef, intercept = utils.cca(E["mu_s"], self.Xb_)
+            E["X"] = E["mu_s"] @ coef.T + intercept
+            align_dict = {"coef": coef, "intercept": intercept}
 
         E.update(align_dict)
         return E
@@ -1239,8 +1222,6 @@ class SIMPL:
 
         self._fit_iteration()
         self.FX_first_iteration_ = self.M_["FX"]
-        if self.align_mode_ == "fields":
-            self.Falign_peaks_ = utils.get_field_peaks(self.M_["F"], self.xF_)
 
         if verbose:
             print()  # newline after header
@@ -1415,7 +1396,7 @@ class SIMPL:
     def _init_infrastructure(
         self,
         trial_boundaries,
-        align_to_behavior=None,
+        align_to_behavior=True,
         spike_mask=None,
     ) -> None:
         """Set up Kalman filter, masks, alignment, and coordinate registry.
@@ -1428,8 +1409,8 @@ class SIMPL:
         ----------
         trial_boundaries : array-like or None
             Trial boundary indices passed through to ``_validate_trial_boundaries``.
-        align_to_behavior : bool or str or None
-            Alignment mode (``True``/``"trajectory"``/``"fields"``/``None``).
+        align_to_behavior : bool
+            Whether to align decoded positions to the behavioral trajectory.
         spike_mask : array-like or None
             If provided, use this mask instead of generating a fresh speckled mask.
             Used when loading from saved results.
@@ -1482,14 +1463,9 @@ class SIMPL:
                     "Adjust val_frac or speckle_block_size_seconds."
                 )
 
-        if align_to_behavior is True:
-            align_to_behavior = "trajectory"
-        if align_to_behavior and align_to_behavior not in ("trajectory", "fields"):
-            raise ValueError(
-                f"align_to_behavior must be True, False, 'trajectory', or 'fields', got {align_to_behavior!r}"
-            )
-        self.align_mode_ = align_to_behavior if align_to_behavior else None
-        self.Xalign_ = self.Xb_ if self.align_mode_ else None
+        if not isinstance(align_to_behavior, (bool, np.bool_)):
+            raise TypeError(f"align_to_behavior must be a bool, got {align_to_behavior!r}")
+        self.align_to_behavior_ = bool(align_to_behavior)
         self._kde = kde.kde_angular if self.is_1D_angular else kde.kde
 
         self.lastF_, self.lastX_ = None, None
@@ -1940,7 +1916,7 @@ class SIMPL:
             "speed_prior": np.nan if self.speed_prior_ is None else self.speed_prior_,
             "behavior_prior": np.nan if self.behavior_prior is None else self.behavior_prior,
             "is_1D_angular": int(self.is_1D_angular),
-            "align_mode": self.align_mode_ or "none",
+            "align_to_behavior": int(self.align_to_behavior_),
             "val_frac": self.val_frac,
             "speckle_block_size_seconds": self.speckle_block_size_seconds,
             "save_full_history": int(getattr(self, "save_full_history_", False)),
