@@ -315,6 +315,22 @@ def _circular_mean_and_variance(
     return mean, variance
 
 
+def _circular_mean_and_variance_numpy(angles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Compute unweighted circular moments on the host without JAX compilation."""
+    angles = np.asarray(angles)
+    sin_mean = np.mean(np.sin(angles), axis=-1)
+    cos_mean = np.mean(np.cos(angles), axis=-1)
+    mean = (np.arctan2(sin_mean, cos_mean) + np.pi) % (2 * np.pi) - np.pi
+
+    resultant_squared = sin_mean**2 + cos_mean**2
+    fallback = np.take(angles, 0, axis=-1)
+    mean = np.where(resultant_squared > 1e-12, mean, (fallback + np.pi) % (2 * np.pi) - np.pi)
+
+    residuals = (angles - np.expand_dims(mean, axis=-1) + np.pi) % (2 * np.pi) - np.pi
+    variance = np.mean(residuals**2, axis=-1)
+    return mean, variance
+
+
 def _bin_indices_minuspi_pi(theta: jax.Array, n_bins: int) -> jax.Array:
     """Map theta in radians to integer bin indices [0, n_bins).
 
