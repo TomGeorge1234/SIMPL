@@ -1893,7 +1893,7 @@ class SIMPL:
             modes = mode_np[trial_slice]
             if is_1D_angular:
                 angles = modes[:, 0]
-                mean_angle, variance = utils._circular_mean_and_variance(angles=angles, weights=None)
+                mean_angle, variance = utils._circular_mean_and_variance_numpy(angles)
                 mu = np.asarray(mean_angle)[None]
                 sigma = np.asarray(variance)[None, None]
             else:
